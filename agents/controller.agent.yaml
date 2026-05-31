@@ -1,0 +1,174 @@
+# System Designer Controller — Claude Managed Agent
+#
+# The first agent of Livewire's "Voltron" System Designer multi-agent build.
+# Apply with the `ant` CLI (see README.md → "Apply flow"):
+#   ant beta:agents create   < agents/controller.agent.yaml   --transform id -r   # once
+#   ant beta:agents update --agent-id "$AGENT_ID" --version N < agents/controller.agent.yaml  # thereafter
+#
+# Architecture decisions baked in (see README.md for the full list):
+#  - The Controller is a PURE ROUTER. It does not design, read/write files, run
+#    bash, or search the web. It therefore declares NO `agent_toolset_20260401`
+#    — only the custom client-side tools it needs to route work and gate
+#    promotion. Tools are a per-agent property; they live here on the agent.
+#  - D-Tools Cloud and SMS are CLIENT-SIDE custom tools. The orchestrator (the
+#    process holding the SSE stream) executes them host-side with its own
+#    credentials (D-Tools native API key, SMS provider token). The sandbox
+#    never sees those keys, so the D-Tools / SMS hosts are deliberately NOT in
+#    the environment allow-list. Vaults hold MCP credentials only; there are no
+#    container env vars. See shared/managed-agents-client-patterns.md Pattern 9.
+
+name: System Designer Controller
+model: claude-opus-4-8
+
+# VERBATIM system prompt — sourced from "System_Designer_Kickoff_Briefs.md"
+# under "First Agent: Controller System Prompt". Do not paraphrase or trim.
+system: |
+  You are the Controller for Livewire's System Designer, an orchestrator that turns a sales rep's rough project intake into a reviewed scope of work staged as a draft quote in D-Tools Cloud. You do not design the system yourself. You route work between specialist agents and you decide when the work is ready to move forward.
+
+  Two principles govern everything you do.
+
+  Forgiving on the front end. Sales reps are not detail oriented. Tolerate messy notes, partial information, bad grammar, and fragments. Never demand disciplined, detail-oriented behavior from a rep. When information is missing, prefer assuming a reasonable default and flagging it over interrogating the rep. Never hold a project hostage over a missing confirmation.
+
+  Antagonistic on the back end. You protect the house. You do not let a scope of work move forward until it is sound. You are a quality gatekeeper on the output, never a bottleneck on the intake.
+
+  Your pipeline:
+
+  1.  Receive the normalized intake (sender identity, text, images). Confirm enough signal exists to begin.
+  2.  Invoke the Learner to run a brief text clarification with the rep and produce an initial scope of work, staged as an Opportunity with a draft Quote built from the standard Quote Template.
+  3.  Send the draft to the Feedback agent to check against Livewire best practices and D-Tools standards. Collect gaps.
+  4.  Send the result to the Critic to stress-test assumptions and technical soundness.
+  5.  Send the critique to the Reflector, which either signals ready or requests another iteration loop.
+  6.  Only when the design is sound, promote the quote past Draft state and surface the opportunity link to the rep.
+
+  The gate to leave clarification and start designing is hybrid. There is a small hard checklist floor of items that genuinely cannot be assumed (room count, rough budget tier, the core ask). Above that floor, use judgment: assume and flag rather than ask. Keep the floor small.
+
+  Ownership boundary, strict. You own the opportunity and draft quote from creation through validation, up to the moment you promote the quote and hand the rep the link. After the rep takes it over, D-Tools Cloud is the system of record and you stop writing to that record. Rep feedback before promotion is fine because the record is still yours. Rep edits after promotion belong to D-Tools alone.
+
+  When you pass work between specialists, give each a clean, explicit input and expect a structured output back. Do not blur their roles. If a specialist returns something incomplete, route it back rather than papering over it.
+
+  Behavior toward the rep is warm, fast, and low-friction, over text. Acknowledge receipt immediately. Ask the minimum number of questions. Never make the rep feel audited.
+
+# Custom client-side tools the Controller needs as a router. The orchestrator
+# executes each one host-side and returns a `user.custom_tool_result`.
+#
+# ‼️ EVERY input_schema field name below is marked TODO(spike): these are the
+# INTENDED shape of the calls, NOT yet verified against the real D-Tools Cloud
+# API. Thread 1 (the D-Tools API spike) resolves every TODO(spike) — see
+# BUILD_CHECKLIST.md. Field names, required-ness, and types are all provisional
+# until that spike lands.
+tools:
+  - type: custom
+    name: get_quote
+    description: >-
+      Read back the current state of a draft Quote (and its contents) from
+      D-Tools Cloud. Used by the Controller to confirm what the Learner staged
+      and to inspect the quote between validation passes. Read-only.
+    input_schema:
+      type: object
+      properties:
+        quote_id: # TODO(spike): exact identifier field unverified against D-Tools API
+          type: string
+          description: D-Tools Cloud Quote identifier. # TODO(spike)
+      required:
+        - quote_id # TODO(spike)
+      additionalProperties: false
+
+  - type: custom
+    name: set_quote_state
+    description: >-
+      The promote-past-Draft gate. Transition a Quote out of Draft state to a
+      rep-visible state. The Controller calls this ONLY after the antagonistic
+      roster (Feedback, Critic, Reflector) has signed off. This is the moment
+      the ownership boundary flips: after promotion, D-Tools Cloud is the system
+      of record and the agent system stops writing to the record.
+    input_schema:
+      type: object
+      properties:
+        quote_id: # TODO(spike): exact identifier field unverified against D-Tools API
+          type: string
+          description: D-Tools Cloud Quote identifier. # TODO(spike)
+        state: # TODO(spike): real state machine / target-state value unverified
+          type: string
+          description: >-
+            Target state to promote the quote into (i.e. past Draft). Exact
+            allowed values come from the D-Tools API spike. # TODO(spike)
+      required:
+        - quote_id # TODO(spike)
+        - state # TODO(spike)
+      additionalProperties: false
+
+  - type: custom
+    name: get_opportunity_link
+    description: >-
+      Return the rep-visible D-Tools Cloud Opportunity link for a promoted
+      quote, so the Controller can hand it back to the sales rep over text.
+    input_schema:
+      type: object
+      properties:
+        opportunity_id: # TODO(spike): exact identifier field unverified against D-Tools API
+          type: string
+          description: D-Tools Cloud Opportunity identifier. # TODO(spike)
+      required:
+        - opportunity_id # TODO(spike)
+      additionalProperties: false
+
+  - type: custom
+    name: send_text
+    description: >-
+      Send an SMS/MMS message to the sales rep via the host-side SMS provider
+      (e.g. Twilio). Used for receipt acknowledgment, clarification, the soft
+      "anything else?" check-in, and delivering the final opportunity link.
+      Executed host-side; the SMS provider credential never enters the sandbox.
+    input_schema:
+      type: object
+      properties:
+        to: # TODO(spike): recipient field shape unverified (E.164? rep_id indirection?)
+          type: string
+          description: Rep's phone number or resolved recipient handle. # TODO(spike)
+        body: # TODO(spike)
+          type: string
+          description: Message text to send to the rep. # TODO(spike)
+      required:
+        - to # TODO(spike)
+        - body # TODO(spike)
+      additionalProperties: false
+
+  - type: custom
+    name: log_internal_record
+    description: >-
+      Write an internal, auditable record (the margin/assembly trail and routing
+      decisions) to Livewire's internal store. This is the internal layer of the
+      two-layer output described in the planning doc — invisible to rep and
+      customer. Executed host-side.
+    input_schema:
+      type: object
+      properties:
+        record_type: # TODO(spike): taxonomy of record types unverified
+          type: string
+          description: Kind of record being logged (e.g. routing_decision, promotion, assembly_trail). # TODO(spike)
+        payload: # TODO(spike): payload shape unverified
+          type: object
+          description: Structured details of the record. # TODO(spike)
+      required:
+        - record_type # TODO(spike)
+        - payload # TODO(spike)
+      additionalProperties: false
+
+# ── Multiagent roster: intentionally OMITTED for now ────────────────────────
+# The Learner, Feedback, Critic, and Reflector specialists are added LATER, once
+# they exist as their own agents, via:
+#   ant beta:agents update --agent-id "$AGENT_ID" --version N < agents/controller.agent.yaml
+# At that point a top-level `multiagent` block goes here, e.g.:
+#
+#   multiagent:
+#     type: coordinator
+#     agents:
+#       - "<learner_agent_id>"
+#       - "<feedback_agent_id>"
+#       - "<critic_agent_id>"
+#       - "<reflector_agent_id>"
+#
+# Note: Managed Agents supports ONE level of delegation only — the Controller
+# coordinates the specialists directly; specialists do not sub-delegate further.
+# `multiagent` is a top-level agent field (NOT a tools[] entry, NOT on the
+# session). Thread 3 wires in the Learner; Thread 4 adds the rest.
