@@ -73,6 +73,11 @@ First runnable agent pair on Managed Agents.
   system prompt, custom tools, multiagent roster intentionally omitted).
 - ✅ **Environment** — `environments/livewire-cloud.environment.yaml`
   (cloud, egress-locked, MCP allowed).
+- ◑ **Host-side orchestrator** — `orchestrator/` skeleton: real session loop
+  (create → stream-first → kickoff → `custom_tool_use` host-side → terminal
+  break) with the five custom-tool handlers stubbed (`SPIKE_RESOLVED = False`)
+  until Thread 1 resolves the D-Tools shapes. Runnable end-to-end; D-Tools
+  bodies are placeholders.
 - ☐ **Learner** — write the Learner system prompt + the Controller↔Learner
   input/output contract; add the Learner to the Controller's `multiagent`
   roster via `ant beta:agents update` (one-level delegation); stand up the
