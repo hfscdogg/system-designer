@@ -7,12 +7,26 @@ Status legend: ✅ scaffolded · ☐ todo
 
 ---
 
-## Thread 1 — D-Tools API Spike — ☐ todo **(do this first)**
+## Thread 1 — D-Tools API Spike — ◑ harness landed, awaiting live run **(do this first)**
 
 The highest-risk, highest-leverage step. Proves the deliverable model against
 the real D-Tools Cloud API before any more agent work. **Resolves every
 `TODO(spike)` field name in `agents/controller.agent.yaml`** — the custom-tool
 input schemas are currently the intended shape, unverified.
+
+**Harness:** `spikes/thread1-dtools/` — runnable, zero-dependency spike script
+(`dtools_spike.py`), a README of known API facts, and a `FINDINGS.md` template
+that maps each result back to a `TODO(spike)` field. Henry runs it with his key
+(`DTOOLS_API_KEY`); the build session cannot reach D-Tools.
+
+**Confirmed so far (public docs):** base URL `https://dtcloudapi.d-tools.cloud/api/v1`,
+auth `X-API-Key`, Opportunities GET/POST/PUT, **Quotes GET-only**, quote states
+`Draft → In Progress → Accepted/Declined`. The prior handoff's `api.d-tools.com`
+is the SI/on-prem API, not Cloud.
+
+**Live-run still needed to resolve:** exact RPC endpoint paths, whether product
+chunks are API-writable into a quote (if not — they live in the template, a plan
+change), and whether "promote past Draft" is a Quote write or an Opportunity PUT.
 
 **Done when:** an Opportunity with a draft Quote has been created through the
 API, Draft-state behavior confirmed, the quote read back, and the mechanism for
@@ -59,6 +73,11 @@ First runnable agent pair on Managed Agents.
   system prompt, custom tools, multiagent roster intentionally omitted).
 - ✅ **Environment** — `environments/livewire-cloud.environment.yaml`
   (cloud, egress-locked, MCP allowed).
+- ◑ **Host-side orchestrator** — `orchestrator/` skeleton: real session loop
+  (create → stream-first → kickoff → `custom_tool_use` host-side → terminal
+  break) with the five custom-tool handlers stubbed (`SPIKE_RESOLVED = False`)
+  until Thread 1 resolves the D-Tools shapes. Runnable end-to-end; D-Tools
+  bodies are placeholders.
 - ☐ **Learner** — write the Learner system prompt + the Controller↔Learner
   input/output contract; add the Learner to the Controller's `multiagent`
   roster via `ant beta:agents update` (one-level delegation); stand up the

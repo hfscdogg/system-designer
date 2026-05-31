@@ -141,10 +141,31 @@ Auth: `ANTHROPIC_API_KEY` in the environment, or `ant auth login`.
 
 ---
 
-## Runtime overview (orchestrator, per intake)
+## Terminology: "orchestrator" vs. "Controller" (they are different)
 
-The orchestrator is application code driving one session per project intake via
-the SDK. The shape:
+The word "orchestrator" is overloaded — pin it down:
+
+- **Anthropic orchestration layer** — Anthropic's servers that run the agent
+  loop. The platform; not ours.
+- **Controller** — the Managed **Agent** in `agents/controller.agent.yaml`. It
+  coordinates the *specialist roster* (Learner/Feedback/Critic/Reflector). The
+  planning doc calls it "the orchestrator and wrapper" because it orchestrates
+  *agents*. **It holds no credentials and cannot reach D-Tools or SMS.**
+- **Orchestrator (host-side)** — *our* application process (the runtime driver,
+  e.g. `run_system_designer.py`) that creates the session, streams events, sends
+  the kickoff, and **executes the client-side custom tools** with the real keys
+  (`ANTHROPIC_API_KEY`, `DTOOLS_API_KEY`). When this README says "the
+  orchestrator," it means **this** host process — not the Controller.
+
+The division of labor is the security model: the **Controller names** an action
+(emits `agent.custom_tool_use`); the **host-side orchestrator performs** it
+(makes the authenticated call, returns `user.custom_tool_result`). The key never
+enters the agent sandbox.
+
+## Runtime overview (host-side orchestrator, per intake)
+
+The orchestrator (the host-side process — see Terminology above) is application
+code driving one session per project intake via the SDK. The shape:
 
 1. **`sessions.create(agent=AGENT_ID, environment_id=ENV_ID, ...)`** — references
    the pre-created Controller agent and the shared environment. (Attach
