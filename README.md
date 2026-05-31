@@ -78,6 +78,37 @@ faithful to them. Where the live Console differs, re-apply from this repo:
   handoff's Agent-SDK subagents (`.claude/agents/*.md` + `Agent` tool) are a
   *different* Anthropic surface; don't mix the two.
 
+### Re-aligning the live Console (migration)
+
+Decision: **the scaffold wins; the live Console is realigned to it.** The prior
+session's live objects are updated **in place** (no re-create — that orphans the
+agent and loses version history). Run these once `ANTHROPIC_API_KEY` is set:
+
+```sh
+AGENT_ID=agent_01Cd2V3dPGCtbHRHrg4edPnm   # live Controller (handoff)
+ENV_ID=env_019PLH85uKRwypCqXyu1h8QZ       # live environment (handoff)
+
+# Confirm the current version (optimistic-lock value for the update):
+ant beta:agents retrieve --agent-id "$AGENT_ID" --transform version -r   # e.g. 3
+
+# Update the agent from this YAML. This DROPS agent_toolset_20260401 (the live
+# v3 carries all 8 built-ins) and installs only the custom router tools. The
+# verbatim system prompt is unchanged. Bumps to a new version; v1–v3 stay for
+# rollback.
+ant beta:agents update --agent-id "$AGENT_ID" --version <current> \
+  < agents/controller.agent.yaml
+
+# Update the environment: this sets allowed_hosts back to [] (the live env lists
+# *.d-tools.cloud / api.d-tools.com / *.googleapis.com). Re-add hosts ONLY if the
+# Thread 1 spike decides D-Tools should be reached over MCP from the container.
+ant beta:environments update --environment-id "$ENV_ID" \
+  < environments/livewire-cloud.environment.yaml
+```
+
+Pre-launch, dropping the toolset / tightening egress is safe — no live rep
+sessions depend on the old config. After Thread 1, if D-Tools moves to MCP,
+re-add its host to `allowed_hosts` and re-apply.
+
 ---
 
 ## Apply flow (`ant` CLI)
