@@ -1,0 +1,37 @@
+# Livewire System Designer — Managed Agents environment
+#
+# Apply with the `ant` CLI (see README.md → "Apply flow"):
+#   ant beta:environments create   < environments/livewire-cloud.environment.yaml   --transform id -r   # once
+#   ant beta:environments update --environment-id "$ENV_ID" < environments/livewire-cloud.environment.yaml  # thereafter
+#
+# Networking is a PER-SESSION property: one environment / container is shared by
+# the whole multiagent session (Controller + the specialists it coordinates).
+# Egress is locked down by default.
+
+name: livewire-system-designer
+description: >-
+  Shared container for the Livewire System Designer multiagent session.
+  Egress-locked; MCP allowed for the Learner's future Google Drive reads.
+
+config:
+  type: cloud
+  networking:
+    type: limited
+    # No package installs from inside the sandbox.
+    allow_package_managers: false
+    # Allow the agent's configured MCP server endpoints without listing each
+    # host here. The Learner will later read Livewire's project history / product
+    # library from Google Drive over MCP; this flag lets that traffic through.
+    allow_mcp_servers: true
+    # Deliberately EMPTY.
+    #
+    # The D-Tools Cloud API host and the SMS provider host do NOT belong here.
+    # Those are reached only by CLIENT-SIDE custom tools (get_quote,
+    # set_quote_state, get_opportunity_link, send_text, log_internal_record),
+    # which the orchestrator executes host-side with its own credentials. The
+    # sandbox never makes those calls and never holds those keys, so adding the
+    # hosts here would grant the container egress it must never have.
+    #
+    # Add a host here ONLY if some agent must reach it directly FROM the
+    # container (not via a host-side custom tool and not via MCP).
+    allowed_hosts: []
