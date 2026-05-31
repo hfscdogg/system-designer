@@ -56,6 +56,30 @@ These are decided — not up for re-litigation during the build.
 
 ---
 
+## Reconciliation with prior Console state
+
+A prior session shipped a Controller agent and environment to the Anthropic
+Console (`HANDOFF.md`) that **diverge from the planning docs**. Per Henry's call,
+**the planning docs (`System_Designer_Agent_Outline` rev 4 +
+`System_Designer_Kickoff_Briefs.md`) are the source of truth**, and this YAML is
+faithful to them. Where the live Console differs, re-apply from this repo:
+
+- **Controller toolset.** Live `v3` carries `agent_toolset_20260401` (8 built-in
+  tools). The docs describe the Controller as a pure orchestrator that *"does not
+  design the system yourself"* — so this scaffold declares **no** toolset, only
+  its custom router tools. Re-apply to drop the built-ins.
+- **D-Tools / SMS access — deferred to Thread 1.** This scaffold uses client-side
+  custom tools (key stays host-side, hosts out of `allowed_hosts`). The live env
+  instead lists `*.d-tools.cloud` / `api.d-tools.com` and reaches D-Tools over
+  MCP. **The D-Tools API spike decides** which integration is correct; until then
+  the scaffold stays client-side and the env allow-list stays empty.
+- **Roster mechanism.** This build targets **Managed Agents** — the `multiagent`
+  coordinator is a stored top-level agent field (added via `agents update`). The
+  handoff's Agent-SDK subagents (`.claude/agents/*.md` + `Agent` tool) are a
+  *different* Anthropic surface; don't mix the two.
+
+---
+
 ## Apply flow (`ant` CLI)
 
 The control plane (agents, environments) is version-controlled YAML applied with

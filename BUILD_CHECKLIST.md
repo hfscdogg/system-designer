@@ -19,6 +19,11 @@ API, Draft-state behavior confirmed, the quote read back, and the mechanism for
 adding reusable product chunks (package vs. assembly) confirmed. Any divergence
 from Outline §5–§6 updates the plan.
 
+**Also decides (deferred here):** whether the Controller reaches D-Tools via
+client-side custom tools (key host-side, hosts out of `allowed_hosts` — the
+current scaffold) or over an MCP server (hosts in `allowed_hosts`, vault
+credential). Until the spike lands, the scaffold stays client-side.
+
 **Touches:** `agents/controller.agent.yaml` (rewrites the `TODO(spike)` input
 schemas of `get_quote`, `set_quote_state`, `get_opportunity_link` to the real
 D-Tools shapes); feeds the orchestrator's host-side D-Tools tool implementations.
