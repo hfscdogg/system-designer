@@ -1,0 +1,32 @@
+{
+  "manifestType": "dtools_opportunity_manifest",
+  "updatedAt": "2026-07-12T18:08:07.860Z",
+  "opportunitiesById": {
+    "0c5c8e1b-92c9-4b22-9d4d-34c54f13b1c1": {
+      "id": "0c5c8e1b-92c9-4b22-9d4d-34c54f13b1c1",
+      "number": "P-2565",
+      "name": "Nabhiraj Security Upgrade",
+      "clientId": "fde60743-5d76-4082-b088-7f9b8f9b0169",
+      "clientName": "Nabhiraj Jain",
+      "stage": "New",
+      "stageGroup": "New",
+      "systemState": "Open",
+      "file": "P-2565.json",
+      "savedAt": "2026-07-12T10:58:25.677Z",
+      "extraInfoFile": "0c5c8e1b-92c9-4b22-9d4d-34c54f13b1c1_info.json",
+      "extraInfoSavedAt": "2026-07-12T11:04:38.584Z"
+    },
+    "2975076c-dec3-42ad-8ee5-773c50c4820a": {
+      "id": "2975076c-dec3-42ad-8ee5-773c50c4820a",
+      "number": "P-2566",
+      "name": "Nabhiraj Security Upgrade - Safe Gaming Room",
+      "clientId": "fde60743-5d76-4082-b088-7f9b8f9b0169",
+      "clientName": "Nabhiraj Jain",
+      "stage": "New",
+      "stageGroup": "New",
+      "systemState": "Open",
+      "file": "P-2566.json",
+      "savedAt": "2026-07-12T18:08:07.860Z"
+    }
+  }
+}

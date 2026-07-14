@@ -1,0 +1,167 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>P-2566 Draft Proposal</title>
+  <style>
+    :root {
+      --ink: #12202f;
+      --muted: #5a6b7f;
+      --line: #dce3ea;
+      --paper: #ffffff;
+      --soft: #f4f7fb;
+      --brand: #1155cc;
+      --accent: #0f766e;
+    }
+    * { box-sizing: border-box; }
+    body {
+      margin: 0;
+      font-family: "Segoe UI", "Helvetica Neue", sans-serif;
+      color: var(--ink);
+      background: linear-gradient(180deg, #f2f6fb 0%, #e9eff8 100%);
+      padding: 28px;
+    }
+    .page {
+      max-width: 980px;
+      margin: 0 auto;
+      background: var(--paper);
+      border: 1px solid var(--line);
+      border-radius: 14px;
+      overflow: hidden;
+      box-shadow: 0 18px 50px rgba(17, 35, 63, 0.08);
+    }
+    .topbar {
+      padding: 28px;
+      background: linear-gradient(135deg, #0e2a52 0%, #144d8b 55%, #0f766e 100%);
+      color: #fff;
+    }
+    .title { margin: 0; font-size: 28px; }
+    .subtitle { margin-top: 8px; opacity: 0.92; font-size: 14px; }
+    .section { padding: 22px 28px; border-top: 1px solid var(--line); }
+    h2 { margin: 0 0 12px 0; font-size: 18px; }
+    .meta {
+      display: grid;
+      grid-template-columns: repeat(2, minmax(0, 1fr));
+      gap: 12px;
+    }
+    .box {
+      border: 1px solid var(--line);
+      border-radius: 10px;
+      padding: 12px;
+      background: #fff;
+    }
+    .label {
+      display: block;
+      font-size: 11px;
+      text-transform: uppercase;
+      letter-spacing: 0.5px;
+      color: var(--muted);
+      margin-bottom: 6px;
+    }
+    table { width: 100%; border-collapse: collapse; }
+    th, td {
+      text-align: left;
+      padding: 10px;
+      border-bottom: 1px solid #edf1f6;
+      vertical-align: top;
+      font-size: 14px;
+    }
+    th {
+      color: var(--muted);
+      font-size: 12px;
+      text-transform: uppercase;
+      letter-spacing: 0.4px;
+      background: #f9fbfe;
+    }
+    .totals {
+      margin-left: auto;
+      max-width: 320px;
+      border: 1px solid var(--line);
+      border-radius: 10px;
+      overflow: hidden;
+    }
+    .totals-row {
+      display: flex;
+      justify-content: space-between;
+      padding: 10px 12px;
+      border-bottom: 1px solid var(--line);
+      font-size: 14px;
+    }
+    .totals-row:last-child {
+      border-bottom: 0;
+      font-weight: 700;
+      background: #f3f9f8;
+      color: #0f504d;
+    }
+    .muted { color: var(--muted); }
+    @media (max-width: 720px) {
+      body { padding: 10px; }
+      .meta { grid-template-columns: 1fr; }
+      .totals { max-width: none; }
+    }
+  </style>
+</head>
+<body>
+  <div class="page">
+    <div class="topbar">
+      <h1 class="title">Draft Proposal</h1>
+      <div class="subtitle">P-2566 | Nabhiraj Security Upgrade - Safe Gaming Room</div>
+    </div>
+
+    <div class="section">
+      <h2>Approved Scope</h2>
+      <div class="meta">
+        <div class="box"><span class="label">Client</span>Nabhiraj Jain</div>
+        <div class="box"><span class="label">Install Style</span>Straightforward and visible near the door frame</div>
+        <div class="box"><span class="label">Room</span>Indoors, single door</div>
+        <div class="box"><span class="label">Access</span>Just me, one shared keypad code, auto-lock</div>
+        <div class="box"><span class="label">Camera</span>Discreet live view only at the gaming room entrance</div>
+        <div class="box"><span class="label">Alarm</span>Local audible alarm only</div>
+      </div>
+    </div>
+
+    <div class="section">
+      <h2>Recommended Package</h2>
+      <table>
+        <thead>
+          <tr>
+            <th>Item</th>
+            <th>Description</th>
+            <th>Qty</th>
+            <th>Unit Price</th>
+            <th>Line Total</th>
+          </tr>
+        </thead>
+        <tbody>
+          <tr>
+            <td>Alarm.com ADC-V516</td>
+            <td>Indoor 1080p Wi-Fi camera, dual-band Wi-Fi, live view only</td>
+            <td>1</td>
+            <td>$163.98</td>
+            <td>$163.98</td>
+          </tr>
+          <tr>
+            <td>Alfred DB2S-KEY-BL</td>
+            <td>Smart deadbolt with keypad access for a wood door</td>
+            <td>1</td>
+            <td>$448.50</td>
+            <td>$448.50</td>
+          </tr>
+        </tbody>
+      </table>
+    </div>
+
+    <div class="section">
+      <h2>Summary</h2>
+      <div class="totals">
+        <div class="totals-row"><span>Subtotal</span><span>$612.48</span></div>
+        <div class="totals-row"><span>Notes</span><span>Minimal reliable setup</span></div>
+      </div>
+      <p class="muted" style="margin-top:12px;">
+        This is a local draft summary because the live D-Tools opportunity currently has no attached quote record.
+      </p>
+    </div>
+  </div>
+</body>
+</html>
