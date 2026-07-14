@@ -4,9 +4,10 @@ description: >-
   Build a Livewire proposal in the D-Tools Cloud deliverable shape — an
   Opportunity carrying a draft Quote built from the standard Quote Template.
   Use when asked to draft, stage, or review a proposal / scope of work / quote
-  for a client or internal pilot. Produces the two-layer output (client-facing
-  scope + internal margin/assembly trail) with assumptions flagged, never
-  interrogated.
+  for a client or internal pilot. INTERVIEWS the requester first when they are
+  available to answer; assume-and-flag is the fallback, not the default.
+  Produces the two-layer output (client-facing scope + internal
+  margin/assembly trail).
 ---
 
 # D-Tools Proposal Skill
@@ -17,13 +18,43 @@ key is in play (it lives host-side only — see locked decision #4 in the root
 `README.md`), the deliverable is authored as repo artifacts in the exact shape
 the orchestrator will later `POST`.
 
+## Step 0 — Interview the requester FIRST
+
+**When the requester can answer (an interactive session — AskUserQuestion is
+available), interview before authoring anything.** Do not guess what you can
+ask. The interview is short and structured:
+
+**Round 1 — the checklist floor plus site context (always ask):**
+1. **Core ask** — what should the proposal cover (whole-home foundation,
+   entertainment-focused, network + security, single room)?
+2. **Room count / scope size** — how many spaces?
+3. **Budget tier** — bracketed ranges, not an open-ended number.
+4. **Site context** — new construction / pre-wire, major remodel, or finished
+   retrofit. This drives wiring strategy and labor.
+
+**Round 2 — targeted follow-ups shaped by round 1 (at most one round):**
+- Which specific spaces are in scope (multi-select).
+- Trim priority — if labor or site conditions push past budget, what gets
+  value-engineered first?
+- Anything round 1 made ambiguous (e.g. "single room" → which room).
+
+Keep it to **two rounds maximum**. Offer concrete options with a recommended
+default first; every question must change the design if answered differently.
+Whatever the interview did not cover — or the requester skipped — falls back
+to **assume-and-flag**.
+
+**Scope of the never-interrogate rule:** the Controller principle "never
+demand detail-oriented behavior from a rep" governs the **SMS intake pipeline**
+(reps, over text, mid-hustle). It does not apply to an interactive requester
+who invoked this skill and is sitting there able to answer. Interview the
+requester; never interrogate the rep.
+
 ## Governing principles (from the Controller system prompt — do not dilute)
 
-1. **Forgiving on the front end.** Tolerate messy intake. When information is
-   missing, assume a reasonable default and **flag it** — never interrogate,
+1. **Forgiving on the front end.** Tolerate messy intake. For anything the
+   interview couldn't resolve, assume a reasonable default and **flag it** —
    never block on a missing confirmation. The hard checklist floor is small:
-   room count, rough budget tier, the core ask. Everything above the floor is
-   assume-and-flag.
+   room count, rough budget tier, the core ask.
 2. **Antagonistic on the back end.** The proposal does not leave Draft until it
    is sound. Every assumption is visible for the antagonistic roster
    (Feedback → Critic → Reflector) to attack.
@@ -56,8 +87,10 @@ data. Structure:
   equipment lines (qty / item / purpose — client-facing, no margin), then
   included labor in plain terms.
 - **Investment summary** — equipment, labor/programming, subtotals, total.
-  Price alternates (good/better/best) only if the intake asked.
+  Price alternates (good/better/best) only if the interview or intake asked.
 - **Assumptions & exclusions** — every assume-and-flag item, stated plainly.
+  Interview answers are **decisions**, not assumptions — record them in the
+  overview, not here.
 - **What happens next** — review, revision, acceptance path.
 
 ### 2. `opportunity.draft.json` — the API-shaped payload
@@ -68,9 +101,10 @@ sibling note. This file is the contract between the proposal and Thread 1.
 
 ### 3. `internal-record.md` — the internal layer
 Invisible to rep and customer (the `log_internal_record` payload shape):
-margin/assembly trail, which reusable chunks were used and why, every flagged
-assumption with the default chosen and the reason, checklist-floor status, and
-open items for the antagonistic roster.
+margin/assembly trail, which reusable chunks were used and why, the
+**interview transcript** (question → answer), every flagged assumption with
+the default chosen and the reason, checklist-floor status, and open items for
+the antagonistic roster.
 
 ## Pricing and product discipline
 
@@ -81,14 +115,19 @@ open items for the antagonistic roster.
 - Products are named at real-world brand/model level so the Feedback agent can
   check them against Livewire standards, but marked *representative* until
   matched to catalog SKUs.
-- Labor as hours × role rate, placeholder rates flagged.
+- Labor as hours × role rate, placeholder rates flagged. Retrofit site context
+  adds labor and shifts the design wireless-first where sensible.
+- Client-facing equipment figures may carry a materials/headroom allowance
+  above raw unit sums — the delta must be stated in the internal record.
 
 ## Hard rules
 
 - Quote state in every artifact: `Draft`. This skill never promotes.
 - No credentials, keys, or tenant identifiers in any artifact.
-- Flag, don't ask: a missing detail above the checklist floor becomes a
-  visible assumption, not a question back to the requester.
-- If the intake fails the checklist floor (no room count, no budget tier, or
-  no discernible core ask), produce the proposal anyway with the floor items
-  as **prominent** flagged defaults at the top of the assumptions section.
+- Interview when the requester is present; flag-don't-ask only for what the
+  interview couldn't cover, or when there is no interactive requester (e.g.
+  rep SMS intake replayed through the pipeline).
+- If the checklist floor is still unresolved after the interview (requester
+  skipped, or non-interactive), produce the proposal anyway with the floor
+  items as **prominent** flagged defaults at the top of the assumptions
+  section.
