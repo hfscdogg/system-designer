@@ -186,6 +186,35 @@ function real(value) {
   return s && !s.toUpperCase().startsWith("TODO") ? s : null;
 }
 
+const MIME_BY_EXT = { ".png": "image/png", ".jpg": "image/jpeg", ".jpeg": "image/jpeg", ".svg": "image/svg+xml", ".webp": "image/webp" };
+
+/**
+ * Resolve the masthead logo to a data URI so the proposal HTML stays self-contained.
+ * Preference order: explicit logoDataUri, then logoFileDark (white-on-dark variant,
+ * correct for the dark masthead per the design system), then logoFile.
+ * File paths are relative to the brand config's directory. Missing files are not
+ * fatal — the text wordmark renders instead — but a warning is printed.
+ */
+function resolveLogoDataUri(brand, brandDir) {
+  if (brand.logoDataUri) return brand.logoDataUri;
+  for (const key of ["logoFileDark", "logoFile"]) {
+    const rel = real(brand[key]);
+    if (!rel) continue;
+    const abs = path.resolve(brandDir, rel);
+    if (!fs.existsSync(abs)) {
+      console.error(`warning: brand ${key} "${rel}" not found at ${abs} — using the text wordmark instead.`);
+      continue;
+    }
+    const mime = MIME_BY_EXT[path.extname(abs).toLowerCase()];
+    if (!mime) {
+      console.error(`warning: brand ${key} "${rel}" has an unsupported extension — use png/jpg/svg/webp.`);
+      continue;
+    }
+    return `data:${mime};base64,${fs.readFileSync(abs).toString("base64")}`;
+  }
+  return null;
+}
+
 function renderHtml({ brand, meta, clientBlock, scope, items, totals, notes }) {
   const c = brand.colors || {};
   const f = brand.fonts || {};
@@ -296,7 +325,7 @@ function renderHtml({ brand, meta, clientBlock, scope, items, totals, notes }) {
       background: linear-gradient(120deg, var(--primary-dark) 0%, var(--primary) 70%);
       color: #fff;
     }
-    .logo { max-height: 54px; max-width: 220px; }
+    .logo { max-height: 76px; max-width: 220px; }
     .logo-text {
       font-weight: 800;
       font-size: 26px;
@@ -591,6 +620,7 @@ async function main() {
 
   const brandPath = path.resolve(readArg("--brand", DEFAULT_BRAND_PATH));
   const brand = readJsonFile(brandPath, "Brand config");
+  brand.logoDataUri = resolveLogoDataUri(brand, path.dirname(brandPath));
 
   const data = quoteId
     ? await loadFromQuote(quoteId)

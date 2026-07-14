@@ -1,8 +1,10 @@
 {
-  "_comment": "Livewire brand config for client-facing proposals, derived from brand/livewire-design-system.json (v3.0, 2026-04) — that file is the source of truth. Keys here are read by scripts/generate_proposal_html.js. logoDataUri stays null until the wordmark PNGs (assets/logo-horizontal-*.png per the design system) are added; the text wordmark is the fallback.",
+  "_comment": "Livewire brand config for client-facing proposals, derived from brand/livewire-design-system.json (v3.0, 2026-04) — that file is the source of truth. Keys here are read by scripts/generate_proposal_html.js. Logo drop-in: save the logo PNGs into brand/assets/ at the logoFile/logoFileDark paths below and the generator embeds them automatically (logoFileDark, the white-wordmark variant, wins on the dark masthead per the design system's logo rule; the text wordmark renders until a file exists).",
   "companyName": "Livewire",
   "tagline": "High-end home lighting and control",
   "logoDataUri": null,
+  "logoFile": "assets/logo-stacked-color.png",
+  "logoFileDark": "assets/logo-stacked-white.png",
   "logoText": "LIVEWIRE",
   "fonts": {
     "googleImport": "https://fonts.googleapis.com/css2?family=Fraunces:ital,opsz,wght@0,9..144,300..700;1,9..144,300..500&family=Montserrat:wght@400;500;600;700;800&display=swap",
