@@ -1,27 +1,40 @@
 {
-  "_comment": "Livewire brand config for client-facing proposals. Placeholder values — replace logoDataUri/colors/contact with real brand assets when available. Keys are read by scripts/generate_proposal_html.js.",
+  "_comment": "Livewire brand config for client-facing proposals, derived from brand/livewire-design-system.json (v3.0, 2026-04) — that file is the source of truth. Keys here are read by scripts/generate_proposal_html.js. Logo drop-in: save the logo PNGs into brand/assets/ at the logoFile/logoFileDark paths below and the generator embeds them automatically (logoFileDark, the white-wordmark variant, wins on the dark masthead per the design system's logo rule; the text wordmark renders until a file exists).",
   "companyName": "Livewire",
-  "tagline": "Smart Technology, Simplified",
+  "tagline": "High-end home lighting and control",
   "logoDataUri": null,
+  "logoFile": "assets/logo-stacked-color.png",
+  "logoFileDark": "assets/logo-stacked-white.png",
   "logoText": "LIVEWIRE",
+  "fonts": {
+    "googleImport": "https://fonts.googleapis.com/css2?family=Fraunces:ital,opsz,wght@0,9..144,300..700;1,9..144,300..500&family=Montserrat:wght@400;500;600;700;800&display=swap",
+    "display": "'Fraunces', Georgia, 'Times New Roman', serif",
+    "displayVariationSettings": "\"opsz\" 144, \"SOFT\" 50",
+    "body": "'Montserrat', 'Segoe UI', Arial, sans-serif"
+  },
   "colors": {
-    "primary": "#0e2a52",
-    "primaryDark": "#081c39",
-    "accent": "#0f766e",
-    "ink": "#12202f",
-    "muted": "#5a6b7f",
-    "line": "#dfe6ee",
-    "soft": "#f5f8fc"
+    "primary": "#12120F",
+    "primaryDark": "#0B0B09",
+    "accent": "#F08223",
+    "accentHover": "#D46C13",
+    "textAccent": "#A85200",
+    "ink": "#12120F",
+    "muted": "#5B5B52",
+    "line": "#D8D6CC",
+    "soft": "#FAFAF9",
+    "cream": "#F5EFE6",
+    "pageBackground": "#F4F0E8"
   },
   "contact": {
-    "phone": "(000) 000-0000",
+    "phone": "TODO: main phone number",
     "email": "hello@getlivewire.com",
     "website": "getlivewire.com",
     "address": "TODO: company address"
   },
+  "trustLine": "20+ years · 4.9 stars / 421 reviews · 80% referrals · Lutron Certified",
   "validDays": 30,
   "terms": [
-    "This proposal is an estimate based on the requirements discussed and is valid until the date shown above.",
+    "This proposal is an estimate based on the requirements we discussed and is valid until the date shown above.",
     "Final pricing may be adjusted after an on-site survey confirms device placement, cabling routes, and existing infrastructure.",
     "Equipment availability and lead times are subject to change by manufacturers and distributors.",
     "Installation dates are scheduled after proposal acceptance and equipment receipt.",

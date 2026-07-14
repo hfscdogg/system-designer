@@ -180,8 +180,47 @@ function groupItems(items) {
   return groups;
 }
 
+/** Returns the value unless it's empty or a "TODO..." placeholder from the brand config. */
+function real(value) {
+  const s = String(value || "").trim();
+  return s && !s.toUpperCase().startsWith("TODO") ? s : null;
+}
+
+const MIME_BY_EXT = { ".png": "image/png", ".jpg": "image/jpeg", ".jpeg": "image/jpeg", ".svg": "image/svg+xml", ".webp": "image/webp" };
+
+/**
+ * Resolve the masthead logo to a data URI so the proposal HTML stays self-contained.
+ * Preference order: explicit logoDataUri, then logoFileDark (white-on-dark variant,
+ * correct for the dark masthead per the design system), then logoFile.
+ * File paths are relative to the brand config's directory. Missing files are not
+ * fatal — the text wordmark renders instead — but a warning is printed.
+ */
+function resolveLogoDataUri(brand, brandDir) {
+  if (brand.logoDataUri) return brand.logoDataUri;
+  for (const key of ["logoFileDark", "logoFile"]) {
+    const rel = real(brand[key]);
+    if (!rel) continue;
+    const abs = path.resolve(brandDir, rel);
+    if (!fs.existsSync(abs)) {
+      console.error(`warning: brand ${key} "${rel}" not found at ${abs} — using the text wordmark instead.`);
+      continue;
+    }
+    const mime = MIME_BY_EXT[path.extname(abs).toLowerCase()];
+    if (!mime) {
+      console.error(`warning: brand ${key} "${rel}" has an unsupported extension — use png/jpg/svg/webp.`);
+      continue;
+    }
+    return `data:${mime};base64,${fs.readFileSync(abs).toString("base64")}`;
+  }
+  return null;
+}
+
 function renderHtml({ brand, meta, clientBlock, scope, items, totals, notes }) {
   const c = brand.colors || {};
+  const f = brand.fonts || {};
+  const displayFont = f.display || "Georgia, 'Times New Roman', serif";
+  const bodyFont = f.body || "'Segoe UI', 'Helvetica Neue', Arial, sans-serif";
+  const fontImport = f.googleImport ? `@import url('${f.googleImport}');` : "";
   const groups = groupItems(items);
 
   const groupSections = [...groups.entries()]
@@ -248,21 +287,26 @@ function renderHtml({ brand, meta, clientBlock, scope, items, totals, notes }) {
   <meta name="viewport" content="width=device-width, initial-scale=1.0" />
   <title>${escapeHtml(brand.companyName || "")} Proposal ${escapeHtml(meta.number || "")}</title>
   <style>
+    ${fontImport}
     :root {
       --primary: ${c.primary || "#0e2a52"};
       --primary-dark: ${c.primaryDark || "#081c39"};
       --accent: ${c.accent || "#0f766e"};
+      --text-accent: ${c.textAccent || c.accent || "#0f766e"};
       --ink: ${c.ink || "#12202f"};
       --muted: ${c.muted || "#5a6b7f"};
       --line: ${c.line || "#dfe6ee"};
       --soft: ${c.soft || "#f5f8fc"};
+      --font-display: ${displayFont};
+      --font-body: ${bodyFont};
     }
     * { box-sizing: border-box; }
     html, body { margin: 0; padding: 0; }
     body {
-      font-family: Georgia, "Times New Roman", serif;
+      font-family: var(--font-body);
+      letter-spacing: -0.005em;
       color: var(--ink);
-      background: #eef2f7;
+      background: ${c.pageBackground || "#eef2f7"};
       -webkit-print-color-adjust: exact;
       print-color-adjust: exact;
     }
@@ -281,15 +325,14 @@ function renderHtml({ brand, meta, clientBlock, scope, items, totals, notes }) {
       background: linear-gradient(120deg, var(--primary-dark) 0%, var(--primary) 70%);
       color: #fff;
     }
-    .logo { max-height: 54px; max-width: 220px; }
+    .logo { max-height: 76px; max-width: 220px; }
     .logo-text {
-      font-family: "Segoe UI", "Helvetica Neue", Arial, sans-serif;
       font-weight: 800;
       font-size: 26px;
       letter-spacing: 4px;
     }
-    .tagline { margin-top: 6px; font-size: 13px; opacity: 0.85; font-style: italic; }
-    .doc-meta { text-align: right; font-family: "Segoe UI", Arial, sans-serif; }
+    .tagline { margin-top: 6px; font-size: 13px; opacity: 0.85; font-style: italic; font-family: var(--font-display); }
+    .doc-meta { text-align: right; }
     .doc-meta .kind { font-size: 12px; text-transform: uppercase; letter-spacing: 3px; opacity: 0.8; }
     .doc-meta .number { font-size: 22px; font-weight: 700; margin-top: 4px; }
     .doc-meta .dates { font-size: 12px; margin-top: 8px; opacity: 0.9; line-height: 1.5; }
@@ -298,8 +341,12 @@ function renderHtml({ brand, meta, clientBlock, scope, items, totals, notes }) {
     .section:last-of-type { border-bottom: 0; }
     h1.project {
       margin: 0;
-      font-size: 24px;
-      font-weight: 600;
+      font-family: var(--font-display);
+      font-variation-settings: ${f.displayVariationSettings || "normal"};
+      font-size: 30px;
+      font-weight: 500;
+      letter-spacing: -0.02em;
+      line-height: 1.05;
       color: var(--primary-dark);
     }
     .prepared {
@@ -307,7 +354,6 @@ function renderHtml({ brand, meta, clientBlock, scope, items, totals, notes }) {
       grid-template-columns: 1fr 1fr;
       gap: 18px;
       margin-top: 18px;
-      font-family: "Segoe UI", Arial, sans-serif;
       font-size: 14px;
     }
     .prepared .label {
@@ -319,11 +365,11 @@ function renderHtml({ brand, meta, clientBlock, scope, items, totals, notes }) {
     }
     h2 {
       margin: 0 0 14px 0;
-      font-size: 13px;
-      font-family: "Segoe UI", Arial, sans-serif;
+      font-size: 11px;
+      font-weight: 600;
       text-transform: uppercase;
-      letter-spacing: 2px;
-      color: var(--accent);
+      letter-spacing: 0.24em;
+      color: var(--text-accent);
     }
     .intent { font-size: 16px; line-height: 1.6; margin: 0 0 16px 0; }
     .scope-grid {
@@ -331,12 +377,11 @@ function renderHtml({ brand, meta, clientBlock, scope, items, totals, notes }) {
       grid-template-columns: repeat(2, minmax(0, 1fr));
       gap: 10px 24px;
       margin: 0;
-      font-family: "Segoe UI", Arial, sans-serif;
     }
     .scope-cell { padding: 8px 0; border-bottom: 1px dotted var(--line); }
     .scope-cell dt { font-size: 11px; text-transform: uppercase; letter-spacing: 1px; color: var(--muted); }
     .scope-cell dd { margin: 3px 0 0 0; font-size: 14px; }
-    table.items { width: 100%; border-collapse: collapse; margin-bottom: 22px; font-family: "Segoe UI", Arial, sans-serif; }
+    table.items { width: 100%; border-collapse: collapse; margin-bottom: 22px; }
     table.items:last-child { margin-bottom: 0; }
     .group-head {
       text-align: left;
@@ -361,18 +406,17 @@ function renderHtml({ brand, meta, clientBlock, scope, items, totals, notes }) {
     .num { text-align: right; white-space: nowrap; }
     .item-name { font-weight: 600; }
     .item-desc { color: var(--muted); font-size: 12.5px; margin-top: 3px; line-height: 1.45; }
-    .totals { margin-left: auto; width: 320px; font-family: "Segoe UI", Arial, sans-serif; }
+    .totals { margin-left: auto; width: 320px; }
     .totals-row { display: flex; justify-content: space-between; padding: 9px 12px; font-size: 14px; border-bottom: 1px solid var(--line); }
     .totals-row.grand { border: 0; background: var(--primary-dark); color: #fff; font-size: 16px; font-weight: 700; margin-top: 4px; }
     .note { color: var(--muted); font-size: 13px; margin-top: 14px; font-style: italic; }
-    ol.terms { margin: 0; padding-left: 20px; font-size: 13px; line-height: 1.7; color: #33445a; }
-    .acceptance { display: grid; grid-template-columns: 2fr 1fr; gap: 40px; margin-top: 10px; font-family: "Segoe UI", Arial, sans-serif; }
+    ol.terms { margin: 0; padding-left: 20px; font-size: 13px; line-height: 1.7; color: ${c.ink600 || "#3A3A33"}; }
+    .acceptance { display: grid; grid-template-columns: 2fr 1fr; gap: 40px; margin-top: 10px; }
     .sig-line { border-bottom: 1px solid var(--ink); height: 34px; }
     .sig-label { font-size: 11px; text-transform: uppercase; letter-spacing: 1px; color: var(--muted); margin-top: 6px; }
     footer.colophon {
       padding: 20px 52px 30px 52px;
       background: var(--soft);
-      font-family: "Segoe UI", Arial, sans-serif;
       font-size: 12px;
       color: var(--muted);
       display: flex;
@@ -425,9 +469,9 @@ function renderHtml({ brand, meta, clientBlock, scope, items, totals, notes }) {
         <div>
           <div class="label">Prepared by</div>
           <div>${escapeHtml(meta.preparedBy || brand.companyName || "—")}</div>
-          ${brand.contact?.phone ? `<div>${escapeHtml(brand.contact.phone)}</div>` : ""}
-          ${brand.contact?.email ? `<div>${escapeHtml(brand.contact.email)}</div>` : ""}
-          ${brand.contact?.website ? `<div>${escapeHtml(brand.contact.website)}</div>` : ""}
+          ${real(brand.contact?.phone) ? `<div>${escapeHtml(real(brand.contact.phone))}</div>` : ""}
+          ${real(brand.contact?.email) ? `<div>${escapeHtml(real(brand.contact.email))}</div>` : ""}
+          ${real(brand.contact?.website) ? `<div>${escapeHtml(real(brand.contact.website))}</div>` : ""}
         </div>
       </div>
     </section>
@@ -468,7 +512,8 @@ function renderHtml({ brand, meta, clientBlock, scope, items, totals, notes }) {
 
     <footer class="colophon">
       <span>${escapeHtml(brand.footerNote || "")}</span>
-      <span>${escapeHtml(brand.companyName || "")}${brand.contact?.address ? ` · ${escapeHtml(brand.contact.address)}` : ""}</span>
+      ${brand.trustLine ? `<span>${escapeHtml(brand.trustLine)}</span>` : ""}
+      <span>${escapeHtml(brand.companyName || "")}${real(brand.contact?.address) ? ` · ${escapeHtml(real(brand.contact.address))}` : ""}</span>
     </footer>
   </div>
 </body>
@@ -575,6 +620,7 @@ async function main() {
 
   const brandPath = path.resolve(readArg("--brand", DEFAULT_BRAND_PATH));
   const brand = readJsonFile(brandPath, "Brand config");
+  brand.logoDataUri = resolveLogoDataUri(brand, path.dirname(brandPath));
 
   const data = quoteId
     ? await loadFromQuote(quoteId)
