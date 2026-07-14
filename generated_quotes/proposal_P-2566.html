@@ -1,0 +1,323 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>Livewire Proposal P-2566</title>
+  <style>
+    :root {
+      --primary: #0e2a52;
+      --primary-dark: #081c39;
+      --accent: #0f766e;
+      --ink: #12202f;
+      --muted: #5a6b7f;
+      --line: #dfe6ee;
+      --soft: #f5f8fc;
+    }
+    * { box-sizing: border-box; }
+    html, body { margin: 0; padding: 0; }
+    body {
+      font-family: Georgia, "Times New Roman", serif;
+      color: var(--ink);
+      background: #eef2f7;
+      -webkit-print-color-adjust: exact;
+      print-color-adjust: exact;
+    }
+    .sheet {
+      max-width: 850px;
+      margin: 24px auto;
+      background: #fff;
+      box-shadow: 0 12px 40px rgba(15, 30, 55, 0.12);
+    }
+    .masthead {
+      display: flex;
+      justify-content: space-between;
+      align-items: flex-end;
+      gap: 24px;
+      padding: 44px 52px 32px 52px;
+      background: linear-gradient(120deg, var(--primary-dark) 0%, var(--primary) 70%);
+      color: #fff;
+    }
+    .logo { max-height: 54px; max-width: 220px; }
+    .logo-text {
+      font-family: "Segoe UI", "Helvetica Neue", Arial, sans-serif;
+      font-weight: 800;
+      font-size: 26px;
+      letter-spacing: 4px;
+    }
+    .tagline { margin-top: 6px; font-size: 13px; opacity: 0.85; font-style: italic; }
+    .doc-meta { text-align: right; font-family: "Segoe UI", Arial, sans-serif; }
+    .doc-meta .kind { font-size: 12px; text-transform: uppercase; letter-spacing: 3px; opacity: 0.8; }
+    .doc-meta .number { font-size: 22px; font-weight: 700; margin-top: 4px; }
+    .doc-meta .dates { font-size: 12px; margin-top: 8px; opacity: 0.9; line-height: 1.5; }
+    .accentbar { height: 6px; background: var(--accent); }
+    .section { padding: 28px 52px; border-bottom: 1px solid var(--line); }
+    .section:last-of-type { border-bottom: 0; }
+    h1.project {
+      margin: 0;
+      font-size: 24px;
+      font-weight: 600;
+      color: var(--primary-dark);
+    }
+    .prepared {
+      display: grid;
+      grid-template-columns: 1fr 1fr;
+      gap: 18px;
+      margin-top: 18px;
+      font-family: "Segoe UI", Arial, sans-serif;
+      font-size: 14px;
+    }
+    .prepared .label {
+      font-size: 11px;
+      text-transform: uppercase;
+      letter-spacing: 1.2px;
+      color: var(--muted);
+      margin-bottom: 4px;
+    }
+    h2 {
+      margin: 0 0 14px 0;
+      font-size: 13px;
+      font-family: "Segoe UI", Arial, sans-serif;
+      text-transform: uppercase;
+      letter-spacing: 2px;
+      color: var(--accent);
+    }
+    .intent { font-size: 16px; line-height: 1.6; margin: 0 0 16px 0; }
+    .scope-grid {
+      display: grid;
+      grid-template-columns: repeat(2, minmax(0, 1fr));
+      gap: 10px 24px;
+      margin: 0;
+      font-family: "Segoe UI", Arial, sans-serif;
+    }
+    .scope-cell { padding: 8px 0; border-bottom: 1px dotted var(--line); }
+    .scope-cell dt { font-size: 11px; text-transform: uppercase; letter-spacing: 1px; color: var(--muted); }
+    .scope-cell dd { margin: 3px 0 0 0; font-size: 14px; }
+    table.items { width: 100%; border-collapse: collapse; margin-bottom: 22px; font-family: "Segoe UI", Arial, sans-serif; }
+    table.items:last-child { margin-bottom: 0; }
+    .group-head {
+      text-align: left;
+      background: var(--primary);
+      color: #fff;
+      padding: 9px 12px;
+      font-size: 13px;
+      letter-spacing: 1px;
+      text-transform: uppercase;
+    }
+    table.items th {
+      text-align: left;
+      font-size: 11px;
+      text-transform: uppercase;
+      letter-spacing: 1px;
+      color: var(--muted);
+      background: var(--soft);
+      padding: 8px 12px;
+      border-bottom: 1px solid var(--line);
+    }
+    table.items td { padding: 10px 12px; border-bottom: 1px solid var(--line); font-size: 14px; vertical-align: top; }
+    .num { text-align: right; white-space: nowrap; }
+    .item-name { font-weight: 600; }
+    .item-desc { color: var(--muted); font-size: 12.5px; margin-top: 3px; line-height: 1.45; }
+    .totals { margin-left: auto; width: 320px; font-family: "Segoe UI", Arial, sans-serif; }
+    .totals-row { display: flex; justify-content: space-between; padding: 9px 12px; font-size: 14px; border-bottom: 1px solid var(--line); }
+    .totals-row.grand { border: 0; background: var(--primary-dark); color: #fff; font-size: 16px; font-weight: 700; margin-top: 4px; }
+    .note { color: var(--muted); font-size: 13px; margin-top: 14px; font-style: italic; }
+    ol.terms { margin: 0; padding-left: 20px; font-size: 13px; line-height: 1.7; color: #33445a; }
+    .acceptance { display: grid; grid-template-columns: 2fr 1fr; gap: 40px; margin-top: 10px; font-family: "Segoe UI", Arial, sans-serif; }
+    .sig-line { border-bottom: 1px solid var(--ink); height: 34px; }
+    .sig-label { font-size: 11px; text-transform: uppercase; letter-spacing: 1px; color: var(--muted); margin-top: 6px; }
+    footer.colophon {
+      padding: 20px 52px 30px 52px;
+      background: var(--soft);
+      font-family: "Segoe UI", Arial, sans-serif;
+      font-size: 12px;
+      color: var(--muted);
+      display: flex;
+      justify-content: space-between;
+      gap: 16px;
+      flex-wrap: wrap;
+    }
+    @media (max-width: 700px) {
+      .masthead, .section, footer.colophon { padding-left: 20px; padding-right: 20px; }
+      .prepared, .scope-grid, .acceptance { grid-template-columns: 1fr; }
+      .totals { width: 100%; }
+    }
+    @page { size: letter; margin: 0.55in; }
+    @media print {
+      body { background: #fff; }
+      .sheet { margin: 0; max-width: none; box-shadow: none; }
+      .section { page-break-inside: avoid; }
+      table.items tr { page-break-inside: avoid; }
+    }
+  </style>
+</head>
+<body>
+  <div class="sheet">
+    <header class="masthead">
+      <div>
+        <div class="logo-text">LIVEWIRE</div>
+        <div class="tagline">Smart Technology, Simplified</div>
+      </div>
+      <div class="doc-meta">
+        <div class="kind">Proposal</div>
+        <div class="number">P-2566</div>
+        <div class="dates">
+          Prepared July 14, 2026<br />
+          Valid until August 13, 2026
+        </div>
+      </div>
+    </header>
+    <div class="accentbar"></div>
+
+    <section class="section">
+      <h1 class="project">Nabhiraj Security Upgrade - Safe Gaming Room</h1>
+      <div class="prepared">
+        <div>
+          <div class="label">Prepared for</div>
+          <div>Nabhiraj Jain</div>
+          <div>Dallas, TX</div>
+          <div>john@example.com</div>
+          <div>5551234567</div>
+        </div>
+        <div>
+          <div class="label">Prepared by</div>
+          <div>Henry Clifford, Sales — Livewire</div>
+          <div>(000) 000-0000</div>
+          <div>hello@getlivewire.com</div>
+          <div>getlivewire.com</div>
+        </div>
+      </div>
+    </section>
+
+    
+    <section class="section">
+      <h2>Scope of Work</h2>
+      <p class="intent">Client wants to create an extra safe gaming room with security features.</p>
+      <dl class="scope-grid"><div class="scope-cell"><dt>Feature Ideas</dt><dd>secure access control for the room, camera coverage for entry points, alarm and safety monitoring, safe/private environment for gaming setup</dd></div>
+<div class="scope-cell"><dt>Security Priorities</dt><dd>camera coverage, alarm and monitoring</dd></div>
+<div class="scope-cell"><dt>System Type</dt><dd>fresh install</dd></div>
+<div class="scope-cell"><dt>Camera Scope</dt><dd>gaming room entrance only</dd></div>
+<div class="scope-cell"><dt>Alarm Preference</dt><dd>local audible alarm only</dd></div>
+<div class="scope-cell"><dt>Door Status</dt><dd>still flexible, best security-ready option can be chosen</dd></div>
+<div class="scope-cell"><dt>Entrance Hardware Preference</dt><dd>smart lock only</dd></div>
+<div class="scope-cell"><dt>Door Material</dt><dd>wood</dd></div>
+<div class="scope-cell"><dt>Power At Door</dt><dd>Yes</dd></div>
+<div class="scope-cell"><dt>Smart Lock Style</dt><dd>keypad-based</dd></div>
+<div class="scope-cell"><dt>Keypad Code Model</dt><dd>one shared code</dd></div>
+<div class="scope-cell"><dt>Auto Relock</dt><dd>Yes</dd></div>
+<div class="scope-cell"><dt>Access Users</dt><dd>just me</dd></div>
+<div class="scope-cell"><dt>Camera Preference</dt><dd>stay discreet</dd></div>
+<div class="scope-cell"><dt>Entrance Environment</dt><dd>indoors</dd></div>
+<div class="scope-cell"><dt>Door Type</dt><dd>single door</dd></div>
+<div class="scope-cell"><dt>Camera View Mode</dt><dd>live view only</dd></div>
+<div class="scope-cell"><dt>Solution Preference</dt><dd>very basic stuff</dd></div>
+<div class="scope-cell"><dt>Budget Preference</dt><dd>most minimal reliable setup</dd></div>
+<div class="scope-cell"><dt>Wifi Available</dt><dd>Yes</dd></div>
+<div class="scope-cell"><dt>Install Style</dt><dd>straightforward and visible near the door frame</dd></div></dl>
+    </section>
+
+    <section class="section">
+      <h2>Recommended Solution</h2>
+      
+      <table class="items">
+        <thead>
+          <tr>
+            <th class="group-head" colspan="4">Video Surveillance</th>
+          </tr>
+          <tr>
+            <th>Item</th><th class="num">Qty</th><th class="num">Unit Price</th><th class="num">Total</th>
+          </tr>
+        </thead>
+        <tbody>
+          <tr>
+            <td>
+              <div class="item-name">Alarm.com ADC-V516</div>
+              <div class="item-desc">Indoor 1080p Wi-Fi camera with dual-band Wi-Fi, configured for live view only at the gaming room entrance</div>
+            </td>
+            <td class="num">1</td>
+            <td class="num">$163.98</td>
+            <td class="num">$163.98</td>
+          </tr></tbody>
+      </table>
+
+      <table class="items">
+        <thead>
+          <tr>
+            <th class="group-head" colspan="4">Access Control</th>
+          </tr>
+          <tr>
+            <th>Item</th><th class="num">Qty</th><th class="num">Unit Price</th><th class="num">Total</th>
+          </tr>
+        </thead>
+        <tbody>
+          <tr>
+            <td>
+              <div class="item-name">Alfred DB2S-KEY-BL</div>
+              <div class="item-desc">Smart deadbolt with keypad access for a wood door, one shared code, auto-relock enabled</div>
+            </td>
+            <td class="num">1</td>
+            <td class="num">$448.50</td>
+            <td class="num">$448.50</td>
+          </tr></tbody>
+      </table>
+
+      <table class="items">
+        <thead>
+          <tr>
+            <th class="group-head" colspan="4">Professional Services</th>
+          </tr>
+          <tr>
+            <th>Item</th><th class="num">Qty</th><th class="num">Unit Price</th><th class="num">Total</th>
+          </tr>
+        </thead>
+        <tbody>
+          <tr>
+            <td>
+              <div class="item-name">Installation &amp; Configuration</div>
+              <div class="item-desc">Mounting, network setup, app onboarding, and live test of camera and smart lock</div>
+            </td>
+            <td class="num">2</td>
+            <td class="num">$95.00</td>
+            <td class="num">$190.00</td>
+          </tr></tbody>
+      </table>
+    </section>
+
+    <section class="section">
+      <h2>Investment Summary</h2>
+      <div class="totals">
+        <div class="totals-row"><span>Subtotal</span><span>$802.48</span></div>
+        <div class="totals-row"><span>Estimated Tax</span><span>$66.20</span></div>
+        <div class="totals-row grand"><span>Total Investment</span><span>$868.68</span></div>
+      </div>
+      <p class="note">Labor is estimated at two hours; final tax is calculated at invoicing based on the installation address.</p>
+    </section>
+
+    <section class="section">
+      <h2>Terms</h2>
+      <ol class="terms"><li>This proposal is an estimate based on the requirements discussed and is valid until the date shown above.</li>
+<li>Final pricing may be adjusted after an on-site survey confirms device placement, cabling routes, and existing infrastructure.</li>
+<li>Equipment availability and lead times are subject to change by manufacturers and distributors.</li>
+<li>Installation dates are scheduled after proposal acceptance and equipment receipt.</li>
+<li>Any change to the approved scope will be documented in a written change order before work proceeds.</li></ol>
+    </section>
+
+    <section class="section">
+      <h2>Acceptance</h2>
+      <div class="acceptance">
+        <div><div class="sig-line"></div><div class="sig-label">Client signature</div></div>
+        <div><div class="sig-line"></div><div class="sig-label">Date</div></div>
+      </div>
+      <div class="acceptance">
+        <div><div class="sig-line"></div><div class="sig-label">Printed name</div></div>
+        <div><div class="sig-line"></div><div class="sig-label">Proposal #</div></div>
+      </div>
+    </section>
+
+    <footer class="colophon">
+      <span>Thank you for the opportunity to earn your business.</span>
+      <span>Livewire · TODO: company address</span>
+    </footer>
+  </div>
+</body>
+</html>

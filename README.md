@@ -204,6 +204,30 @@ thing that could break the architecture first. Full thread map:
 ```
 agents/controller.agent.yaml              # System Designer Controller (pure router) — scaffolded
 environments/livewire-cloud.environment.yaml  # shared egress-locked env — scaffolded
+.claude/skills/d-tools-skill/             # interim D-Tools workflow skill (see below)
+dtools-data/                              # committed local memory for the skill (snapshots, notes)
+generated_quotes/                         # proposal / internal-report HTML output
 BUILD_CHECKLIST.md                        # Threads 1–6, done-criteria, file each touches
 README.md                                 # this file
 ```
+
+---
+
+## Interim workflow: the `d-tools-skill`
+
+`.claude/skills/d-tools-skill/` is the **interim / Thread-1-era D-Tools workflow** used by Claude
+Code cloud sessions on this repo: it drives the sales conversation, creates/updates Opportunities
+through the D-Tools Cloud public API, keeps schema-overflow memory in `dtools-data/` (committed to
+the session branch — cloud containers are ephemeral), and generates client-facing branded proposals
+(`generate_proposal_html.js`) plus internal quote reports (`generate_quote_html.js`) into
+`generated_quotes/`.
+
+Two things to keep straight against the locked decisions above:
+
+- **It is not the production runtime path.** Locked decision 4 keeps D-Tools credentials host-side
+  in the Managed-Agents build; this skill instead calls the API from inside the session and needs
+  `DTOOLS_API_KEY` set in the cloud environment's variables (see `.env.example`) and egress to
+  `dtcloudapi.d-tools.cloud`.
+- **Model split.** The skill is designed/iterated on a frontier model, but written checklist-style
+  so day-to-day sessions can run on `claude-sonnet-5` (or `claude-haiku-4-5` for simple
+  re-renders) — deterministic scripts own validation, pricing math, and file bookkeeping.
