@@ -5,21 +5,26 @@
   <meta name="viewport" content="width=device-width, initial-scale=1.0" />
   <title>Livewire Proposal P-2566</title>
   <style>
+    @import url('https://fonts.googleapis.com/css2?family=Fraunces:ital,opsz,wght@0,9..144,300..700;1,9..144,300..500&family=Montserrat:wght@400;500;600;700;800&display=swap');
     :root {
-      --primary: #0e2a52;
-      --primary-dark: #081c39;
-      --accent: #0f766e;
-      --ink: #12202f;
-      --muted: #5a6b7f;
-      --line: #dfe6ee;
-      --soft: #f5f8fc;
+      --primary: #12120F;
+      --primary-dark: #0B0B09;
+      --accent: #F08223;
+      --text-accent: #A85200;
+      --ink: #12120F;
+      --muted: #5B5B52;
+      --line: #D8D6CC;
+      --soft: #FAFAF9;
+      --font-display: 'Fraunces', Georgia, 'Times New Roman', serif;
+      --font-body: 'Montserrat', 'Segoe UI', Arial, sans-serif;
     }
     * { box-sizing: border-box; }
     html, body { margin: 0; padding: 0; }
     body {
-      font-family: Georgia, "Times New Roman", serif;
+      font-family: var(--font-body);
+      letter-spacing: -0.005em;
       color: var(--ink);
-      background: #eef2f7;
+      background: #F4F0E8;
       -webkit-print-color-adjust: exact;
       print-color-adjust: exact;
     }
@@ -40,13 +45,12 @@
     }
     .logo { max-height: 54px; max-width: 220px; }
     .logo-text {
-      font-family: "Segoe UI", "Helvetica Neue", Arial, sans-serif;
       font-weight: 800;
       font-size: 26px;
       letter-spacing: 4px;
     }
-    .tagline { margin-top: 6px; font-size: 13px; opacity: 0.85; font-style: italic; }
-    .doc-meta { text-align: right; font-family: "Segoe UI", Arial, sans-serif; }
+    .tagline { margin-top: 6px; font-size: 13px; opacity: 0.85; font-style: italic; font-family: var(--font-display); }
+    .doc-meta { text-align: right; }
     .doc-meta .kind { font-size: 12px; text-transform: uppercase; letter-spacing: 3px; opacity: 0.8; }
     .doc-meta .number { font-size: 22px; font-weight: 700; margin-top: 4px; }
     .doc-meta .dates { font-size: 12px; margin-top: 8px; opacity: 0.9; line-height: 1.5; }
@@ -55,8 +59,12 @@
     .section:last-of-type { border-bottom: 0; }
     h1.project {
       margin: 0;
-      font-size: 24px;
-      font-weight: 600;
+      font-family: var(--font-display);
+      font-variation-settings: "opsz" 144, "SOFT" 50;
+      font-size: 30px;
+      font-weight: 500;
+      letter-spacing: -0.02em;
+      line-height: 1.05;
       color: var(--primary-dark);
     }
     .prepared {
@@ -64,7 +72,6 @@
       grid-template-columns: 1fr 1fr;
       gap: 18px;
       margin-top: 18px;
-      font-family: "Segoe UI", Arial, sans-serif;
       font-size: 14px;
     }
     .prepared .label {
@@ -76,11 +83,11 @@
     }
     h2 {
       margin: 0 0 14px 0;
-      font-size: 13px;
-      font-family: "Segoe UI", Arial, sans-serif;
+      font-size: 11px;
+      font-weight: 600;
       text-transform: uppercase;
-      letter-spacing: 2px;
-      color: var(--accent);
+      letter-spacing: 0.24em;
+      color: var(--text-accent);
     }
     .intent { font-size: 16px; line-height: 1.6; margin: 0 0 16px 0; }
     .scope-grid {
@@ -88,12 +95,11 @@
       grid-template-columns: repeat(2, minmax(0, 1fr));
       gap: 10px 24px;
       margin: 0;
-      font-family: "Segoe UI", Arial, sans-serif;
     }
     .scope-cell { padding: 8px 0; border-bottom: 1px dotted var(--line); }
     .scope-cell dt { font-size: 11px; text-transform: uppercase; letter-spacing: 1px; color: var(--muted); }
     .scope-cell dd { margin: 3px 0 0 0; font-size: 14px; }
-    table.items { width: 100%; border-collapse: collapse; margin-bottom: 22px; font-family: "Segoe UI", Arial, sans-serif; }
+    table.items { width: 100%; border-collapse: collapse; margin-bottom: 22px; }
     table.items:last-child { margin-bottom: 0; }
     .group-head {
       text-align: left;
@@ -118,18 +124,17 @@
     .num { text-align: right; white-space: nowrap; }
     .item-name { font-weight: 600; }
     .item-desc { color: var(--muted); font-size: 12.5px; margin-top: 3px; line-height: 1.45; }
-    .totals { margin-left: auto; width: 320px; font-family: "Segoe UI", Arial, sans-serif; }
+    .totals { margin-left: auto; width: 320px; }
     .totals-row { display: flex; justify-content: space-between; padding: 9px 12px; font-size: 14px; border-bottom: 1px solid var(--line); }
     .totals-row.grand { border: 0; background: var(--primary-dark); color: #fff; font-size: 16px; font-weight: 700; margin-top: 4px; }
     .note { color: var(--muted); font-size: 13px; margin-top: 14px; font-style: italic; }
-    ol.terms { margin: 0; padding-left: 20px; font-size: 13px; line-height: 1.7; color: #33445a; }
-    .acceptance { display: grid; grid-template-columns: 2fr 1fr; gap: 40px; margin-top: 10px; font-family: "Segoe UI", Arial, sans-serif; }
+    ol.terms { margin: 0; padding-left: 20px; font-size: 13px; line-height: 1.7; color: #3A3A33; }
+    .acceptance { display: grid; grid-template-columns: 2fr 1fr; gap: 40px; margin-top: 10px; }
     .sig-line { border-bottom: 1px solid var(--ink); height: 34px; }
     .sig-label { font-size: 11px; text-transform: uppercase; letter-spacing: 1px; color: var(--muted); margin-top: 6px; }
     footer.colophon {
       padding: 20px 52px 30px 52px;
       background: var(--soft);
-      font-family: "Segoe UI", Arial, sans-serif;
       font-size: 12px;
       color: var(--muted);
       display: flex;
@@ -156,7 +161,7 @@
     <header class="masthead">
       <div>
         <div class="logo-text">LIVEWIRE</div>
-        <div class="tagline">Smart Technology, Simplified</div>
+        <div class="tagline">High-end home lighting and control</div>
       </div>
       <div class="doc-meta">
         <div class="kind">Proposal</div>
@@ -182,7 +187,7 @@
         <div>
           <div class="label">Prepared by</div>
           <div>Henry Clifford, Sales — Livewire</div>
-          <div>(000) 000-0000</div>
+          
           <div>hello@getlivewire.com</div>
           <div>getlivewire.com</div>
         </div>
@@ -295,7 +300,7 @@
 
     <section class="section">
       <h2>Terms</h2>
-      <ol class="terms"><li>This proposal is an estimate based on the requirements discussed and is valid until the date shown above.</li>
+      <ol class="terms"><li>This proposal is an estimate based on the requirements we discussed and is valid until the date shown above.</li>
 <li>Final pricing may be adjusted after an on-site survey confirms device placement, cabling routes, and existing infrastructure.</li>
 <li>Equipment availability and lead times are subject to change by manufacturers and distributors.</li>
 <li>Installation dates are scheduled after proposal acceptance and equipment receipt.</li>
@@ -316,7 +321,8 @@
 
     <footer class="colophon">
       <span>Thank you for the opportunity to earn your business.</span>
-      <span>Livewire · TODO: company address</span>
+      <span>20+ years · 4.9 stars / 421 reviews · 80% referrals · Lutron Certified</span>
+      <span>Livewire</span>
     </footer>
   </div>
 </body>
