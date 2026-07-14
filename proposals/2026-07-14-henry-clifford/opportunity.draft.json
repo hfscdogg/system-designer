@@ -1,0 +1,78 @@
+{
+  "_comment": "Intended POST body for Opportunities/AddOpportunity (path itself TODO(spike)) plus the quote line structure this proposal implies. Every field name marked _todo_spike is UNVERIFIED against the live D-Tools Cloud API until spikes/thread1-dtools/FINDINGS.md is filled in. If the spike confirms Quotes are GET-only, the 'quoteLines' block moves into the Quote Template and is NOT posted per-opportunity.",
+  "_state_contract": "Quote spawns in Draft and stays there. Promotion past Draft is the Controller's set_quote_state gate after Feedback/Critic/Reflector sign-off — never part of this payload.",
+
+  "opportunity": {
+    "name": "Clifford Residence — Whole-Home Technology Package",
+    "_todo_spike_name": "field name 'name' unverified",
+    "client": {
+      "displayName": "Henry Clifford",
+      "_todo_spike_client": "whether client is inline or a contact/account id reference is unverified"
+    },
+    "quoteTemplateId": "<STANDARD_QUOTE_TEMPLATE_ID>",
+    "_todo_spike_quoteTemplateId": "resolved by spike step 1 (QuoteTemplates/GetQuoteTemplates, path unverified)",
+    "notes": "System Designer pilot proposal. Six-room scope, mid/upper tier, whole-home foundation. All three checklist-floor items were assumed and flagged — see internal-record.md."
+  },
+
+  "quoteLines": {
+    "_todo_spike": "Per-quote line writes may not exist over the Cloud API (Quotes appear GET-only). If so, these groupings must exist as packages/assemblies inside the Quote Template and this block becomes documentation of which template chunks the proposal uses.",
+    "systems": [
+      {
+        "system": "Network & Infrastructure",
+        "chunkCandidate": "LW-NET-FOUNDATION-M",
+        "lines": [
+          { "qty": 1, "item": "Ubiquiti UniFi Dream Machine Pro", "unitPricePlaceholder": 499 },
+          { "qty": 1, "item": "Ubiquiti UniFi Pro Max 24 PoE", "unitPricePlaceholder": 899 },
+          { "qty": 4, "item": "Ubiquiti UniFi U7 Pro AP", "unitPricePlaceholder": 189 },
+          { "qty": 1, "item": "Structured wiring panel + patch", "unitPricePlaceholder": 1400 },
+          { "qty": 1, "item": "APC rack-mount UPS", "unitPricePlaceholder": 750 }
+        ],
+        "laborHoursPlaceholder": 24
+      },
+      {
+        "system": "Lighting Control",
+        "chunkCandidate": "LW-LTG-RA3-MAINSPACES",
+        "lines": [
+          { "qty": 1, "item": "Lutron RadioRA 3 processor", "unitPricePlaceholder": 600 },
+          { "qty": 12, "item": "Lutron Sunnata RA3 dimmer", "unitPricePlaceholder": 250 },
+          { "qty": 4, "item": "Lutron keypad", "unitPricePlaceholder": 550 },
+          { "qty": 2, "item": "Lutron motion sensor", "unitPricePlaceholder": 90 }
+        ],
+        "laborHoursPlaceholder": 30
+      },
+      {
+        "system": "Whole-Home & Outdoor Audio",
+        "chunkCandidate": "LW-AUD-SONOS-4ZONE",
+        "lines": [
+          { "qty": 3, "item": "Sonos Amp", "unitPricePlaceholder": 799 },
+          { "qty": 8, "item": "Sonance in-ceiling speaker", "unitPricePlaceholder": 400 },
+          { "qty": 2, "item": "Sonance Mariner outdoor speaker", "unitPricePlaceholder": 500 },
+          { "qty": 1, "item": "Sonos Port", "unitPricePlaceholder": 449 }
+        ],
+        "laborHoursPlaceholder": 26
+      },
+      {
+        "system": "Media Room",
+        "chunkCandidate": "LW-MED-85-SONOS-SURROUND",
+        "lines": [
+          { "qty": 1, "item": "Sony BRAVIA 9 85\"", "unitPricePlaceholder": 5500 },
+          { "qty": 1, "item": "Sonos Arc Ultra + Sub 4 + Era 300 pair", "unitPricePlaceholder": 2750 },
+          { "qty": 1, "item": "Apple TV 4K", "unitPricePlaceholder": 129 },
+          { "qty": 1, "item": "Control/remote integration", "unitPricePlaceholder": 500 }
+        ],
+        "laborHoursPlaceholder": 18
+      },
+      {
+        "system": "Surveillance",
+        "chunkCandidate": "LW-CAM-UNIFI-4CAM",
+        "lines": [
+          { "qty": 4, "item": "UniFi AI Pro camera", "unitPricePlaceholder": 399 },
+          { "qty": 1, "item": "UniFi UNVR", "unitPricePlaceholder": 499 },
+          { "qty": 1, "item": "UniFi G4 Doorbell Pro", "unitPricePlaceholder": 299 }
+        ],
+        "laborHoursPlaceholder": 15
+      }
+    ],
+    "laborRatePlaceholderPerHour": 135
+  }
+}
