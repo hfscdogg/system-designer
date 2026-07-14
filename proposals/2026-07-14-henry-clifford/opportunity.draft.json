@@ -3,7 +3,7 @@
   "_state_contract": "Quote spawns in Draft and stays there. Promotion past Draft is the Controller's set_quote_state gate after Feedback/Critic/Reflector sign-off — never part of this payload.",
 
   "opportunity": {
-    "name": "Clifford Residence — Whole-Home Technology Package",
+    "name": "Clifford Residence — Whole-Home Foundation (4-Space Retrofit)",
     "_todo_spike_name": "field name 'name' unverified",
     "client": {
       "displayName": "Henry Clifford",
@@ -11,7 +11,7 @@
     },
     "quoteTemplateId": "<STANDARD_QUOTE_TEMPLATE_ID>",
     "_todo_spike_quoteTemplateId": "resolved by spike step 1 (QuoteTemplates/GetQuoteTemplates, path unverified)",
-    "notes": "System Designer pilot proposal. Six-room scope, mid/upper tier, whole-home foundation. All three checklist-floor items were assumed and flagged — see internal-record.md."
+    "notes": "System Designer pilot proposal, v2 (interview-scoped). Four spaces (kitchen/family, primary suite, office, patio), $25-50k tier, finished-home retrofit, all five systems shrunk evenly per interview. See internal-record.md for the interview transcript."
   },
 
   "quoteLines": {
@@ -19,58 +19,58 @@
     "systems": [
       {
         "system": "Network & Infrastructure",
-        "chunkCandidate": "LW-NET-FOUNDATION-M",
+        "chunkCandidate": "LW-NET-FOUNDATION-S-RETRO",
         "lines": [
           { "qty": 1, "item": "Ubiquiti UniFi Dream Machine Pro", "unitPricePlaceholder": 499 },
-          { "qty": 1, "item": "Ubiquiti UniFi Pro Max 24 PoE", "unitPricePlaceholder": 899 },
-          { "qty": 4, "item": "Ubiquiti UniFi U7 Pro AP", "unitPricePlaceholder": 189 },
-          { "qty": 1, "item": "Structured wiring panel + patch", "unitPricePlaceholder": 1400 },
-          { "qty": 1, "item": "APC rack-mount UPS", "unitPricePlaceholder": 750 }
-        ],
-        "laborHoursPlaceholder": 24
-      },
-      {
-        "system": "Lighting Control",
-        "chunkCandidate": "LW-LTG-RA3-MAINSPACES",
-        "lines": [
-          { "qty": 1, "item": "Lutron RadioRA 3 processor", "unitPricePlaceholder": 600 },
-          { "qty": 12, "item": "Lutron Sunnata RA3 dimmer", "unitPricePlaceholder": 250 },
-          { "qty": 4, "item": "Lutron keypad", "unitPricePlaceholder": 550 },
-          { "qty": 2, "item": "Lutron motion sensor", "unitPricePlaceholder": 90 }
-        ],
-        "laborHoursPlaceholder": 30
-      },
-      {
-        "system": "Whole-Home & Outdoor Audio",
-        "chunkCandidate": "LW-AUD-SONOS-4ZONE",
-        "lines": [
-          { "qty": 3, "item": "Sonos Amp", "unitPricePlaceholder": 799 },
-          { "qty": 8, "item": "Sonance in-ceiling speaker", "unitPricePlaceholder": 400 },
-          { "qty": 2, "item": "Sonance Mariner outdoor speaker", "unitPricePlaceholder": 500 },
-          { "qty": 1, "item": "Sonos Port", "unitPricePlaceholder": 449 }
+          { "qty": 1, "item": "Ubiquiti UniFi Pro Max 16 PoE", "unitPricePlaceholder": 599 },
+          { "qty": 3, "item": "Ubiquiti UniFi U7 Pro AP", "unitPricePlaceholder": 189 },
+          { "qty": 1, "item": "Compact structured wiring enclosure + patch", "unitPricePlaceholder": 900 },
+          { "qty": 1, "item": "APC rack-mount UPS", "unitPricePlaceholder": 600 }
         ],
         "laborHoursPlaceholder": 26
       },
       {
-        "system": "Media Room",
-        "chunkCandidate": "LW-MED-85-SONOS-SURROUND",
+        "system": "Lighting Control",
+        "chunkCandidate": "LW-LTG-RA3-4SPACE",
         "lines": [
-          { "qty": 1, "item": "Sony BRAVIA 9 85\"", "unitPricePlaceholder": 5500 },
-          { "qty": 1, "item": "Sonos Arc Ultra + Sub 4 + Era 300 pair", "unitPricePlaceholder": 2750 },
-          { "qty": 1, "item": "Apple TV 4K", "unitPricePlaceholder": 129 },
-          { "qty": 1, "item": "Control/remote integration", "unitPricePlaceholder": 500 }
+          { "qty": 1, "item": "Lutron RadioRA 3 processor", "unitPricePlaceholder": 600 },
+          { "qty": 8, "item": "Lutron Sunnata RA3 dimmer", "unitPricePlaceholder": 250 },
+          { "qty": 3, "item": "Lutron keypad", "unitPricePlaceholder": 550 },
+          { "qty": 1, "item": "Lutron motion sensor", "unitPricePlaceholder": 90 }
         ],
-        "laborHoursPlaceholder": 18
+        "laborHoursPlaceholder": 20
+      },
+      {
+        "system": "Whole-Home & Outdoor Audio",
+        "chunkCandidate": "LW-AUD-SONOS-WIRELESS-RETRO",
+        "lines": [
+          { "qty": 1, "item": "Sonos Amp (patio zone)", "unitPricePlaceholder": 799 },
+          { "qty": 2, "item": "Sonance Mariner outdoor speaker", "unitPricePlaceholder": 500 },
+          { "qty": 2, "item": "Sonos Era 300 (primary suite)", "unitPricePlaceholder": 449 },
+          { "qty": 2, "item": "Sonos Era 100 (office)", "unitPricePlaceholder": 249 }
+        ],
+        "laborHoursPlaceholder": 12
+      },
+      {
+        "system": "Family Room Media",
+        "chunkCandidate": "LW-MED-75-ARC-LIVING",
+        "lines": [
+          { "qty": 1, "item": "Sony BRAVIA 7 75\"", "unitPricePlaceholder": 2800 },
+          { "qty": 1, "item": "Sonos Arc Ultra + Sub 4", "unitPricePlaceholder": 1798 },
+          { "qty": 1, "item": "Apple TV 4K", "unitPricePlaceholder": 129 },
+          { "qty": 1, "item": "Mount + concealed wiring kit", "unitPricePlaceholder": 400 }
+        ],
+        "laborHoursPlaceholder": 12
       },
       {
         "system": "Surveillance",
-        "chunkCandidate": "LW-CAM-UNIFI-4CAM",
+        "chunkCandidate": "LW-CAM-UNIFI-3CAM-RETRO",
         "lines": [
-          { "qty": 4, "item": "UniFi AI Pro camera", "unitPricePlaceholder": 399 },
+          { "qty": 3, "item": "UniFi AI Pro camera", "unitPricePlaceholder": 399 },
           { "qty": 1, "item": "UniFi UNVR", "unitPricePlaceholder": 499 },
           { "qty": 1, "item": "UniFi G4 Doorbell Pro", "unitPricePlaceholder": 299 }
         ],
-        "laborHoursPlaceholder": 15
+        "laborHoursPlaceholder": 16
       }
     ],
     "laborRatePlaceholderPerHour": 135
