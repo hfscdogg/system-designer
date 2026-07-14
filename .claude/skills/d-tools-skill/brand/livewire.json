@@ -1,0 +1,31 @@
+{
+  "_comment": "Livewire brand config for client-facing proposals. Placeholder values — replace logoDataUri/colors/contact with real brand assets when available. Keys are read by scripts/generate_proposal_html.js.",
+  "companyName": "Livewire",
+  "tagline": "Smart Technology, Simplified",
+  "logoDataUri": null,
+  "logoText": "LIVEWIRE",
+  "colors": {
+    "primary": "#0e2a52",
+    "primaryDark": "#081c39",
+    "accent": "#0f766e",
+    "ink": "#12202f",
+    "muted": "#5a6b7f",
+    "line": "#dfe6ee",
+    "soft": "#f5f8fc"
+  },
+  "contact": {
+    "phone": "(000) 000-0000",
+    "email": "hello@getlivewire.com",
+    "website": "getlivewire.com",
+    "address": "TODO: company address"
+  },
+  "validDays": 30,
+  "terms": [
+    "This proposal is an estimate based on the requirements discussed and is valid until the date shown above.",
+    "Final pricing may be adjusted after an on-site survey confirms device placement, cabling routes, and existing infrastructure.",
+    "Equipment availability and lead times are subject to change by manufacturers and distributors.",
+    "Installation dates are scheduled after proposal acceptance and equipment receipt.",
+    "Any change to the approved scope will be documented in a written change order before work proceeds."
+  ],
+  "footerNote": "Thank you for the opportunity to earn your business."
+}
