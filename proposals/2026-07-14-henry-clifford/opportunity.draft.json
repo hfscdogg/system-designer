@@ -3,7 +3,7 @@
   "_state_contract": "Quote spawns in Draft and stays there. Promotion past Draft is the Controller's set_quote_state gate after Feedback/Critic/Reflector sign-off — never part of this payload.",
 
   "opportunity": {
-    "name": "Clifford Residence — Whole-Home Foundation (4-Space Retrofit)",
+    "name": "Clifford Residence — Whole-Home Foundation, Depth Package (4-Space Retrofit)",
     "_todo_spike_name": "field name 'name' unverified",
     "client": {
       "displayName": "Henry Clifford",
@@ -11,7 +11,7 @@
     },
     "quoteTemplateId": "<STANDARD_QUOTE_TEMPLATE_ID>",
     "_todo_spike_quoteTemplateId": "resolved by spike step 1 (QuoteTemplates/GetQuoteTemplates, path unverified)",
-    "notes": "System Designer pilot proposal, v2 (interview-scoped). Four spaces (kitchen/family, primary suite, office, patio), $25-50k tier, finished-home retrofit, all five systems shrunk evenly per interview. See internal-record.md for the interview transcript."
+    "notes": "System Designer pilot proposal, v3 (interview-scoped). Four spaces, $50-100k tier, finished-home retrofit. Depth per interview: wired architectural audio, theater-grade family room, motorized shades; unified control declined. Shrink evenly if over. See internal-record.md for the interview transcript."
   },
 
   "quoteLines": {
@@ -19,15 +19,15 @@
     "systems": [
       {
         "system": "Network & Infrastructure",
-        "chunkCandidate": "LW-NET-FOUNDATION-S-RETRO",
+        "chunkCandidate": "LW-NET-FOUNDATION-M-RETRO",
         "lines": [
           { "qty": 1, "item": "Ubiquiti UniFi Dream Machine Pro", "unitPricePlaceholder": 499 },
-          { "qty": 1, "item": "Ubiquiti UniFi Pro Max 16 PoE", "unitPricePlaceholder": 599 },
+          { "qty": 1, "item": "Ubiquiti UniFi Pro Max 24 PoE", "unitPricePlaceholder": 899 },
           { "qty": 3, "item": "Ubiquiti UniFi U7 Pro AP", "unitPricePlaceholder": 189 },
-          { "qty": 1, "item": "Compact structured wiring enclosure + patch", "unitPricePlaceholder": 900 },
-          { "qty": 1, "item": "APC rack-mount UPS", "unitPricePlaceholder": 600 }
+          { "qty": 1, "item": "Structured wiring enclosure + patch", "unitPricePlaceholder": 1200 },
+          { "qty": 1, "item": "APC rack-mount UPS", "unitPricePlaceholder": 750 }
         ],
-        "laborHoursPlaceholder": 26
+        "laborHoursPlaceholder": 30
       },
       {
         "system": "Lighting Control",
@@ -41,26 +41,38 @@
         "laborHoursPlaceholder": 20
       },
       {
-        "system": "Whole-Home & Outdoor Audio",
-        "chunkCandidate": "LW-AUD-SONOS-WIRELESS-RETRO",
+        "system": "Motorized Shades",
+        "chunkCandidate": "LW-SHD-TRIATHLON-6",
         "lines": [
-          { "qty": 1, "item": "Sonos Amp (patio zone)", "unitPricePlaceholder": 799 },
-          { "qty": 2, "item": "Sonance Mariner outdoor speaker", "unitPricePlaceholder": 500 },
-          { "qty": 2, "item": "Sonos Era 300 (primary suite)", "unitPricePlaceholder": 449 },
-          { "qty": 2, "item": "Sonos Era 100 (office)", "unitPricePlaceholder": 249 }
+          { "qty": 6, "item": "Lutron Triathlon RA3 battery roller shade", "unitPricePlaceholder": 950 },
+          { "qty": 1, "item": "Fascia + bracket hardware set", "unitPricePlaceholder": 600 }
         ],
-        "laborHoursPlaceholder": 12
+        "laborHoursPlaceholder": 10
       },
       {
-        "system": "Family Room Media",
-        "chunkCandidate": "LW-MED-75-ARC-LIVING",
+        "system": "Whole-Home Wired Audio",
+        "chunkCandidate": "LW-AUD-WIRED-4ZONE-RETRO",
         "lines": [
-          { "qty": 1, "item": "Sony BRAVIA 7 75\"", "unitPricePlaceholder": 2800 },
-          { "qty": 1, "item": "Sonos Arc Ultra + Sub 4", "unitPricePlaceholder": 1798 },
-          { "qty": 1, "item": "Apple TV 4K", "unitPricePlaceholder": 129 },
-          { "qty": 1, "item": "Mount + concealed wiring kit", "unitPricePlaceholder": 400 }
+          { "qty": 4, "item": "Sonos Amp", "unitPricePlaceholder": 799 },
+          { "qty": 6, "item": "Sonance VP66R in-ceiling speaker (retrofit)", "unitPricePlaceholder": 350 },
+          { "qty": 2, "item": "Sonance Mariner outdoor speaker", "unitPricePlaceholder": 500 }
         ],
-        "laborHoursPlaceholder": 12
+        "laborHoursPlaceholder": 26
+      },
+      {
+        "system": "Theater-Grade Family Room",
+        "chunkCandidate": "LW-MED-85-DISCRETE-RETRO",
+        "lines": [
+          { "qty": 1, "item": "Sony BRAVIA 9 85\"", "unitPricePlaceholder": 5500 },
+          { "qty": 1, "item": "Marantz Cinema 50 AVR", "unitPricePlaceholder": 2500 },
+          { "qty": 3, "item": "Sonance in-wall LCR (retrofit)", "unitPricePlaceholder": 500 },
+          { "qty": 2, "item": "Sonance in-ceiling surround", "unitPricePlaceholder": 350 },
+          { "qty": 1, "item": "SVS SB-2000 Pro subwoofer", "unitPricePlaceholder": 900 },
+          { "qty": 1, "item": "Apple TV 4K", "unitPricePlaceholder": 129 },
+          { "qty": 1, "item": "Universal remote + integration", "unitPricePlaceholder": 600 },
+          { "qty": 1, "item": "Mount + concealed wiring kit", "unitPricePlaceholder": 500 }
+        ],
+        "laborHoursPlaceholder": 24
       },
       {
         "system": "Surveillance",
