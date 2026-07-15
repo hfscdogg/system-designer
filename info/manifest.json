@@ -1,6 +1,6 @@
 {
   "manifestType": "dtools_opportunity_manifest",
-  "updatedAt": "2026-07-15T16:48:24.638Z",
+  "updatedAt": "2026-07-15T16:56:14.268Z",
   "opportunitiesById": {
     "0c5c8e1b-92c9-4b22-9d4d-34c54f13b1c1": {
       "id": "0c5c8e1b-92c9-4b22-9d4d-34c54f13b1c1",
@@ -40,7 +40,7 @@
       "file": "P-2584.json",
       "savedAt": "2026-07-15T16:40:21.727Z",
       "extraInfoFile": "714af2c1-85a6-4a19-ae5c-8e178a39a8e7_info.json",
-      "extraInfoSavedAt": "2026-07-15T16:48:24.638Z"
+      "extraInfoSavedAt": "2026-07-15T16:56:14.268Z"
     }
   }
 }

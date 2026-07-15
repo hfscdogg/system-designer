@@ -1,0 +1,187 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>P-2584 Draft Proposal</title>
+  <style>
+    :root {
+      --ink: #12202f;
+      --muted: #5a6b7f;
+      --line: #dce3ea;
+      --paper: #ffffff;
+      --soft: #f4f7fb;
+      --brand: #1155cc;
+      --accent: #0f766e;
+    }
+    * { box-sizing: border-box; }
+    body {
+      margin: 0;
+      font-family: "Segoe UI", "Helvetica Neue", sans-serif;
+      color: var(--ink);
+      background: linear-gradient(180deg, #f2f6fb 0%, #e9eff8 100%);
+      padding: 28px;
+    }
+    .page {
+      max-width: 980px;
+      margin: 0 auto;
+      background: var(--paper);
+      border: 1px solid var(--line);
+      border-radius: 14px;
+      overflow: hidden;
+      box-shadow: 0 18px 50px rgba(17, 35, 63, 0.08);
+    }
+    .topbar {
+      padding: 28px;
+      background: linear-gradient(135deg, #0e2a52 0%, #144d8b 55%, #0f766e 100%);
+      color: #fff;
+    }
+    .title { margin: 0; font-size: 28px; }
+    .subtitle { margin-top: 8px; opacity: 0.92; font-size: 14px; }
+    .section { padding: 22px 28px; border-top: 1px solid var(--line); }
+    h2 { margin: 0 0 12px 0; font-size: 18px; }
+    .meta { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 12px; }
+    .box { border: 1px solid var(--line); border-radius: 10px; padding: 12px; background: #fff; }
+    .label {
+      display: block; font-size: 11px; text-transform: uppercase;
+      letter-spacing: 0.5px; color: var(--muted); margin-bottom: 6px;
+    }
+    table { width: 100%; border-collapse: collapse; font-size: 13.5px; }
+    th, td { text-align: left; padding: 8px 10px; border-bottom: 1px solid var(--line); vertical-align: top; }
+    th { background: var(--soft); font-size: 12px; text-transform: uppercase; letter-spacing: 0.4px; color: var(--muted); }
+    td.num, th.num { text-align: right; white-space: nowrap; }
+    tr.system td {
+      background: #eef3fa; font-weight: 600; color: #0e2a52;
+      border-top: 2px solid var(--line); font-size: 13px;
+    }
+    .est { color: var(--accent); font-size: 11px; font-weight: 600; }
+    .totals { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 12px; }
+    .totals .box strong { font-size: 20px; display: block; margin-top: 2px; }
+    .note { background: var(--soft); border: 1px solid var(--line); border-radius: 10px; padding: 14px; font-size: 13px; color: var(--muted); }
+    ul { margin: 8px 0 0 18px; padding: 0; }
+    li { margin: 4px 0; }
+    .sig { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 24px; margin-top: 10px; }
+    .sigline { border-top: 1px solid var(--ink); padding-top: 6px; font-size: 12px; color: var(--muted); margin-top: 44px; }
+    .draftpill {
+      display: inline-block; margin-top: 10px; padding: 4px 12px; border-radius: 999px;
+      background: rgba(255,255,255,0.16); border: 1px solid rgba(255,255,255,0.4); font-size: 12px; letter-spacing: 0.5px;
+    }
+    @media print { body { background: #fff; padding: 0; } .page { box-shadow: none; border: none; } }
+  </style>
+</head>
+<body>
+  <div class="page">
+    <div class="topbar">
+      <h1 class="title">Draft Proposal</h1>
+      <div class="subtitle">P-2584 | Clifford Residence: Family Room, Security &amp; Lighting Upgrade</div>
+      <div class="subtitle">12619 Grendon Drive, Midlothian, VA 23113 · Prepared July 15, 2026 · Est. close September 13, 2026</div>
+      <div class="draftpill">DRAFT — final quote to be built in D-Tools Cloud</div>
+    </div>
+
+    <div class="section">
+      <h2>Approved Scope</h2>
+      <div class="meta">
+        <div class="box"><span class="label">Client</span>Henry Clifford · henry@getlivewire.com</div>
+        <div class="box"><span class="label">Budget</span>$50,000 · complete within 60 days</div>
+        <div class="box"><span class="label">Family Room</span>New 55&Prime; TV over gas fireplace (drywall, crawlspace wire fish), discrete in-wall surround with AV receiver</div>
+        <div class="box"><span class="label">Security</span>New system, 3 door contacts, motion + glass-break coverage, professional monitoring</div>
+        <div class="box"><span class="label">Surveillance</span>Perimeter video: front door, driveway, backyard, both sides — local recording</div>
+        <div class="box"><span class="label">Lighting</span>Kitchen: 15 switches to smart dimmers + new architectural fixtures · Landscape: full perimeter, 15 fixtures</div>
+        <div class="box"><span class="label">Infrastructure</span>Fiber internet · first-floor AV closet head-end</div>
+        <div class="box"><span class="label">Basis</span>Architecture follows 5 similar won Livewire projects ($29k–$54k)</div>
+      </div>
+    </div>
+
+    <div class="section">
+      <h2>Recommended Package</h2>
+      <table>
+        <thead>
+          <tr>
+            <th>Item</th>
+            <th>Description</th>
+            <th class="num">Qty</th>
+            <th class="num">Unit Price</th>
+            <th class="num">Line Total</th>
+          </tr>
+        </thead>
+        <tbody>
+          <tr class="system"><td colspan="5">Family Room Theater</td></tr>
+          <tr><td>Sony K55XR70</td><td>BRAVIA 7 55&Prime; Mini-LED display, over-fireplace mount</td><td class="num">1</td><td class="num">$1,399.00</td><td class="num">$1,399.00</td></tr>
+          <tr><td>Denon AVR-X2800H</td><td>7.2-channel AV receiver</td><td class="num">1</td><td class="num">$817.98</td><td class="num">$817.98</td></tr>
+          <tr><td>Episode ES-CORE-36-IW</td><td>In-wall LCR front stage at the display</td><td class="num">1</td><td class="num">$455.78</td><td class="num">$455.78</td></tr>
+          <tr><td>Sonance VP80R</td><td>In-wall surround pair, paintable</td><td class="num">1</td><td class="num">$480.00</td><td class="num">$480.00</td></tr>
+          <tr><td>Klipsch RW-5802 II</td><td>In-wall subwoofer <span class="est">sub amplifier specified at design review</span></td><td class="num">1</td><td class="num">$839.99</td><td class="num">$839.99</td></tr>
+
+          <tr class="system"><td colspan="5">Security &amp; Monitoring</td></tr>
+          <tr><td>Qolsys IQPH051</td><td>Security panel <span class="est">final panel SKU confirmed at design review</span></td><td class="num">1</td><td class="num">$714.96</td><td class="num">$714.96</td></tr>
+          <tr><td>DSC PG9303</td><td>PowerG door/window contact</td><td class="num">3</td><td class="num">$88.75</td><td class="num">$266.25</td></tr>
+          <tr><td>DSC PG9922</td><td>PowerG glass-break detector</td><td class="num">2</td><td class="num">$178.50</td><td class="num">$357.00</td></tr>
+          <tr><td>PowerG motion detector</td><td><span class="est">ESTIMATE — model per final panel selection</span></td><td class="num">2</td><td class="num">$110.00</td><td class="num">$220.00</td></tr>
+          <tr><td>Alarm.com ADC-VDB750</td><td>Video doorbell, integrates with security app</td><td class="num">1</td><td class="num">$205.42</td><td class="num">$205.42</td></tr>
+          <tr><td>Livewire Security Monitoring</td><td>Professional monitoring, 6-month term (first year billed as two terms)</td><td class="num">2</td><td class="num">$299.94</td><td class="num">$599.88</td></tr>
+
+          <tr class="system"><td colspan="5">Perimeter Video Surveillance</td></tr>
+          <tr><td>Ubiquiti UVC-G6-Pro</td><td>4K cameras: bullets at driveway/backyard, turrets at front door and sides</td><td class="num">5</td><td class="num">$479.00</td><td class="num">$2,395.00</td></tr>
+          <tr><td>Ubiquiti UNVR-G2</td><td>Network video recorder, local 24/7 recording — no subscription</td><td class="num">1</td><td class="num">$699.00</td><td class="num">$699.00</td></tr>
+          <tr><td>NVR storage</td><td><span class="est">ESTIMATE — surveillance-rated HDD sized at design review</span></td><td class="num">1</td><td class="num">$200.00</td><td class="num">$200.00</td></tr>
+
+          <tr class="system"><td colspan="5">Network Head-End (AV closet)</td></tr>
+          <tr><td>Araknis AN-110-RT-2L1W</td><td>Gigabit router on fiber service</td><td class="num">1</td><td class="num">$370.99</td><td class="num">$370.99</td></tr>
+          <tr><td>Araknis AN-220-SW-R-16-POE</td><td>16-port PoE switch — powers cameras &amp; access points</td><td class="num">1</td><td class="num">$849.99</td><td class="num">$849.99</td></tr>
+          <tr><td>Access Networks A350 Unleashed</td><td>WiFi access points, whole-home coverage</td><td class="num">2</td><td class="num">$787.49</td><td class="num">$1,574.98</td></tr>
+          <tr><td>WattBox WB-250-IPW-2</td><td>IP-controlled power — remote reboot <span class="est">ESTIMATE — catalog price at quote build</span></td><td class="num">1</td><td class="num">$250.00</td><td class="num">$250.00</td></tr>
+          <tr><td>Rack, patching &amp; Cat6 materials</td><td>Wall rack, Wirepath patch cables, closet dress-out <span class="est">ALLOWANCE</span></td><td class="num">1</td><td class="num">$400.00</td><td class="num">$400.00</td></tr>
+
+          <tr class="system"><td colspan="5">Kitchen Lighting</td></tr>
+          <tr><td>Lutron DVRF-6L-WH</td><td>Diva Smart dimmers across 15 switch locations</td><td class="num">15</td><td class="num">$92.40</td><td class="num">$1,386.00</td></tr>
+          <tr><td>Lutron CONNECT-BDG2-1</td><td>Pro smart bridge — scenes, schedules, app control</td><td class="num">1</td><td class="num">$400.00</td><td class="num">$400.00</td></tr>
+          <tr><td>DMF ART2A-10T3WFLT</td><td>Architectural recessed downlights <span class="est">count confirmed at site walk</span></td><td class="num">8</td><td class="num">$320.00</td><td class="num">$2,560.00</td></tr>
+
+          <tr class="system"><td colspan="5">Perimeter Landscape Lighting</td></tr>
+          <tr><td>Coastal Source EVO1216</td><td>Up/accent lights on facade and perimeter plantings</td><td class="num">9</td><td class="num">$385.00</td><td class="num">$3,465.00</td></tr>
+          <tr><td>Coastal Source FP18DTVB</td><td>Path lights, walks and beds</td><td class="num">6</td><td class="num">$475.00</td><td class="num">$2,850.00</td></tr>
+          <tr><td>Coastal Source transformer</td><td>Multi-tap low-voltage transformer</td><td class="num">1</td><td class="num">$435.00</td><td class="num">$435.00</td></tr>
+          <tr><td>Landscape wire &amp; connectors</td><td>Direct-bury cable, Coastal connector system <span class="est">ALLOWANCE</span></td><td class="num">1</td><td class="num">$350.00</td><td class="num">$350.00</td></tr>
+        </tbody>
+      </table>
+    </div>
+
+    <div class="section">
+      <h2>Summary</h2>
+      <div class="totals">
+        <div class="box"><span class="label">Equipment &amp; First-Year Monitoring</span><strong>$24,542.22</strong></div>
+        <div class="box"><span class="label">Labor &amp; Programming (estimate)</span><strong>$14,500.00</strong></div>
+        <div class="box"><span class="label">Draft Total</span><strong>$39,042.22</strong></div>
+      </div>
+      <p class="note" style="margin-top:12px">
+        Labor covers crawlspace wire fishing for the fireplace display, in-wall speaker installation,
+        15 dimmer swaps and fixture installs, exterior camera runs, security commissioning, landscape
+        trenching and aiming, rack build, and system programming — finalized at Livewire standard rates
+        when this draft is built into the D-Tools quote. Draft total sits inside the $50,000 budget
+        with contingency for site conditions.
+      </p>
+    </div>
+
+    <div class="section">
+      <h2>Open Items for Design Review</h2>
+      <ul>
+        <li>Final security panel SKU and matching PowerG motion detector models</li>
+        <li>Subwoofer amplifier for the in-wall Klipsch</li>
+        <li>NVR storage sizing (retention target) and WattBox catalog price</li>
+        <li>Kitchen downlight count at site walk; landscape up-light/path mix at nighttime demo</li>
+        <li>Camera count — five specified (one per side); trim to four if one side is deprioritized</li>
+      </ul>
+    </div>
+
+    <div class="section">
+      <h2>Acceptance</h2>
+      <p class="note">Draft for review. On acceptance, Livewire builds the formal quote in D-Tools Cloud
+      (P-2584) with final catalog pricing, labor, and taxes; that document supersedes this draft.</p>
+      <div class="sig">
+        <div><div class="sigline">Client — Henry Clifford · Date</div></div>
+        <div><div class="sigline">Livewire · Date</div></div>
+      </div>
+    </div>
+  </div>
+</body>
+</html>
