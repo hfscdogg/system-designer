@@ -1,18 +1,24 @@
 {
   "fileType": "dtools_opportunity_extra_info",
-  "savedAt": "2026-07-15T16:40:49.393Z",
+  "savedAt": "2026-07-15T16:42:52.646Z",
   "opportunityId": "714af2c1-85a6-4a19-ae5c-8e178a39a8e7",
   "data": {
-    "scopeNotes": {
-      "familyRoom": "Upgrade around a 55-inch TV with surround sound",
-      "security": "Add security system",
-      "surveillance": "Perimeter video surveillance",
-      "lighting": "Kitchen lighting plus exterior perimeter lighting",
-      "budget": 50000,
-      "timeline": "Complete within 60 days (estimated close 2026-09-13)",
-      "siteAddress": "12619 Grendon Drive, Midlothian, VA 23113"
+    "familyRoomDetails": {
+      "tv": "New 55-inch TV, included in quote",
+      "audio": "Discrete in-wall speakers with AV receiver (not soundbar)",
+      "tvWallType": "UNANSWERED - fireplace vs drywall, re-ask"
+    },
+    "securityDetails": {
+      "existingSystem": "None - starting from scratch",
+      "monitoring": "Yes, professional monitoring",
+      "cameraViews": [
+        "front door",
+        "driveway",
+        "backyard",
+        "side yards"
+      ]
     },
     "capturedAt": "2026-07-15",
-    "source": "d-tools-skill Phase 1 intake conversation"
+    "source": "d-tools-skill Phase 2 enrichment"
   }
 }
