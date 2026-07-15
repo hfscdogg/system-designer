@@ -1,0 +1,9 @@
+{
+  "fileType": "dtools_opportunity_extra_info",
+  "savedAt": "2026-07-12T11:04:38.584Z",
+  "opportunityId": "0c5c8e1b-92c9-4b22-9d4d-34c54f13b1c1",
+  "data": {
+    "notes": "Extra opportunity information lives here when it is not part of the D-Tools schema.",
+    "source": "user rule"
+  }
+}

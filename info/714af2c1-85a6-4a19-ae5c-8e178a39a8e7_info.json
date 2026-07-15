@@ -1,0 +1,19 @@
+{
+  "fileType": "dtools_opportunity_extra_info",
+  "savedAt": "2026-07-15T16:56:14.268Z",
+  "opportunityId": "714af2c1-85a6-4a19-ae5c-8e178a39a8e7",
+  "data": {
+    "approval": {
+      "approvedBy": "Henry Clifford",
+      "approvedAt": "2026-07-15",
+      "phase6": "explicit approval in conversation"
+    },
+    "draftQuote": {
+      "file": "generated_quotes/P-2584_draft.html",
+      "equipmentTotal": 24542.22,
+      "laborEstimate": 14500,
+      "draftTotal": 39042.22,
+      "note": "External HTML draft (no quote write via public API); to be mirrored into D-Tools quote manually"
+    }
+  }
+}
