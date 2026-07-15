@@ -1,24 +1,18 @@
 {
   "fileType": "dtools_opportunity_extra_info",
-  "savedAt": "2026-07-15T16:42:52.646Z",
+  "savedAt": "2026-07-15T16:46:44.324Z",
   "opportunityId": "714af2c1-85a6-4a19-ae5c-8e178a39a8e7",
   "data": {
-    "familyRoomDetails": {
-      "tv": "New 55-inch TV, included in quote",
-      "audio": "Discrete in-wall speakers with AV receiver (not soundbar)",
-      "tvWallType": "UNANSWERED - fireplace vs drywall, re-ask"
+    "lightingDetails": {
+      "kitchen": "15 switches in play; smart dimmers AND new fixtures",
+      "perimeter": "Landscape/architectural lighting (not security floodlights)"
     },
-    "securityDetails": {
-      "existingSystem": "None - starting from scratch",
-      "monitoring": "Yes, professional monitoring",
-      "cameraViews": [
-        "front door",
-        "driveway",
-        "backyard",
-        "side yards"
-      ]
+    "infrastructureDetails": {
+      "internet": "Fiber",
+      "headEnd": "First-floor AV closet candidate",
+      "tvMount": "Over gas fireplace on drywall; wire fish via crawlspace below"
     },
     "capturedAt": "2026-07-15",
-    "source": "d-tools-skill Phase 2 enrichment"
+    "source": "d-tools-skill Phase 2/4 enrichment"
   }
 }
