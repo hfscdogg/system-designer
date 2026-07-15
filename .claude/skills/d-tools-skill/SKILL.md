@@ -124,6 +124,19 @@ Continue this process until you are confident that the opportunity is complete.
 
 ### Phase 5 - Recommend Products
 
+Before recommending anything, learn from history:
+
+```bash
+node skills/d-tools-skill/scripts/learn_from_history.js \
+  --project-type "<type>" --building-type "<type>" --budget <number> [--market-sector "<sector>"]
+```
+
+It is read-only and returns line items from the accepted quotes of similar
+Won opportunities, plus the products that recur across them. Ground both
+product selection and pricing in what Livewire actually sold on similar
+projects. Treat historical bundles as strong suggestions, never automatic
+picks — requirements gathered in Phases 2-4 always win.
+
 Once sufficient information has been collected:
 1. Analyze the customer's requirements.
 2. Recommend appropriate products from products that are available in D-Tools only.
@@ -211,6 +224,7 @@ A quotation should only be produced when:
 - Product extra-info utilities: `scripts/product_info_store.js`
 - Sync script: `scripts/sync_opportunity_info.js`
 - Extra info script: `scripts/save_opportunity_extra_info.js`
+- History learning (pre-recommendation): `scripts/learn_from_history.js`
 - Quote HTML generator: `scripts/generate_quote_html.js`
 - Quote workflow: `references/quote_html_workflow.md`
 - Opportunity registry: `info/manifest.json`

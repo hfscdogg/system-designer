@@ -121,6 +121,14 @@ Continue this process until you are confident that the opportunity is complete.
 
 ### Phase 5 - Recommend Products
 
+Before recommending, learn from history with
+`scripts/learn_from_history.js` (read-only): it scans Won opportunities,
+pulls their accepted quotes' line items, ranks by similarity to the current
+intake (project type, building type, market sector, budget band), and
+reports the products that recur across similar projects. Ground
+recommendations and pricing in that real history; historical bundles are
+strong suggestions, never automatic picks.
+
 Once sufficient information has been collected:
 1. Analyze the customer's requirements.
 2. Recommend appropriate products from products that are available in D-Tools only.
