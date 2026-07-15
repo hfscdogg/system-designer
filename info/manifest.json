@@ -1,6 +1,6 @@
 {
   "manifestType": "dtools_opportunity_manifest",
-  "updatedAt": "2026-07-12T18:08:07.860Z",
+  "updatedAt": "2026-07-15T16:40:49.393Z",
   "opportunitiesById": {
     "0c5c8e1b-92c9-4b22-9d4d-34c54f13b1c1": {
       "id": "0c5c8e1b-92c9-4b22-9d4d-34c54f13b1c1",
@@ -27,6 +27,20 @@
       "systemState": "Open",
       "file": "P-2566.json",
       "savedAt": "2026-07-12T18:08:07.860Z"
+    },
+    "714af2c1-85a6-4a19-ae5c-8e178a39a8e7": {
+      "id": "714af2c1-85a6-4a19-ae5c-8e178a39a8e7",
+      "number": "P-2584",
+      "name": "Clifford Residence: Family Room, Security & Lighting Upgrade",
+      "clientId": "366adda4-64bf-47df-9a1a-682087ce75ac",
+      "clientName": "Henry Clifford",
+      "stage": "New",
+      "stageGroup": "New",
+      "systemState": "Open",
+      "file": "P-2584.json",
+      "savedAt": "2026-07-15T16:40:21.727Z",
+      "extraInfoFile": "714af2c1-85a6-4a19-ae5c-8e178a39a8e7_info.json",
+      "extraInfoSavedAt": "2026-07-15T16:40:49.393Z"
     }
   }
 }
