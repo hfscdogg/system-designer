@@ -34,10 +34,66 @@ export function googleAppAuthRequest(): HttpRequest {
  * same service account with domain-wide delegation, scoped to creating Chat
  * messages only, acting as an existing Workspace user (no extra seat).
  */
-export function googleFileRequest(mode: "app" | "delegated", delegatedUser?: string): HttpRequest {
+export function googleFileRequest(mode: "app" | "delegated", delegatedUser?: string, serviceAccountEmail?: string): HttpRequest {
   if (mode === "app") return googleAppAuthRequest();
   if (!delegatedUser) throw new Error("delegated upload mode needs GOOGLE_CHAT_DELEGATED_USER");
-  return authRequest(new GoogleAuth({ scopes: [USER_CREATE_SCOPE], clientOptions: { subject: delegatedUser } }));
+  if (!serviceAccountEmail) throw new Error("delegated upload mode needs the worker's service account email");
+  return delegatedRequest({ serviceAccountEmail, subject: delegatedUser, scope: USER_CREATE_SCOPE });
+}
+
+type Fetch = typeof fetch;
+
+/**
+ * Domain-wide delegation without a key file. Cloud Run has no private key, so
+ * the service account signs the delegation JWT through the IAM Credentials API
+ * (it needs roles/iam.serviceAccountTokenCreator on itself), then exchanges it
+ * for a token acting as `subject`.
+ */
+export function delegatedRequest(opts: {
+  serviceAccountEmail: string;
+  subject: string;
+  scope: string;
+  auth?: { getAccessToken(): Promise<string | null | undefined> };
+  fetch?: Fetch;
+  now?: () => number;
+}): HttpRequest {
+  const doFetch = opts.fetch ?? fetch;
+  const now = opts.now ?? (() => Date.now());
+  const auth = opts.auth ?? new GoogleAuth({ scopes: ["https://www.googleapis.com/auth/cloud-platform"] });
+  let cached: { token: string; expiresAt: number } | null = null;
+
+  async function token(): Promise<string> {
+    if (cached && cached.expiresAt - 60_000 > now()) return cached.token;
+    const iat = Math.floor(now() / 1000);
+    const claims = { iss: opts.serviceAccountEmail, sub: opts.subject, scope: opts.scope, aud: "https://oauth2.googleapis.com/token", iat, exp: iat + 3600 };
+    const platformToken = await auth.getAccessToken();
+    const signed = await doFetch(
+      `https://iamcredentials.googleapis.com/v1/projects/-/serviceAccounts/${encodeURIComponent(opts.serviceAccountEmail)}:signJwt`,
+      { method: "POST", headers: { Authorization: `Bearer ${platformToken}`, "Content-Type": "application/json" }, body: JSON.stringify({ payload: JSON.stringify(claims) }) },
+    );
+    if (!signed.ok) throw new Error(`signJwt failed: ${signed.status}`);
+    const { signedJwt } = (await signed.json()) as { signedJwt: string };
+    const exchanged = await doFetch("https://oauth2.googleapis.com/token", {
+      method: "POST",
+      headers: { "Content-Type": "application/x-www-form-urlencoded" },
+      body: new URLSearchParams({ grant_type: "urn:ietf:params:oauth:grant-type:jwt-bearer", assertion: signedJwt }),
+    });
+    if (!exchanged.ok) throw new Error(`delegated token exchange failed: ${exchanged.status} (is domain-wide delegation configured for this scope?)`);
+    const body = (await exchanged.json()) as { access_token: string; expires_in: number };
+    cached = { token: body.access_token, expiresAt: now() + body.expires_in * 1000 };
+    return cached.token;
+  }
+
+  return async ({ url, method, data, headers }) => {
+    const isBytes = data instanceof Uint8Array;
+    const res = await doFetch(url, {
+      method,
+      headers: { Authorization: `Bearer ${await token()}`, ...(isBytes ? {} : { "Content-Type": "application/json" }), ...headers },
+      body: isBytes ? Buffer.from(data as Uint8Array) : JSON.stringify(data),
+    });
+    if (!res.ok) throw new Error(`Google Chat ${method} ${new URL(url).pathname} failed: ${res.status}`);
+    return { data: await res.json() };
+  };
 }
 
 function multipartRelated(metadata: unknown, file: Uint8Array, contentType: string): { body: Uint8Array; boundary: string } {

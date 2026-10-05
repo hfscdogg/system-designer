@@ -15,6 +15,16 @@ export function releaseId(): string {
   return requireEnv("RELEASE_ID");
 }
 
+/**
+ * Temporal worker build id. Derived from the image digest so every release is a
+ * distinct deployment version; Temporal limits ids to a short string.
+ */
+export function workerBuildId(): string {
+  const digest = releaseId();
+  const hex = /sha256:([0-9a-f]{12})/.exec(digest)?.[1];
+  return hex ? `sha-${hex}` : digest.slice(0, 60);
+}
+
 export function productionStore(): { store: Store; pool: pg.Pool } {
   const pool = new pg.Pool({ connectionString: requireEnv("DATABASE_URL"), max: 10 });
   const bucket = new Storage().bucket(requireEnv("EVIDENCE_BUCKET"));
@@ -30,7 +40,12 @@ export function productionStore(): { store: Store; pool: pg.Pool } {
 export function productionAdapters(): Record<string, ChannelAdapter> {
   const mode = (process.env.GOOGLE_CHAT_UPLOAD_MODE ?? "app") as "app" | "delegated";
   if (mode !== "app" && mode !== "delegated") throw new Error(`GOOGLE_CHAT_UPLOAD_MODE must be app or delegated, not ${mode}`);
-  return { google_chat: new GoogleChatAdapter(googleAppAuthRequest(), googleFileRequest(mode, process.env.GOOGLE_CHAT_DELEGATED_USER)) };
+  return {
+    google_chat: new GoogleChatAdapter(
+      googleAppAuthRequest(),
+      googleFileRequest(mode, process.env.GOOGLE_CHAT_DELEGATED_USER, process.env.WORKER_SERVICE_ACCOUNT),
+    ),
+  };
 }
 
 export function temporalSettings() {

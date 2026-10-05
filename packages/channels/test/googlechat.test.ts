@@ -148,8 +148,35 @@ describe("GoogleChatAdapter.postFile", () => {
     expect(fileCalls[1].data).toEqual({ text: "Here it is", attachment: [{ attachmentDataRef: { resourceName: "ref-123", attachmentUploadToken: "tok" } }], thread: { name: "spaces/A/threads/T" } });
   });
 
-  it("requires a user for delegated mode", async () => {
+  it("requires a user and service account for delegated mode", async () => {
     const { googleFileRequest } = await import("../src/index.ts");
     expect(() => googleFileRequest("delegated")).toThrow(/GOOGLE_CHAT_DELEGATED_USER/);
+    expect(() => googleFileRequest("delegated", "henry@example.com")).toThrow(/service account/);
+  });
+
+  it("signs the delegation JWT through IAM (no key file) and caches the token", async () => {
+    const { delegatedRequest } = await import("../src/index.ts");
+    const calls: Array<{ url: string; init: any }> = [];
+    const fakeFetch = (async (url: string, init: any) => {
+      calls.push({ url: String(url), init });
+      const json = (b: unknown) => new Response(JSON.stringify(b), { status: 200, headers: { "content-type": "application/json" } });
+      if (String(url).includes(":signJwt")) return json({ signedJwt: "signed.jwt" });
+      if (String(url).includes("oauth2.googleapis.com")) return json({ access_token: "user-token", expires_in: 3600 });
+      return json({ name: "spaces/A/messages/1" });
+    }) as unknown as typeof fetch;
+    const request = delegatedRequest({
+      serviceAccountEmail: "sd-worker-prod@p.iam.gserviceaccount.com",
+      subject: "henry@getlivewire.com",
+      scope: "https://www.googleapis.com/auth/chat.messages.create",
+      auth: { getAccessToken: async () => "platform-token" },
+      fetch: fakeFetch,
+      now: () => 1_700_000_000_000,
+    });
+    await request({ url: "https://chat.googleapis.com/v1/spaces/A/messages", method: "POST", data: { text: "x" } });
+    await request({ url: "https://chat.googleapis.com/v1/spaces/A/messages", method: "POST", data: { text: "y" } });
+    const claims = JSON.parse(JSON.parse(calls[0]!.init.body).payload);
+    expect(claims).toMatchObject({ iss: "sd-worker-prod@p.iam.gserviceaccount.com", sub: "henry@getlivewire.com", scope: "https://www.googleapis.com/auth/chat.messages.create" });
+    expect(calls.filter((c) => c.url.includes(":signJwt"))).toHaveLength(1); // token cached
+    expect(calls[2]!.init.headers.Authorization).toBe("Bearer user-token");
   });
 });

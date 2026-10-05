@@ -57,7 +57,7 @@ Each Hermes failure from PRD §20 maps to a mechanism here:
 | §15.3 | Pilot hold | No delivery or write code paths exist | ✅ structurally |
 | §15.4 | Margin config, Henry-only | `commercial_policies` (admin-only trigger, append-only), frozen per run | ✅ |
 | §16 | Append-only events, atomic publication, idempotency | `events` table, write-once blobs, idempotency keys | ✅ for M1 scope |
-| §17 | Immutable releases, pinned runs | Dockerfile, `RELEASE_ID`, Temporal `PINNED` versioning | ◑ Terraform and pipeline in M4 |
+| §17 | Immutable releases, pinned runs, staged activation, rollback, post-deploy checks | `infra/terraform`, `.github/workflows/deploy.yml`, `scripts/deploy-env.sh` (deploy by digest, one worker service per build until drained, Temporal version promotion, smoke checks) | ◑ written; first live deploy pending |
 | §18 | Acceptance | `apps/gateway/test/e2e.test.ts` + live run | M5 |
 
 ## Messaging UX

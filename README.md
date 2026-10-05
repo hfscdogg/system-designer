@@ -94,18 +94,8 @@ Margin and tax rules are versioned configuration, never prompt text. The databas
 
 Anyone with an active identity can DM the app. Each person's runs are their own: only the requester can answer questions on a run or approve its scope. Different people, and different threads in a shared space, run in parallel.
 
-## Deploy (target)
+## Deploy
 
-The image is built from `Dockerfile`, and the same image runs as two Cloud Run services:
-- **gateway:** `node apps/gateway/src/main.ts`
-- **worker:** `node apps/worker/src/main.ts`
-
-Supporting services:
-- Cloud SQL Postgres
-- a GCS evidence bucket with versioning and a retention policy
-- Temporal Cloud
-- Secret Manager
-
-Environment variables are listed in `.env.example`.
-
-`RELEASE_ID` must be the immutable image digest. The worker registers as that Temporal deployment version and pins workflows to it, so in-flight runs never switch code.
+See [`docs/deploy.md`](docs/deploy.md):
+- one bootstrap script in Cloud Shell (Terraform, us-east4);
+- then GitHub Actions deploys each merge by image digest, to staging automatically and to production after approval.

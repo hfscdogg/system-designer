@@ -299,6 +299,18 @@ export class Store {
     return res.rows[0] ?? null;
   }
 
+  /**
+   * Runs that should have a live workflow: still collecting scope or building,
+   * not stopped for a human (BLOCKED / RECONCILIATION_REQUIRED) and not finished.
+   */
+  async listRunsAwaitingWorkflow(minAgeSeconds: number): Promise<RunRecord[]> {
+    const res = await this.db.query<RunRecord>(
+      `SELECT * FROM runs WHERE state = ANY($1) AND updated_at < now() - make_interval(secs => $2) ORDER BY created_at`,
+      [[...OPEN_INTAKE_STATES, ...BUILD_STATES.filter((s) => s !== "RECONCILIATION_REQUIRED")], minAgeSeconds],
+    );
+    return res.rows;
+  }
+
   /** A run in this thread that is past approval and still building. */
   async findBuildingRun(t: ThreadRef): Promise<RunRecord | null> {
     const res = await this.db.query<RunRecord>(
