@@ -20,6 +20,9 @@ importers:
 
   apps/gateway:
     dependencies:
+      '@sd/build':
+        specifier: workspace:*
+        version: link:../../packages/build
       '@sd/channels':
         specifier: workspace:*
         version: link:../../packages/channels
@@ -42,6 +45,9 @@ importers:
         specifier: ^8.23.1
         version: 8.23.1
     devDependencies:
+      '@sd/dtools':
+        specifier: workspace:*
+        version: link:../../packages/dtools
       '@types/pg':
         specifier: ^8.23.1
         version: 8.23.1
@@ -51,12 +57,18 @@ importers:
       '@google-cloud/storage':
         specifier: ^8.2.0
         version: 8.2.0
+      '@sd/build':
+        specifier: workspace:*
+        version: link:../../packages/build
       '@sd/channels':
         specifier: workspace:*
         version: link:../../packages/channels
       '@sd/core':
         specifier: workspace:*
         version: link:../../packages/core
+      '@sd/dtools':
+        specifier: workspace:*
+        version: link:../../packages/dtools
       '@sd/llm':
         specifier: workspace:*
         version: link:../../packages/llm
@@ -86,6 +98,18 @@ importers:
         specifier: ^8.23.1
         version: 8.23.1
 
+  packages/build:
+    dependencies:
+      '@sd/core':
+        specifier: workspace:*
+        version: link:../core
+      '@sd/dtools':
+        specifier: workspace:*
+        version: link:../dtools
+      zod:
+        specifier: ^4.6.5
+        version: 4.6.5
+
   packages/channels:
     dependencies:
       '@sd/core':
@@ -97,6 +121,15 @@ importers:
 
   packages/core:
     dependencies:
+      zod:
+        specifier: ^4.6.5
+        version: 4.6.5
+
+  packages/dtools:
+    dependencies:
+      '@sd/core':
+        specifier: workspace:*
+        version: link:../core
       zod:
         specifier: ^4.6.5
         version: 4.6.5

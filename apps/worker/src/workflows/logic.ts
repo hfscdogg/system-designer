@@ -10,7 +10,30 @@ export interface ProposalRunInput {
   runId: string;
 }
 
-export type Phase = "reading" | "needs_answers" | "awaiting_approval" | "approved" | "blocked" | "expired";
+export type Phase =
+  | "reading"
+  | "needs_answers"
+  | "awaiting_approval"
+  | "approved"
+  | "catalog"
+  | "building"
+  | "validated"
+  | "blocked"
+  | "blocked_build"
+  | "expired";
+
+/** Build stages after approval, in order (PRD §13). */
+export const BUILD_STAGES = ["prebuild", "admitCatalog", "compileSelection", "bindProposal", "validate"] as const;
+export type BuildStage = (typeof BUILD_STAGES)[number];
+export type StageOutcome = { ok: true; summary: string } | { ok: false; reason: string };
+
+const STAGE_PHASE: Record<BuildStage, Phase> = {
+  prebuild: "catalog",
+  admitCatalog: "catalog",
+  compileSelection: "building",
+  bindProposal: "building",
+  validate: "building",
+};
 
 export type ExtractOutcome = { ok: true; extraction: ScopeExtraction; notes: string[] } | { ok: false; reason: string };
 
@@ -26,6 +49,7 @@ export interface RunActivities {
   findCommittedApproval(a: { runId: string }): Promise<{ approvalId: string; receiptId: string; scopeHash: string } | null>;
   notify(a: { runId: string; text: string; key: string }): Promise<void>;
   markOutcome(a: { runId: string; state: "BLOCKED" | "STALE"; reason: string }): Promise<void>;
+  buildStage(a: { runId: string; stage: BuildStage }): Promise<StageOutcome>;
 }
 
 export interface RunRuntime {
@@ -35,7 +59,7 @@ export interface RunRuntime {
 }
 
 export type RunResult =
-  | { state: "SCOPE_APPROVED"; approvalId: string; receiptId: string }
+  | { state: "VALIDATED"; approvalId: string; receiptId: string }
   | { state: "BLOCKED" | "STALE"; reason: string };
 
 export const RECONCILE_EVERY_MS = 60 * 60 * 1000;
@@ -102,14 +126,28 @@ export async function runProposal(input: ProposalRunInput, rt: RunRuntime): Prom
           if (committed) {
             await notify("Your last message arrived after the scope was approved, so it was not applied. Start a new request to change the approved scope.");
             await acts.confirmApproval({ runId, approvalId: committed.approvalId, receiptId: committed.receiptId });
-            return { state: "SCOPE_APPROVED", approvalId: committed.approvalId, receiptId: committed.receiptId };
+            return build(rt, runId, committed.approvalId, committed.receiptId);
           }
         }
         return closedRun(republished.runState);
       }
       case "approve":
         await acts.confirmApproval({ runId, approvalId: decision.approvalId, receiptId: current.receiptId });
-        return { state: "SCOPE_APPROVED", approvalId: decision.approvalId, receiptId: current.receiptId };
+        return build(rt, runId, decision.approvalId, current.receiptId);
     }
   }
+}
+
+/** Exactly one build per approved scope; stops at the first failed stage (PRD §13.8). */
+async function build(rt: RunRuntime, runId: string, approvalId: string, receiptId: string): Promise<RunResult> {
+  for (const stage of BUILD_STAGES) {
+    await rt.acts.reportProgress({ runId, phase: STAGE_PHASE[stage] });
+    const outcome = await rt.acts.buildStage({ runId, stage });
+    if (!outcome.ok) {
+      await rt.acts.markOutcome({ runId, state: "BLOCKED", reason: outcome.reason });
+      return { state: "BLOCKED", reason: outcome.reason };
+    }
+  }
+  await rt.acts.reportProgress({ runId, phase: "validated" });
+  return { state: "VALIDATED", approvalId, receiptId };
 }

@@ -11,7 +11,10 @@ import {
 } from "@sd/core";
 import type { ChannelAdapter } from "@sd/channels";
 import type { ClarificationInterpreter, ScopeExtractor } from "@sd/llm";
-import { threadOf, type RunRecord, type Store } from "@sd/store";
+import type { PatternSpec } from "@sd/build";
+import type { DToolsReader } from "@sd/dtools";
+import { IntegrityError, threadOf, type RunRecord, type Store } from "@sd/store";
+import { createBuildStage } from "./build-activities.ts";
 import { statusView } from "./progress.ts";
 import type { ExtractOutcome, RunActivities } from "./workflows/logic.ts";
 
@@ -20,14 +23,13 @@ export interface ActivityDeps {
   adapters: Record<string, ChannelAdapter>;
   extractor: ScopeExtractor;
   interpreter: ClarificationInterpreter;
+  dtools: DToolsReader;
+  patterns: PatternSpec[];
   /** Model attempts per extraction before the run is blocked. */
   extractionAttempts?: number;
 }
 
-/** Errors that indicate tampering or a bug. Temporal does not retry these. */
-export class IntegrityError extends Error {
-  override name = "IntegrityError";
-}
+export { IntegrityError };
 
 export function createActivities(deps: ActivityDeps): RunActivities {
   const { store } = deps;
@@ -168,15 +170,23 @@ export function createActivities(deps: ActivityDeps): RunActivities {
 
     async markOutcome({ runId, state, reason }) {
       const run = await store.getRun(runId);
-      if (run.state !== state) await store.transitionRun(runId, state, "system", { error: reason });
-      await upsertStatus(await store.getRun(runId), statusView(runId, state === "BLOCKED" ? "blocked" : "expired", reason));
+      const duringBuild = !["RECEIVED", "AUTHENTICATED_AND_CAPTURED", "NEEDS_CLARIFICATION", "AWAITING_SCOPE_APPROVAL", "BLOCKED"].includes(run.state);
+      if (run.state !== state) await store.transitionRun(runId, state, "system", { error: reason, from: run.state });
+      const phase = state === "STALE" ? "expired" : duringBuild ? "blocked_build" : "blocked";
+      await upsertStatus(await store.getRun(runId), statusView(runId, phase, reason));
       if (state === "BLOCKED") {
-        await adapterFor(run).post(
-          threadOf(run),
-          { kind: "text", text: `I stopped before writing a scope: ${reason}. Nothing was sent anywhere. Reply with a new message to try again.` },
-          `${runId}:blocked`,
-        );
+        const text = duringBuild
+          ? `I stopped the build after ${run.state}: ${reason}. Nothing was sent to a customer or written to D-Tools. The run is kept for review.`
+          : `I stopped before writing a scope: ${reason}. Nothing was sent anywhere. Reply with a new message to try again.`;
+        await adapterFor(run).post(threadOf(run), { kind: "text", text }, `${runId}:blocked`);
       }
     },
+
+    buildStage: createBuildStage({
+      store,
+      dtools: deps.dtools,
+      patterns: deps.patterns,
+      notify: (run, text, key) => adapterFor(run).post(threadOf(run), { kind: "text", text }, key).then(() => undefined),
+    }),
   };
 }

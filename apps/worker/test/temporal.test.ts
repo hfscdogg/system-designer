@@ -3,9 +3,11 @@ import { afterAll, beforeAll, describe, expect, it } from "vitest";
 import { TestWorkflowEnvironment } from "@temporalio/testing";
 import { Worker } from "@temporalio/worker";
 import { FakeChannelAdapter } from "@sd/channels";
+import { recordedDToolsReader } from "@sd/dtools";
 import { createActivities, TASK_QUEUE, TemporalWorkflows } from "../src/index.ts";
+import { CATALOG, testPattern } from "../../../packages/build/test/fixtures.ts";
 import { completeExtraction } from "../../../packages/core/test/fixtures.ts";
-import { testStore } from "../../../packages/store/test/helpers.ts";
+import { TEST_POLICY, testStore } from "../../../packages/store/test/helpers.ts";
 
 /**
  * Runs the real workflow on a Temporal test server. The server binary is
@@ -22,8 +24,9 @@ describe.skipIf(!process.env.TEMPORAL_TESTS)("proposalRun on Temporal", () => {
     await env?.teardown();
   });
 
-  it("runs intake → receipt → approval and survives a lost approval signal", async () => {
+  it("runs intake → receipt → approval → validated build and survives a lost approval signal", async () => {
     const { store } = await testStore();
+    await store.publishPolicy(TEST_POLICY, "henry", "test policy");
     const chat = new FakeChannelAdapter();
     const worker = await Worker.create({
       connection: env.nativeConnection,
@@ -34,6 +37,8 @@ describe.skipIf(!process.env.TEMPORAL_TESTS)("proposalRun on Temporal", () => {
         adapters: { google_chat: chat },
         extractor: { extract: async () => ({ raw: completeExtraction(), model: "fake" }) },
         interpreter: { interpret: async () => ({ raw: null, model: "fake" }) },
+        dtools: recordedDToolsReader(CATALOG),
+        patterns: [testPattern()],
       }),
     });
     const workflows = new TemporalWorkflows(env.client);
@@ -81,7 +86,8 @@ describe.skipIf(!process.env.TEMPORAL_TESTS)("proposalRun on Temporal", () => {
 
       // Time skipping fast-forwards to the hourly reconcile, which finds the approval.
       const result = await env.client.workflow.getHandle(runId).result();
-      expect(result).toMatchObject({ state: "SCOPE_APPROVED", receiptId: receipt.id });
+      expect(result).toMatchObject({ state: "VALIDATED", receiptId: receipt.id });
+      expect((await store.getRun(runId)).state).toBe("VALIDATED");
     });
   }, 180_000);
 });

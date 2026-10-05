@@ -7,11 +7,15 @@
  *   node apps/gateway/src/admin.ts add-person henry "Henry Clifford" requester,admin users/0987654321 henry@getlivewire.com
  *   node apps/gateway/src/admin.ts allow-space spaces/AAAA "Sales pilot"
  *   node apps/gateway/src/admin.ts deactivate zack
+ *   node apps/gateway/src/admin.ts set-policy henry policy.json "Pilot margin and tax rules"   # admin only
+ *   node apps/gateway/src/admin.ts show-policy
  *
  * DMs with an active person are always allowed; shared spaces must be allowed explicitly.
  */
+import { readFile } from "node:fs/promises";
 import pg from "pg";
-import { allowSpace, deactivatePerson, migrate, pgDb, upsertPerson } from "@sd/store";
+import { CommercialPolicySchema } from "@sd/build";
+import { allowSpace, deactivatePerson, MemoryBlobStore, migrate, pgDb, Store, upsertPerson } from "@sd/store";
 
 async function main() {
   const [command, ...args] = process.argv.slice(2);
@@ -54,8 +58,22 @@ async function main() {
         await deactivatePerson(db, args[0]);
         console.log(`deactivated ${args[0]}`);
         break;
+      case "set-policy": {
+        const [asPerson, file, reason] = args;
+        if (!asPerson || !file || !reason) throw new Error("usage: set-policy <admin-person-id> <policy.json> <reason>");
+        const policy = CommercialPolicySchema.parse(JSON.parse(await readFile(file, "utf8")));
+        // The database refuses the insert unless asPerson is an active admin.
+        const store = new Store(db, new MemoryBlobStore(), "admin-cli");
+        console.log(`published commercial policy version ${await store.publishPolicy(policy, asPerson, reason)}`);
+        break;
+      }
+      case "show-policy": {
+        const store = new Store(db, new MemoryBlobStore(), "admin-cli");
+        console.log(JSON.stringify(await store.latestPolicy(), null, 2));
+        break;
+      }
       default:
-        throw new Error("commands: migrate | pending | add-person | allow-space | deactivate");
+        throw new Error("commands: migrate | pending | add-person | allow-space | deactivate | set-policy | show-policy");
     }
   } finally {
     await pool.end();

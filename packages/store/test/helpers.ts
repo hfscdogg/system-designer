@@ -22,3 +22,9 @@ export async function testStore() {
   await allowSpace(db, "google_chat", "spaces/A", "Pilot space");
   return { pg, db, blobs, store };
 }
+
+export const TEST_POLICY = {
+  schema: "commercial_policy_v1",
+  margin: { minimum_gross_margin_pct: 30 },
+  tax: { mode: "tbd" },
+};

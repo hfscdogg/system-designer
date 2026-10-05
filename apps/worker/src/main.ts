@@ -1,5 +1,7 @@
 import { fileURLToPath } from "node:url";
 import { NativeConnection, Worker } from "@temporalio/worker";
+import { loadPatterns } from "@sd/build";
+import { httpDToolsReader } from "@sd/dtools";
 import { anthropicClarificationInterpreter, anthropicScopeExtractor } from "@sd/llm";
 import { createActivities } from "./activities.ts";
 import { productionAdapters, productionStore, releaseId, requireEnv, temporalSettings } from "./config.ts";
@@ -25,6 +27,9 @@ async function main() {
       adapters: productionAdapters(),
       extractor: anthropicScopeExtractor({ model }),
       interpreter: anthropicClarificationInterpreter({ model }),
+      // Read-only D-Tools access; use a key scoped to catalog reads where D-Tools allows it.
+      dtools: httpDToolsReader({ apiKey: requireEnv("DTOOLS_API_KEY"), basicAuth: requireEnv("DTOOLS_BASIC_AUTH") }),
+      patterns: await loadPatterns(),
     }),
     workerDeploymentOptions: {
       version: { deploymentName: "system-designer", buildId: releaseId() },

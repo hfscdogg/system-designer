@@ -13,7 +13,9 @@
     "@temporalio/client": "1.24.0",
     "@temporalio/worker": "1.24.0",
     "@temporalio/workflow": "1.24.0",
-    "pg": "^8.23.1"
+    "pg": "^8.23.1",
+    "@sd/build": "workspace:*",
+    "@sd/dtools": "workspace:*"
   },
   "devDependencies": {
     "@temporalio/testing": "1.24.0",

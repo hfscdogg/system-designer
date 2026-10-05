@@ -13,9 +13,9 @@ Hermes kept business state in the agent's conversation. That is the root of the 
 
 The design rationale and requirement mapping are in [`docs/architecture.md`](docs/architecture.md).
 
-## What works today (milestone M1)
+## What works today (milestones M1–M2)
 
-The flow is Google Chat message → captured intake → scope extraction → clarification → receipt card → **Approve** button → `SCOPE_APPROVED`.
+The flow is Google Chat message → captured intake → scope extraction → clarification → receipt card → **Approve** button → D-Tools catalog read → compile → bind → validate → `VALIDATED`, with a summary posted in the thread.
 
 - **Natural conversation.** The salesperson writes normally. The LLM proposes a scope, and code validates it, normalizes it and decides what to ask (at most 3 questions per turn).
 - **Deterministic receipts.** Code generates each receipt. It is shown verbatim as a Chat card, and its Approve button is bound to the receipt ID and scope hash. `Approve scope <id>` also works as text.
@@ -24,7 +24,17 @@ The flow is Google Chat message → captured intake → scope extraction → cla
   - Replayed messages, forged tokens, unknown people, unapproved spaces and model-authored authority fields all fail closed.
   - Every one of these cases has a test.
 
-**Not built yet:** D-Tools catalog reads, compile/bind/validate, PDF rendering and Telegram (milestones M2–M6 in [`docs/architecture.md`](docs/architecture.md)).
+- **Build (M2).**
+  - The approved scope is matched to an approved architecture pattern (`packages/build/patterns/`).
+  - Every product comes from an exact D-Tools record read in this run, and the raw response is stored as evidence.
+  - The proposal is compiled, bound and validated: coverage, provenance, arithmetic in cents, "priced scope to date" when incomplete, margin and tax policy, and a customer view with no cost or margin fields.
+  - Each approved scope gets exactly one build, and every stage output is published once with its hash.
+
+**Before M2 can run live, Livewire must supply:**
+- the D-Tools product IDs of its standard products for each role in `packages/build/patterns/security_modernization.json` (they are `null` today, so the validator blocks with "no products could be priced");
+- a commercial policy published by an admin (see below).
+
+**Not built yet:** PDF rendering and preflight (M3), hardening (M4), Telegram (M6). See [`docs/architecture.md`](docs/architecture.md).
 
 ## Layout
 
@@ -35,6 +45,8 @@ packages/core/     Schemas, normalizer, blockers, receipts, state machine (pure 
 packages/store/    Postgres schema + Store (claims, receipts, atomic approvals, audit log), GCS evidence
 packages/channels/ Channel adapter interface + Google Chat (auth, parsing, cards, REST)
 packages/llm/      Claude calls (structured outputs) for extraction and clarification
+packages/dtools/   Read-only D-Tools Cloud client (GET only) + recorded-response reader for tests
+packages/build/    Catalog admission, architecture patterns, materializer, compiler, binder, validator
 .claude/skills/d-tools-skill/  Existing D-Tools tooling; its client and renderer get ported in M2/M3
 spikes/thread1-dtools/         D-Tools read-API spike (M0)
 ```
@@ -58,6 +70,18 @@ Access is an allowlist in the database, managed by `apps/gateway/src/admin.ts`. 
 2. Run `node apps/gateway/src/admin.ts pending` to see their Google user ID (`users/…`) and email.
 3. Run `node apps/gateway/src/admin.ts add-person zack "Zack Reichert" requester users/… zack@getlivewire.com`. Give Henry the `requester,admin` roles.
 4. **Optional:** to use a shared space instead of DMs, run `node apps/gateway/src/admin.ts allow-space spaces/… "Sales pilot"`.
+
+### Commercial policy (admin only)
+
+Margin and tax rules are versioned configuration, never prompt text. The database refuses a policy from anyone who isn't an active admin. Each run freezes the policy version it was built with.
+
+```json
+{ "schema": "commercial_policy_v1",
+  "margin": { "minimum_gross_margin_pct": <Henry's number> },
+  "tax": { "mode": "tbd" } }
+```
+
+`tax` can also be `{ "mode": "rate", "rate_pct": <n>, "applies_to": "taxable_equipment" }`. Publish with `node apps/gateway/src/admin.ts set-policy henry policy.json "reason"`.
 
 Anyone with an active identity can DM the app. Each person's runs are their own: only the requester can answer questions on a run or approve its scope. Different people, and different threads in a shared space, run in parallel.
 

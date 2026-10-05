@@ -105,6 +105,11 @@ const BUILD_STATES: RunState[] = [
   "RECONCILIATION_REQUIRED",
 ];
 
+/** Tampering or a bug, never a transient failure. Workflows do not retry these. */
+export class IntegrityError extends Error {
+  override name = "IntegrityError";
+}
+
 export const threadOf = (r: { platform: string; space_id: string; thread_id: string }): ThreadRef => ({
   platform: r.platform,
   spaceId: r.space_id,
@@ -458,6 +463,94 @@ export class Store {
       [approvalId],
     );
     return res.rows[0] ?? null;
+  }
+
+  // ---------- build pipeline ----------
+
+  /**
+   * Acquire the single build for an approved run. Re-acquiring for the same
+   * approval is idempotent (an activity retry); anything else is refused.
+   */
+  async acquireBuild(runId: string, approvalId: string, scopeHash: string): Promise<{ ok: true } | { ok: false; reason: string }> {
+    return this.db.transaction(async (tx) => {
+      const approval = (await tx.query<{ run_id: string; scope_hash: string }>(`SELECT run_id, scope_hash FROM approvals WHERE id = $1`, [approvalId])).rows[0];
+      if (!approval || approval.run_id !== runId || approval.scope_hash !== scopeHash) return { ok: false as const, reason: "approval does not match this run and scope" };
+      const inserted = await tx.query(
+        `INSERT INTO builds (run_id, approval_id, scope_hash, release_id) VALUES ($1, $2, $3, $4) ON CONFLICT DO NOTHING RETURNING 1`,
+        [runId, approvalId, scopeHash, this.releaseId],
+      );
+      if (inserted.rows.length) {
+        await this.event(tx, runId, "build_acquired", "system", { approvalId, scopeHash });
+        return { ok: true as const };
+      }
+      const existing = (await tx.query<{ approval_id: string; scope_hash: string }>(`SELECT approval_id, scope_hash FROM builds WHERE run_id = $1`, [runId])).rows[0];
+      return existing?.approval_id === approvalId && existing.scope_hash === scopeHash
+        ? { ok: true as const }
+        : { ok: false as const, reason: "a different build already exists for this run" };
+    });
+  }
+
+  /** Store a raw D-Tools read for this run and record whether it was admitted. */
+  async recordCatalogRead(
+    runId: string,
+    read: { recordId: string; endpoint: string; body: Uint8Array; sha256: string; fetchedAt: string },
+    admission: { admitted: boolean; reason: string | null },
+  ): Promise<string> {
+    const blob = await this.blobs.putImmutable(`runs/${runId}/catalog/${read.recordId}-${read.sha256}.json`, read.body, "application/json");
+    if (blob.sha256 !== read.sha256) throw new Error(`catalog read for ${read.recordId} changed while storing`);
+    const inserted = await this.db.query(
+      `INSERT INTO catalog_evidence (run_id, record_id, endpoint, sha256, blob_key, fetched_at, admitted, reason)
+       VALUES ($1,$2,$3,$4,$5,$6,$7,$8) ON CONFLICT DO NOTHING RETURNING 1`,
+      [runId, read.recordId, read.endpoint, read.sha256, blob.key, read.fetchedAt, admission.admitted, admission.reason],
+    );
+    if (!inserted.rows.length) {
+      const existing = (await this.db.query<{ sha256: string }>(`SELECT sha256 FROM catalog_evidence WHERE run_id = $1 AND record_id = $2`, [runId, read.recordId])).rows[0]!;
+      // A retried activity may re-read; a changed record mid-run is reconciliation work, not a silent update.
+      if (existing.sha256 !== read.sha256) throw new IntegrityError(`D-Tools record ${read.recordId} changed during the run`);
+    }
+    return blob.key;
+  }
+
+  /** Publish a stage artifact once. Republishing identical content is a no-op; different content is refused. */
+  async publishArtifact(runId: string, stage: string, name: string, content: unknown): Promise<{ key: string; sha256: string }> {
+    const bytes = new TextEncoder().encode(canonicalJson(content));
+    const blob = await this.blobs.putImmutable(`runs/${runId}/${stage}/${name}-${sha256Hex(bytes)}.json`, bytes, "application/json");
+    const inserted = await this.db.query(
+      `INSERT INTO artifacts (run_id, stage, name, blob_key, sha256) VALUES ($1,$2,$3,$4,$5) ON CONFLICT DO NOTHING RETURNING 1`,
+      [runId, stage, name, blob.key, blob.sha256],
+    );
+    if (!inserted.rows.length) {
+      const existing = (await this.db.query<{ sha256: string }>(`SELECT sha256 FROM artifacts WHERE run_id = $1 AND stage = $2 AND name = $3`, [runId, stage, name])).rows[0]!;
+      if (existing.sha256 !== blob.sha256) throw new IntegrityError(`artifact ${stage}/${name} for ${runId} was already published with different content`);
+    } else {
+      await this.event(this.db, runId, "artifact_published", "system", { stage, name, sha256: blob.sha256 });
+    }
+    return blob;
+  }
+
+  async readArtifact<T>(runId: string, stage: string, name: string): Promise<T | null> {
+    const row = (await this.db.query<{ blob_key: string; sha256: string }>(
+      `SELECT blob_key, sha256 FROM artifacts WHERE run_id = $1 AND stage = $2 AND name = $3`,
+      [runId, stage, name],
+    )).rows[0];
+    if (!row) return null;
+    const bytes = await this.blobs.get(row.blob_key);
+    if (sha256Hex(bytes) !== row.sha256) throw new IntegrityError(`artifact ${stage}/${name} for ${runId} does not match its recorded hash`);
+    return JSON.parse(new TextDecoder().decode(bytes)) as T;
+  }
+
+  async latestPolicy(): Promise<{ version: number; policy: unknown } | null> {
+    const res = await this.db.query<{ version: number; policy: unknown }>(`SELECT version, policy FROM commercial_policies ORDER BY version DESC LIMIT 1`);
+    return res.rows[0] ?? null;
+  }
+
+  async publishPolicy(policy: unknown, setBy: string, reason: string): Promise<number> {
+    const res = await this.db.query<{ version: number }>(
+      `INSERT INTO commercial_policies (policy, set_by, reason) VALUES ($1, $2, $3) RETURNING version`,
+      [JSON.stringify(policy), setBy, reason],
+    );
+    await this.event(this.db, null, "commercial_policy_published", setBy, { version: res.rows[0]!.version, reason });
+    return res.rows[0]!.version;
   }
 
   // ---------- audit ----------

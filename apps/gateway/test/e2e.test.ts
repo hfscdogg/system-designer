@@ -3,7 +3,10 @@ import { FakeChannelAdapter, type View } from "@sd/channels";
 import type { ClarificationInterpreter, ScopeExtractor } from "@sd/llm";
 import { createActivities, InlineWorkflows } from "@sd/worker";
 import { completeExtraction, noPatch } from "../../../packages/core/test/fixtures.ts";
-import { testStore } from "../../../packages/store/test/helpers.ts";
+import { TEST_POLICY, testStore } from "../../../packages/store/test/helpers.ts";
+import { recordedDToolsReader } from "@sd/dtools";
+import type { PatternSpec } from "@sd/build";
+import { CATALOG, testPattern } from "../../../packages/build/test/fixtures.ts";
 import { handleGoogleChat, type GatewayDeps } from "../src/handler.ts";
 
 const SPACE = "spaces/A";
@@ -38,12 +41,21 @@ function click(receiptId: string, scopeHash: string, user = "users/zack", thread
   };
 }
 
-async function setup(extractions: unknown[] = [], patches: unknown[] = []) {
+interface BuildOptions {
+  catalog?: Record<string, unknown>;
+  patterns?: PatternSpec[];
+  policy?: boolean;
+}
+
+async function setup(extractions: unknown[] = [], patches: unknown[] = [], build: BuildOptions = {}) {
   const { store, db } = await testStore();
+  if (build.policy !== false) await store.publishPolicy(TEST_POLICY, "henry", "test policy");
   const chat = new FakeChannelAdapter();
   const extractor: ScopeExtractor = { extract: async () => ({ raw: extractions.shift(), model: "fake-model" }) };
   const interpreter: ClarificationInterpreter = { interpret: async () => ({ raw: patches.shift(), model: "fake-model" }) };
-  const workflows = new InlineWorkflows(createActivities({ store, adapters: { google_chat: chat }, extractor, interpreter }));
+  const dtools = recordedDToolsReader(build.catalog ?? CATALOG);
+  const acts = createActivities({ store, adapters: { google_chat: chat }, extractor, interpreter, dtools, patterns: build.patterns ?? [testPattern()] });
+  const workflows = new InlineWorkflows(acts);
   const deps: GatewayDeps = { store, workflows, verifyGoogleChat: async (h) => h === "Bearer good" };
   const send = async (event: unknown, authorization = "Bearer good") => {
     const res = await handleGoogleChat(deps, { authorization, body: new TextEncoder().encode(JSON.stringify(event)) });
@@ -54,7 +66,7 @@ async function setup(extractions: unknown[] = [], patches: unknown[] = []) {
   const receipts = () => chat.list().map((m) => m.view).filter((v): v is Extract<View, { kind: "receipt" }> => v.kind === "receipt");
   const statusCard = () => chat.list().find((m) => m.view.kind === "status")?.view as Extract<View, { kind: "status" }> | undefined;
   const texts = () => chat.list().map((m) => m.view).filter((v): v is Extract<View, { kind: "text" }> => v.kind === "text").map((v) => v.text);
-  return { store, db, chat, workflows, send, receipts, statusCard, texts };
+  return { store, db, chat, workflows, send, receipts, statusCard, texts, dtools, acts };
 }
 
 beforeEach(() => {
@@ -86,13 +98,15 @@ describe("Google Chat → scope approval vertical slice", () => {
     expect(res.body).toEqual({ text: `✅ Scope ${v2.receiptId} approved by Zack Reichert.` });
     const runs = await t.store.listRunsForPerson("zack");
     expect(runs).toHaveLength(1);
-    expect(runs[0]!.state).toBe("SCOPE_APPROVED");
-    expect(await t.workflows.result(runs[0]!.id)).toMatchObject({ state: "SCOPE_APPROVED", receiptId: v2.receiptId });
-    expect(t.statusCard()?.steps.slice(0, 4).map((s) => s.state)).toEqual(["done", "done", "done", "done"]);
+    expect(runs[0]!.state).toBe("VALIDATED");
+    expect(await t.workflows.result(runs[0]!.id)).toMatchObject({ state: "VALIDATED", receiptId: v2.receiptId });
+    expect(t.statusCard()?.steps.map((s) => s.state)).toEqual(["done", "done", "done", "done", "done", "done", "active"]);
+    expect(t.texts().at(-1)).toContain("Proposal validated for Smith Family.");
+    expect(t.texts().at(-1)).toContain("Priced scope to date: $2,740.00");
 
     const events = (await t.store.listEvents(runs[0]!.id)).map((e) => e.type);
     expect(events).toEqual(
-      expect.arrayContaining(["run_started", "scope_extracted", "receipt_published", "clarification_applied", "scope_approved"]),
+      expect.arrayContaining(["run_started", "scope_extracted", "receipt_published", "clarification_applied", "scope_approved", "build_acquired", "artifact_published"]),
     );
     // Exactly one status card, edited in place.
     expect(t.chat.list().filter((m) => m.view.kind === "status")).toHaveLength(1);
@@ -104,7 +118,7 @@ describe("Google Chat → scope approval vertical slice", () => {
     const [receipt] = t.receipts();
     const res = await t.send(chatMessage(`Approve scope ${receipt!.receiptId}`));
     expect(res.body).toMatchObject({ text: expect.stringContaining("approved") });
-    expect((await t.store.listRunsForPerson("zack"))[0]!.state).toBe("SCOPE_APPROVED");
+    expect((await t.store.listRunsForPerson("zack"))[0]!.state).toBe("VALIDATED");
   });
 
   it("ignores a replayed provider message: one run, one receipt", async () => {
@@ -195,5 +209,68 @@ describe("Google Chat → scope approval vertical slice", () => {
     expect((await t.send(chatMessage("help"))).body).toMatchObject({ text: expect.stringContaining("scope receipt") });
     expect((await t.send(chatMessage("status"))).body).toEqual({ text: "You have no proposal runs yet." });
     expect(await t.store.listRunsForPerson("zack")).toHaveLength(0);
+  });
+
+  it("blocks the build when a D-Tools record is missing, and keeps the run for review", async () => {
+    const catalog = { ...CATALOG };
+    delete catalog[Object.keys(CATALOG)[0]!];
+    const t = await setup([completeExtraction()], [], { catalog });
+    await t.send(chatMessage("Smith security upgrade"));
+    const [receipt] = t.receipts();
+    await t.send(click(receipt!.receiptId, receipt!.approve!.scopeHash));
+    const [run] = await t.store.listRunsForPerson("zack");
+    expect(run!.state).toBe("BLOCKED");
+    expect(t.texts().at(-1)).toContain("Nothing was sent to a customer or written to D-Tools");
+    expect(t.statusCard()?.steps[5]!.state).toBe("failed");
+  });
+
+  it("blocks at validation when no commercial policy has been published", async () => {
+    const t = await setup([completeExtraction()], [], { policy: false });
+    await t.send(chatMessage("Smith security upgrade"));
+    const [receipt] = t.receipts();
+    await t.send(click(receipt!.receiptId, receipt!.approve!.scopeHash));
+    const [run] = await t.store.listRunsForPerson("zack");
+    expect(run!.state).toBe("BLOCKED");
+    expect(t.texts().at(-1)).toContain("no commercial policy is configured");
+  });
+
+  it("blocks scopes with no approved architecture pattern and asks for Zack's review", async () => {
+    const t = await setup([completeExtraction({ functional_systems: ["home theater"] })]);
+    await t.send(chatMessage("Smith theater"));
+    const [receipt] = t.receipts();
+    await t.send(click(receipt!.receiptId, receipt!.approve!.scopeHash));
+    expect(t.texts().at(-1)).toContain("Zack needs to review");
+    expect(t.dtools.calls).toEqual([]);
+  });
+
+  it("reads each D-Tools record exactly once per run and builds once", async () => {
+    const t = await setup([completeExtraction()]);
+    await t.send(chatMessage("Smith security upgrade"));
+    const [receipt] = t.receipts();
+    await t.send(click(receipt!.receiptId, receipt!.approve!.scopeHash));
+    await t.send(click(receipt!.receiptId, receipt!.approve!.scopeHash));
+    expect(new Set(t.dtools.calls).size).toBe(t.dtools.calls.length);
+    const [run] = await t.store.listRunsForPerson("zack");
+    const builds = await t.db.query(`SELECT 1 FROM builds WHERE run_id = $1`, [run!.id]);
+    expect(builds.rows).toHaveLength(1);
+    const customer = await t.store.readArtifact<Record<string, unknown>>(run!.id, "validate", "customer_view");
+    expect(JSON.stringify(customer)).not.toMatch(/cost|margin/i);
+  });
+
+  it("replaying every build stage after success (lost activity results) changes nothing", async () => {
+    const t = await setup([completeExtraction()]);
+    await t.send(chatMessage("Smith security upgrade"));
+    const [receipt] = t.receipts();
+    await t.send(click(receipt!.receiptId, receipt!.approve!.scopeHash));
+    const [run] = await t.store.listRunsForPerson("zack");
+    const before = await t.db.query(`SELECT stage, name, sha256 FROM artifacts WHERE run_id = $1 ORDER BY stage, name`, [run!.id]);
+    const messages = t.chat.list().length;
+    for (const stage of ["prebuild", "admitCatalog", "compileSelection", "bindProposal", "validate"] as const) {
+      expect(await t.acts.buildStage({ runId: run!.id, stage })).toMatchObject({ ok: true });
+    }
+    const after = await t.db.query(`SELECT stage, name, sha256 FROM artifacts WHERE run_id = $1 ORDER BY stage, name`, [run!.id]);
+    expect(after.rows).toEqual(before.rows);
+    expect((await t.store.getRun(run!.id)).state).toBe("VALIDATED");
+    expect(t.chat.list()).toHaveLength(messages);
   });
 });

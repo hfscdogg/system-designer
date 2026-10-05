@@ -20,7 +20,11 @@ const PROGRESS: Record<Phase, { done: number; active: number | null; failed?: nu
   needs_answers: { done: 2, active: 2 },
   awaiting_approval: { done: 3, active: 3 },
   approved: { done: 4, active: null },
+  catalog: { done: 4, active: 4 },
+  building: { done: 5, active: 5 },
+  validated: { done: 6, active: 6 },
   blocked: { done: 1, active: null, failed: 1 },
+  blocked_build: { done: 4, active: null, failed: 5 },
   expired: { done: 0, active: null },
 };
 
@@ -35,7 +39,8 @@ export function statusView(runId: string, phase: Phase, note: string | null = nu
   const defaults: Partial<Record<Phase, string>> = {
     needs_answers: "A few answers needed — see the questions below.",
     awaiting_approval: "Check the receipt below and approve it when it's right.",
-    approved: "Scope approved. Catalog and build stages are not enabled in this release yet.",
+    approved: "Scope approved. Building from the D-Tools catalog.",
+    validated: "Proposal validated. PDF rendering arrives in the next release.",
     expired: "This request is closed. Start a new message to begin again.",
   };
   return { kind: "status", title: `Proposal run ${runId.slice(4, 12)}`, steps, note: note ?? defaults[phase] ?? null };

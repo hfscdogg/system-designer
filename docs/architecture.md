@@ -1,6 +1,6 @@
 # Architecture decision record: System Designer rebuild
 
-**Status:** accepted. M1 has landed in this repo.
+**Status:** accepted. M1 and M2 have landed in this repo.
 **Requirements source:** *Livewire System Designer: Tool-Agnostic PRD* (Henry Clifford).
 
 ## Decision
@@ -47,13 +47,14 @@ Each Hermes failure from PRD §20 maps to a mechanism here:
 | §9.1 | ≤3 questions, partial answers preserved | `questionsForTurn`, `applyClarification` | ✅ |
 | §9.2–9.4 | Deterministic receipt, atomic approval, button bound to receipt + hash | `receipt.ts`, `Store.commitApproval`, Chat card | ✅ |
 | §10 | LLM vs deterministic boundary | `packages/llm` returns untrusted data only | ✅ |
-| §11 | Read-only D-Tools, exact records, no fabrication | `packages/dtools` (port of the skill's GET client) | M2 |
-| §12 | Architecture patterns and BOM roles | Rule engine and materializers | M2 |
-| §13 | Compiler, binder, validator, renderer, preflight | Activities after `SCOPE_APPROVED` | M2–M3 |
+| §11 | Read-only D-Tools, exact records, no fabrication | `packages/dtools` (GET only), `admitProduct`, `catalog_evidence` per run | ✅ (pre-finalize refresh in M3) |
+| §12 | Architecture patterns, BOM roles, supported / allowance / unresolved, precedent | `packages/build/src/pattern.ts`, `materialize.ts`, `patterns/*.json` | ✅ (standard product IDs pending from Livewire) |
+| §13.1–13.5 | Prebuild, materializer, compiler, binder, validator | `apps/worker/src/build-activities.ts`, `packages/build` | ✅ |
+| §13.6–13.7 | Renderer, preflight | — | M3 |
 | §14 | PDF content, watermark, no internal financials | `packages/render` (port of `generate_proposal_html.js`) + Chromium + preflight | M3 |
 | §15.1–15.2 | Route binding, stale sessions | Thread checks in approval; `resetSession` | ✅ |
 | §15.3 | Pilot hold | No delivery or write code paths exist | ✅ structurally |
-| §15.4 | Margin config, Henry-only | Admin-only config table | M2 |
+| §15.4 | Margin config, Henry-only | `commercial_policies` (admin-only trigger, append-only), frozen per run | ✅ |
 | §16 | Append-only events, atomic publication, idempotency | `events` table, write-once blobs, idempotency keys | ✅ for M1 scope |
 | §17 | Immutable releases, pinned runs | Dockerfile, `RELEASE_ID`, Temporal `PINNED` versioning | ◑ Terraform and pipeline in M4 |
 | §18 | Acceptance | `apps/gateway/test/e2e.test.ts` + live run | M5 |
@@ -74,7 +75,7 @@ Each Hermes failure from PRD §20 maps to a mechanism here:
 |---|---|---|
 | **M0** | Spikes | Google Chat app in Workspace. **Confirm how an app posts a PDF attachment**: app-auth media upload is limited, so the fallback is a Drive file card or delegated upload. D-Tools read spike. Temporal Cloud namespace. GCP project. |
 | **M1** ✅ | Vertical slice | Chat → intake → scope → clarification → receipt → approval. |
-| **M2** | Catalog and compile | D-Tools read adapter, evidence admission, security-modernization materializer, compiler / binder / validator, margin config. |
+| **M2** ✅ | Catalog and compile | D-Tools read adapter, evidence admission, security-modernization materializer, compiler / binder / validator, margin config. Bounded LLM selection for uncommon scopes is deferred: unsupported scopes block and go to Zack. |
 | **M3** | Render and hold | Renderer, PDF, preflight, `READY_HELD`, PDF posted in the thread. |
 | **M4** | Hardening | Full PRD §18.2 adversarial suite, worker kill / recovery tests, Terraform, staging → prod pipeline, open-run reconciler. |
 | **M5** | Acceptance | Live acceptance run with Zack. Evidence packet: run ID, release ID, message ID, PDF hash, no side effects. |
@@ -87,3 +88,4 @@ Each Hermes failure from PRD §20 maps to a mechanism here:
 - **Production model:** which LLM provider and model are approved? `LLM_MODEL` must be set explicitly.
   - Server-side refusal fallbacks are deliberately **not** enabled, because they would silently switch models.
 - **Commercial values:** production margin thresholds and tax rules.
+- **Standard products:** the D-Tools record ID for each role in the security-modernization pattern, and which service categories have a priced labor record.

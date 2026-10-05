@@ -14,6 +14,7 @@ function fakeActs(overrides: Partial<RunActivities> = {}): RunActivities & { cal
     findCommittedApproval: async () => null,
     notify: async ({ text, key }) => void calls.push(`notify:${key}:${text}`),
     markOutcome: async ({ state }) => void calls.push(`outcome:${state}`),
+    buildStage: async ({ stage }) => (calls.push(`stage:${stage}`), { ok: true, summary: stage }),
     ...overrides,
   };
   return Object.assign(acts, { calls });
@@ -28,7 +29,7 @@ describe("runProposal", () => {
   it("reconciles an approval whose signal was lost", async () => {
     const acts = fakeActs({ findCommittedApproval: async () => ({ approvalId: "a1", receiptId: "R-X-1", scopeHash: "h1" }) });
     const result = await runProposal({ runId: "run_1" }, { acts, nextSignal: scripted([null]) });
-    expect(result).toEqual({ state: "SCOPE_APPROVED", approvalId: "a1", receiptId: "R-X-1" });
+    expect(result).toEqual({ state: "VALIDATED", approvalId: "a1", receiptId: "R-X-1" });
     expect(acts.calls).toContain("confirm:a1");
   });
 
@@ -45,7 +46,7 @@ describe("runProposal", () => {
         ]),
       },
     );
-    expect(result).toMatchObject({ state: "SCOPE_APPROVED", approvalId: "a-new" });
+    expect(result).toMatchObject({ state: "VALIDATED", approvalId: "a-new" });
     expect(acts.calls.filter((c) => c.startsWith("notify:"))).toEqual(["notify:run_1:notice:1:I can't accept that approval: approval names R-X-1, latest receipt is R-X-2."]);
   });
 
@@ -65,8 +66,22 @@ describe("runProposal", () => {
       findCommittedApproval: async () => ({ approvalId: "a1", receiptId: "R-X-1", scopeHash: "h1" }),
     });
     const result = await runProposal({ runId: "run_1" }, { acts, nextSignal: scripted([{ type: "clarification", intakeId: "in_2" }]) });
-    expect(result).toMatchObject({ state: "SCOPE_APPROVED", receiptId: "R-X-1" });
+    expect(result).toMatchObject({ state: "VALIDATED", receiptId: "R-X-1" });
     expect(acts.calls.some((c) => c.includes("arrived after the scope was approved"))).toBe(true);
+  });
+
+  it("runs every build stage once, in order, after approval", async () => {
+    const acts = fakeActs();
+    await runProposal({ runId: "r" }, { acts, nextSignal: scripted([{ type: "approved", receiptId: "R-X-1", scopeHash: "h1", approvalId: "a1" }]) });
+    expect(acts.calls.filter((c) => c.startsWith("stage:"))).toEqual(["stage:prebuild", "stage:admitCatalog", "stage:compileSelection", "stage:bindProposal", "stage:validate"]);
+    expect(acts.calls.at(-1)).toBe("progress:validated");
+  });
+
+  it("stops at the first failed build stage and marks the run blocked", async () => {
+    const acts = fakeActs({ buildStage: async ({ stage }) => (stage === "admitCatalog" ? { ok: false, reason: "D-Tools record missing" } : { ok: true, summary: "" }) });
+    const result = await runProposal({ runId: "r" }, { acts, nextSignal: scripted([{ type: "approved", receiptId: "R-X-1", scopeHash: "h1", approvalId: "a1" }]) });
+    expect(result).toEqual({ state: "BLOCKED", reason: "D-Tools record missing" });
+    expect(acts.calls).toContain("outcome:BLOCKED");
   });
 
   it("blocks when extraction fails and expires after long silence", async () => {

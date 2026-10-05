@@ -10,12 +10,14 @@
     "@sd/store": "workspace:*",
     "@sd/worker": "workspace:*",
     "@temporalio/client": "1.24.0",
-    "pg": "^8.23.1"
+    "pg": "^8.23.1",
+    "@sd/build": "workspace:*"
   },
   "scripts": {
     "start": "node src/main.ts"
   },
   "devDependencies": {
-    "@types/pg": "^8.23.1"
+    "@types/pg": "^8.23.1",
+    "@sd/dtools": "workspace:*"
   }
 }
