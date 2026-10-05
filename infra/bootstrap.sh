@@ -35,12 +35,12 @@ echo "==================================================================="
 echo
 echo "1) Add these GitHub repository variables"
 echo "   (github.com/hfscdogg/system-designer → Settings → Secrets and variables → Actions → Variables):"
-terraform output -json github_variables | python3 -c 'import json,sys; [print(f"     {k} = {v}") for k,v in json.load(sys.stdin).items()]'
+terraform output github_variables
 echo "   Also add: TEMPORAL_ADDRESS, TEMPORAL_NAMESPACE, LLM_MODEL,"
 echo "             GOOGLE_CHAT_UPLOAD_MODE (app or delegated), GOOGLE_CHAT_DELEGATED_USER (if delegated)."
 echo
 echo "2) Store the secret values (paste each value when prompted; nothing is echoed):"
-for s in $(terraform output -json secrets_to_fill | python3 -c 'import json,sys; print(" ".join(json.load(sys.stdin)))'); do
+for s in anthropic-api-key temporal-api-key dtools-api-key dtools-basic-auth; do
   echo "     read -rs V && printf %s \"\$V\" | gcloud secrets versions add ${s} --data-file=- && unset V"
 done
 echo
@@ -54,4 +54,4 @@ echo
 echo "Only if you use delegated PDF upload: in the Workspace Admin console → Security → API controls →"
 echo "Domain-wide delegation, add the worker's client ID with the scope"
 echo "https://www.googleapis.com/auth/chat.messages.create :"
-terraform output -json worker_service_accounts | python3 -c 'import json,sys; [print(f"     {e}: client ID {v[\"client_id\"]}  ({v[\"email\"]})") for e,v in json.load(sys.stdin).items()]'
+terraform output worker_service_accounts
