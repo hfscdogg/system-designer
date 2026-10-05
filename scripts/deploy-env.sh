@@ -3,7 +3,7 @@
 #
 #   scripts/deploy-env.sh <staging|prod> <region-docker.pkg.dev/.../system-designer@sha256:...>
 #
-# Expects env: GCP_PROJECT_ID GCP_REGION GCP_SQL_INSTANCE TEMPORAL_ADDRESS TEMPORAL_NAMESPACE LLM_MODEL
+# Expects env: GCP_PROJECT_ID GCP_PROJECT_NUMBER GCP_REGION GCP_SQL_INSTANCE TEMPORAL_ADDRESS TEMPORAL_NAMESPACE LLM_MODEL
 #              GOOGLE_CHAT_UPLOAD_MODE [GOOGLE_CHAT_DELEGATED_USER]
 # Needs: gcloud (authenticated as the deployer), curl, jq, temporal CLI.
 set -euo pipefail
@@ -24,9 +24,14 @@ DEPLOYMENT="system-designer-${ENV_NAME}"
 WORKER_SERVICE="sd-worker-${ENV_NAME}-${BUILD_ID}"
 GATEWAY_SERVICE="sd-gateway-${ENV_NAME}"
 BUCKET="${PROJECT}-sd-evidence-${ENV_NAME}"
+PROJECT_NUMBER="${GCP_PROJECT_NUMBER:?set the GCP_PROJECT_NUMBER repository variable}"
+# Cloud Run's deterministic URL, known before the first deploy. It is the token audience
+# Google Chat uses and, for add-on Chat apps, what card buttons call.
+GATEWAY_URL="https://${GATEWAY_SERVICE}-${PROJECT_NUMBER}.${REGION}.run.app"
+CHAT_ENDPOINT="${GATEWAY_URL}/chat/google"
 
 COMMON_ENV="RELEASE_ID=${DIGEST},TEMPORAL_ADDRESS=${TEMPORAL_ADDRESS},TEMPORAL_NAMESPACE=${TEMPORAL_NAMESPACE},TEMPORAL_TASK_QUEUE=${QUEUE},EVIDENCE_BUCKET=${BUCKET}"
-WORKER_ENV="${COMMON_ENV},WORKER_DEPLOYMENT_NAME=${DEPLOYMENT},LLM_MODEL=${LLM_MODEL},GOOGLE_CHAT_UPLOAD_MODE=${GOOGLE_CHAT_UPLOAD_MODE},GOOGLE_CHAT_DELEGATED_USER=${GOOGLE_CHAT_DELEGATED_USER:-},WORKER_SERVICE_ACCOUNT=${WORKER_SA}"
+WORKER_ENV="${COMMON_ENV},GOOGLE_CHAT_ACTION_URL=${CHAT_ENDPOINT},WORKER_DEPLOYMENT_NAME=${DEPLOYMENT},LLM_MODEL=${LLM_MODEL},GOOGLE_CHAT_UPLOAD_MODE=${GOOGLE_CHAT_UPLOAD_MODE},GOOGLE_CHAT_DELEGATED_USER=${GOOGLE_CHAT_DELEGATED_USER:-},WORKER_SERVICE_ACCOUNT=${WORKER_SA}"
 DB_SECRET="DATABASE_URL=database-url-${ENV_NAME}:latest"
 WORKER_SECRETS="${DB_SECRET},TEMPORAL_API_KEY=temporal-api-key:latest,ANTHROPIC_API_KEY=anthropic-api-key:latest,DTOOLS_API_KEY=dtools-api-key:latest,DTOOLS_BASIC_AUTH=dtools-basic-auth:latest"
 
@@ -79,20 +84,13 @@ for i in $(seq 1 30); do
 done
 
 log "gateway ${GATEWAY_SERVICE}"
-deploy_gateway() {
-  gcloud run deploy "${GATEWAY_SERVICE}" --region "${REGION}" --image "${IMAGE}" \
-    --command node --args apps/gateway/src/main.ts \
-    --service-account "${GATEWAY_SA}" --set-cloudsql-instances "${GCP_SQL_INSTANCE}" \
-    --set-env-vars "${COMMON_ENV},GOOGLE_CHAT_ENDPOINT_URL=$1" \
-    --set-secrets "${DB_SECRET},TEMPORAL_API_KEY=temporal-api-key:latest" \
-    --labels "sd-env=${ENV_NAME},sd-role=gateway" \
-    --allow-unauthenticated --min-instances 0 --max-instances 4 --cpu 1 --memory 512Mi --quiet
-}
-EXISTING_URL="$(gcloud run services describe "${GATEWAY_SERVICE}" --region "${REGION}" --format 'value(status.url)' 2>/dev/null || true)"
-deploy_gateway "${EXISTING_URL:-pending}/chat/google"
-GATEWAY_URL="$(gcloud run services describe "${GATEWAY_SERVICE}" --region "${REGION}" --format 'value(status.url)')"
-# First deploy: the URL only exists afterwards, and it is the token audience Google Chat uses.
-[[ "${EXISTING_URL}" == "${GATEWAY_URL}" ]] || deploy_gateway "${GATEWAY_URL}/chat/google"
+gcloud run deploy "${GATEWAY_SERVICE}" --region "${REGION}" --image "${IMAGE}" \
+  --command node --args apps/gateway/src/main.ts \
+  --service-account "${GATEWAY_SA}" --set-cloudsql-instances "${GCP_SQL_INSTANCE}" \
+  --set-env-vars "${COMMON_ENV},GOOGLE_CHAT_ENDPOINT_URL=${CHAT_ENDPOINT},GOOGLE_CLOUD_PROJECT_NUMBER=${PROJECT_NUMBER}" \
+  --set-secrets "${DB_SECRET},TEMPORAL_API_KEY=temporal-api-key:latest" \
+  --labels "sd-env=${ENV_NAME},sd-role=gateway" \
+  --allow-unauthenticated --min-instances 0 --max-instances 4 --cpu 1 --memory 512Mi --quiet
 
 log "smoke checks"
 GW_HEALTH="$(curl -fsS "${GATEWAY_URL}/healthz")"
@@ -118,6 +116,6 @@ done
   echo "release=${DIGEST}"
   echo "build_id=${BUILD_ID}"
   echo "gateway_url=${GATEWAY_URL}"
-  echo "chat_endpoint=${GATEWAY_URL}/chat/google"
+  echo "chat_endpoint=${CHAT_ENDPOINT}"
 } | tee "release-${ENV_NAME}.txt"
 log "done"

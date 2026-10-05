@@ -14,9 +14,18 @@ const CHAT_CERTS_URL = `https://www.googleapis.com/service_accounts/v1/metadata/
 
 export type GoogleChatAudience = { mode: "endpoint_url"; url: string } | { mode: "project_number"; projectNumber: string };
 
+/** The account Google uses to call Chat apps built as Workspace add-ons. */
+export function addonIssuer(projectNumber: string): string {
+  return `service-${projectNumber}@gcp-sa-gsuiteaddons.iam.gserviceaccount.com`;
+}
+
 export type RequestVerifier = (authorizationHeader: string | undefined) => Promise<boolean>;
 
-export function googleChatVerifier(audience: GoogleChatAudience, client = new OAuth2Client()): RequestVerifier {
+/**
+ * `issuers` lists who may call the endpoint: the classic Chat system account,
+ * plus the add-on account when the app is built as a Workspace add-on.
+ */
+export function googleChatVerifier(audience: GoogleChatAudience, client = new OAuth2Client(), issuers: string[] = [CHAT_ISSUER]): RequestVerifier {
   let certs: { at: number; value: Record<string, string> } | null = null;
   return async (header) => {
     const token = /^Bearer (.+)$/.exec(header ?? "")?.[1];
@@ -25,7 +34,7 @@ export function googleChatVerifier(audience: GoogleChatAudience, client = new OA
       if (audience.mode === "endpoint_url") {
         const ticket = await client.verifyIdToken({ idToken: token, audience: audience.url });
         const p = ticket.getPayload();
-        return p?.email === CHAT_ISSUER && p.email_verified === true;
+        return !!p?.email && issuers.includes(p.email) && p.email_verified === true;
       }
       if (!certs || Date.now() - certs.at > 3_600_000) {
         const res = await fetch(CHAT_CERTS_URL);

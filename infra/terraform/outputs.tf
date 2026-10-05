@@ -1,12 +1,13 @@
 output "github_variables" {
   description = "Add these as GitHub repository variables (Settings → Secrets and variables → Actions → Variables)."
   value = {
-    GCP_PROJECT_ID   = var.project_id
-    GCP_REGION       = var.region
-    GCP_WIF_PROVIDER = google_iam_workload_identity_pool_provider.github.name
-    GCP_DEPLOYER_SA  = google_service_account.deployer.email
-    GCP_SQL_INSTANCE = google_sql_database_instance.main.connection_name
-    GCP_IMAGE_REPO   = "${var.region}-docker.pkg.dev/${var.project_id}/${google_artifact_registry_repository.images.repository_id}"
+    GCP_PROJECT_ID     = var.project_id
+    GCP_PROJECT_NUMBER = data.google_project.this.number
+    GCP_REGION         = var.region
+    GCP_WIF_PROVIDER   = google_iam_workload_identity_pool_provider.github.name
+    GCP_DEPLOYER_SA    = google_service_account.deployer.email
+    GCP_SQL_INSTANCE   = google_sql_database_instance.main.connection_name
+    GCP_IMAGE_REPO     = "${var.region}-docker.pkg.dev/${var.project_id}/${google_artifact_registry_repository.images.repository_id}"
   }
 }
 

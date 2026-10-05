@@ -28,6 +28,52 @@ interface ChatEvent {
   action?: { actionMethodName?: string; parameters?: Array<{ key?: string; value?: string }> };
 }
 
+/**
+ * Chat apps built as Google Workspace add-ons receive a different envelope:
+ * { commonEventObject, authorizationEventObject, chat: { user, eventTime,
+ * messagePayload | buttonClickedPayload | ... } }. It is mapped onto the
+ * classic shape so the rest of the parser and the gateway stay the same.
+ */
+interface AddonEvent {
+  commonEventObject?: { invokedFunction?: string; parameters?: Record<string, string> };
+  chat?: {
+    user?: ChatUser;
+    eventTime?: string;
+    messagePayload?: { space?: ChatEvent["space"]; message?: ChatEvent["message"] };
+    buttonClickedPayload?: { space?: ChatEvent["space"]; message?: ChatEvent["message"] };
+  };
+}
+
+function isAddonEvent(e: ChatEvent & AddonEvent): boolean {
+  return typeof e.chat === "object" && e.chat !== null && e.type === undefined;
+}
+
+export function isAddonBody(rawBytes: Uint8Array): boolean {
+  try {
+    return isAddonEvent(JSON.parse(new TextDecoder().decode(rawBytes)));
+  } catch {
+    return false;
+  }
+}
+
+function fromAddonEvent(e: AddonEvent): ChatEvent {
+  const chat = e.chat!;
+  if (chat.messagePayload) {
+    return { type: "MESSAGE", eventTime: chat.eventTime, space: chat.messagePayload.space, message: chat.messagePayload.message, user: chat.user };
+  }
+  if (chat.buttonClickedPayload) {
+    return {
+      type: "CARD_CLICKED",
+      eventTime: chat.eventTime,
+      space: chat.buttonClickedPayload.space,
+      message: chat.buttonClickedPayload.message,
+      user: chat.user,
+      common: { invokedFunction: e.commonEventObject?.invokedFunction, parameters: e.commonEventObject?.parameters ?? {} },
+    };
+  }
+  return { type: "ADDON_OTHER", eventTime: chat.eventTime };
+}
+
 const sender = (u: ChatUser | undefined) => ({
   providerUserId: u?.name ?? "",
   email: u?.email ?? null,
@@ -40,12 +86,13 @@ const sender = (u: ChatUser | undefined) => ({
  * verifyGoogleChatRequest() has accepted the bearer token.
  */
 export function parseGoogleChatEvent(rawBytes: Uint8Array): InboundEvent {
-  let event: ChatEvent;
+  let parsed: ChatEvent & AddonEvent;
   try {
-    event = JSON.parse(new TextDecoder().decode(rawBytes)) as ChatEvent;
+    parsed = JSON.parse(new TextDecoder().decode(rawBytes)) as ChatEvent & AddonEvent;
   } catch {
     return { kind: "ignored", reason: "body is not JSON" };
   }
+  const event = isAddonEvent(parsed) ? fromAddonEvent(parsed) : parsed;
   const spaceId = event.space?.name;
   if (!spaceId) return { kind: "ignored", reason: "event has no space" };
   // In a direct message the whole DM is one conversation: follow-up messages
@@ -76,10 +123,11 @@ export function parseGoogleChatEvent(rawBytes: Uint8Array): InboundEvent {
   }
 
   if (event.type === "CARD_CLICKED") {
-    const fn = event.common?.invokedFunction ?? event.action?.actionMethodName;
-    if (fn !== APPROVE_FUNCTION) return { kind: "ignored", reason: `unknown card action ${fn ?? "(none)"}` };
     const params: Record<string, string> = { ...(event.common?.parameters ?? {}) };
     for (const p of event.action?.parameters ?? []) if (p.key && p.value !== undefined) params[p.key] ??= p.value;
+    // Add-on apps invoke the endpoint URL as the "function", so the action name travels as a parameter.
+    const fn = params.action ?? event.common?.invokedFunction ?? event.action?.actionMethodName;
+    if (fn !== APPROVE_FUNCTION) return { kind: "ignored", reason: `unknown card action ${fn ?? "(none)"}` };
     if (!params.receipt_id || !params.scope_hash || !threadId) return { kind: "ignored", reason: "approve click missing parameters" };
     const who = event.user ?? {};
     return {

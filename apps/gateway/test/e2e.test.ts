@@ -345,4 +345,27 @@ describe("Google Chat → scope approval vertical slice", () => {
     expect(t.texts().at(-1)).toContain("TestCo PANEL-1 changed in D-Tools");
     expect(await t.store.readBinaryArtifact(run!.id, "render", "pdf")).toBeNull();
   });
+
+  it("handles Workspace add-on events end to end and wraps replies for them", async () => {
+    const t = await setup([completeExtraction()]);
+    const addon = (text: string, id: string) => ({
+      commonEventObject: { hostApp: "CHAT" },
+      chat: {
+        user: { name: "users/zack", type: "HUMAN" },
+        eventTime: "2026-10-05T12:00:00Z",
+        messagePayload: { space: { name: SPACE, spaceType: "SPACE" }, message: { name: id, text, sender: { name: "users/zack", type: "HUMAN" }, thread: { name: THREAD } } },
+      },
+    });
+    expect((await t.send(addon("help", `${SPACE}/messages/h1`))).body).toMatchObject({
+      hostAppDataAction: { chatDataAction: { createMessageAction: { message: { text: expect.stringContaining("scope receipt") } } } },
+    });
+    await t.send(addon("Smith security upgrade", `${SPACE}/messages/a1`));
+    const [receipt] = t.receipts();
+    const res = await t.send({
+      commonEventObject: { parameters: { action: "approve_scope", receipt_id: receipt!.receiptId, scope_hash: receipt!.approve!.scopeHash } },
+      chat: { user: { name: "users/zack", type: "HUMAN" }, eventTime: "2026-10-05T12:02:00Z", buttonClickedPayload: { space: { name: SPACE, spaceType: "SPACE" }, message: { name: `${SPACE}/messages/app-x`, thread: { name: THREAD } } } },
+    });
+    expect(JSON.stringify(res.body)).toContain("approved by Zack Reichert");
+    expect((await t.store.listRunsForPerson("zack"))[0]!.state).toBe("READY_HELD");
+  });
 });

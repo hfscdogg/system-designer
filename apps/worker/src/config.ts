@@ -44,6 +44,8 @@ export function productionAdapters(): Record<string, ChannelAdapter> {
     google_chat: new GoogleChatAdapter(
       googleAppAuthRequest(),
       googleFileRequest(mode, process.env.GOOGLE_CHAT_DELEGATED_USER, process.env.WORKER_SERVICE_ACCOUNT),
+      // Add-on Chat apps: card buttons call the gateway URL directly.
+      process.env.GOOGLE_CHAT_ACTION_URL ? { actionFunction: process.env.GOOGLE_CHAT_ACTION_URL } : {},
     ),
   };
 }

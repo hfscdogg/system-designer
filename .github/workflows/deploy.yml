@@ -23,6 +23,7 @@ concurrency:
 
 env:
   GCP_PROJECT_ID: ${{ vars.GCP_PROJECT_ID }}
+  GCP_PROJECT_NUMBER: ${{ vars.GCP_PROJECT_NUMBER }}
   GCP_REGION: ${{ vars.GCP_REGION }}
   GCP_SQL_INSTANCE: ${{ vars.GCP_SQL_INSTANCE }}
   TEMPORAL_ADDRESS: ${{ vars.TEMPORAL_ADDRESS }}

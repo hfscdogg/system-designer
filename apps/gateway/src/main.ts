@@ -1,12 +1,18 @@
 import { createServer } from "node:http";
-import { googleChatVerifier } from "@sd/channels";
+import { addonIssuer, CHAT_ISSUER, googleChatVerifier } from "@sd/channels";
 import { productionStore, requireEnv, temporalClient, temporalSettings, TemporalWorkflows } from "@sd/worker";
 import { handleGoogleChat } from "./handler.ts";
 
 async function main() {
   const { store } = productionStore();
   const workflows = new TemporalWorkflows(await temporalClient(temporalSettings()));
-  const verifyGoogleChat = googleChatVerifier({ mode: "endpoint_url", url: requireEnv("GOOGLE_CHAT_ENDPOINT_URL") });
+  // Accept the classic Chat caller and, for apps built as Workspace add-ons, the project's add-on account.
+  const projectNumber = process.env.GOOGLE_CLOUD_PROJECT_NUMBER;
+  const verifyGoogleChat = googleChatVerifier(
+    { mode: "endpoint_url", url: requireEnv("GOOGLE_CHAT_ENDPOINT_URL") },
+    undefined,
+    projectNumber ? [CHAT_ISSUER, addonIssuer(projectNumber)] : [CHAT_ISSUER],
+  );
   const log = (entry: Record<string, unknown>) => console.log(JSON.stringify(entry));
 
   const server = createServer(async (req, res) => {

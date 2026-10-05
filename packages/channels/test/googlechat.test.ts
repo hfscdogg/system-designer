@@ -180,3 +180,58 @@ describe("GoogleChatAdapter.postFile", () => {
     expect(calls[2]!.init.headers.Authorization).toBe("Bearer user-token");
   });
 });
+
+describe("Workspace add-on Chat apps", () => {
+  const addonMessage = {
+    commonEventObject: { hostApp: "CHAT", userLocale: "en" },
+    authorizationEventObject: { systemIdToken: "x" },
+    chat: {
+      user: { name: "users/zack", displayName: "Zack", email: "zack@example.com", type: "HUMAN" },
+      eventTime: "2026-10-05T12:00:00Z",
+      messagePayload: {
+        space: { name: "spaces/DM1", spaceType: "DIRECT_MESSAGE" },
+        message: { name: "spaces/DM1/messages/M9", text: "Smith job", sender: { name: "users/zack", type: "HUMAN" }, thread: { name: "spaces/DM1/threads/x" }, createTime: "2026-10-05T12:00:00Z" },
+      },
+    },
+  };
+
+  it("parses add-on message events like classic ones", () => {
+    expect(parseGoogleChatEvent(enc(addonMessage))).toMatchObject({
+      kind: "message",
+      providerMessageId: "spaces/DM1/messages/M9",
+      thread: { spaceId: "spaces/DM1", threadId: "spaces/DM1" },
+      isDirectMessage: true,
+      text: "Smith job",
+    });
+  });
+
+  it("parses add-on button clicks using the action parameter", () => {
+    const click = {
+      commonEventObject: { hostApp: "CHAT", parameters: { action: "approve_scope", receipt_id: "R-X-1", scope_hash: "sha256:abc" } },
+      chat: {
+        user: { name: "users/zack", type: "HUMAN" },
+        eventTime: "2026-10-05T12:01:00Z",
+        buttonClickedPayload: { space: { name: "spaces/A", spaceType: "SPACE" }, message: { name: "spaces/A/messages/app-1", thread: { name: "spaces/A/threads/T" } } },
+      },
+    };
+    expect(parseGoogleChatEvent(enc(click))).toMatchObject({ kind: "approve_click", receiptId: "R-X-1", scopeHash: "sha256:abc", thread: { threadId: "spaces/A/threads/T" } });
+  });
+
+  it("points card buttons at the endpoint URL when configured, and wraps replies", async () => {
+    const { googleChatReplyBody } = await import("../src/index.ts");
+    const view = { kind: "receipt" as const, receiptId: "R-X-1", version: 1, status: "AWAITING_APPROVAL" as const, lines: ["x"], approve: { receiptId: "R-X-1", scopeHash: "h" } };
+    const json = JSON.stringify(renderGoogleChat(view, { actionFunction: "https://gw.example/chat/google" }));
+    expect(json).toContain('"function":"https://gw.example/chat/google"');
+    expect(json).toContain('{"key":"action","value":"approve_scope"}');
+    expect(googleChatReplyBody("hi", true)).toEqual({ hostAppDataAction: { chatDataAction: { createMessageAction: { message: { text: "hi" } } } } });
+    expect(googleChatReplyBody("hi", false)).toEqual({ text: "hi" });
+  });
+
+  it("accepts the add-on caller only when configured", async () => {
+    const { addonIssuer, CHAT_ISSUER } = await import("../src/index.ts");
+    const client = { verifyIdToken: async () => ({ getPayload: () => ({ email: addonIssuer("123"), email_verified: true }) }) } as unknown as OAuth2Client;
+    const audience = { mode: "endpoint_url" as const, url: "https://gw.example/chat/google" };
+    expect(await googleChatVerifier(audience, client)("Bearer t")).toBe(false);
+    expect(await googleChatVerifier(audience, client, [CHAT_ISSUER, addonIssuer("123")])("Bearer t")).toBe(true);
+  });
+});

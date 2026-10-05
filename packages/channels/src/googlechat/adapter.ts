@@ -2,7 +2,7 @@ import { GoogleAuth } from "google-auth-library";
 import type { ThreadRef } from "@sd/core";
 import type { ChannelAdapter, OutboundFile, View } from "../types.ts";
 import { GOOGLE_CHAT } from "./parse.ts";
-import { renderGoogleChat } from "./render.ts";
+import { renderGoogleChat, type RenderOptions } from "./render.ts";
 
 const API = "https://chat.googleapis.com/v1";
 const UPLOAD_API = "https://chat.googleapis.com/upload/v1";
@@ -115,9 +115,12 @@ export class GoogleChatAdapter implements ChannelAdapter {
   private readonly request: HttpRequest;
   private readonly fileRequest: HttpRequest;
 
-  constructor(request: HttpRequest = googleAppAuthRequest(), fileRequest: HttpRequest = request) {
+  private readonly render: RenderOptions;
+
+  constructor(request: HttpRequest = googleAppAuthRequest(), fileRequest: HttpRequest = request, render: RenderOptions = {}) {
     this.request = request;
     this.fileRequest = fileRequest;
+    this.render = render;
   }
 
   async postFile(thread: ThreadRef, file: OutboundFile, idempotencyKey: string) {
@@ -160,7 +163,7 @@ export class GoogleChatAdapter implements ChannelAdapter {
       url: `${API}/${thread.spaceId}/messages?${params}`,
       method: "POST",
       // DM conversations are keyed by space (threadId === spaceId) and post without a thread.
-      data: thread.threadId === thread.spaceId ? renderGoogleChat(view) : { ...renderGoogleChat(view), thread: { name: thread.threadId } },
+      data: thread.threadId === thread.spaceId ? renderGoogleChat(view, this.render) : { ...renderGoogleChat(view, this.render), thread: { name: thread.threadId } },
     });
     const name = (res.data as { name?: string }).name;
     if (!name) throw new Error("Google Chat did not return a message name");
@@ -168,7 +171,7 @@ export class GoogleChatAdapter implements ChannelAdapter {
   }
 
   async update(messageId: string, view: View) {
-    const body = renderGoogleChat(view);
+    const body = renderGoogleChat(view, this.render);
     const mask = "cardsV2" in body ? "text,cardsV2" : "text";
     await this.request({ url: `${API}/${messageId}?updateMask=${mask}`, method: "PATCH", data: body });
   }

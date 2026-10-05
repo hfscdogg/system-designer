@@ -1,5 +1,5 @@
 import { parseApprovalText, type RunSignal, type ThreadRef } from "@sd/core";
-import { parseGoogleChatEvent, type InboundEvent, type RequestVerifier, type WebhookReply } from "@sd/channels";
+import { googleChatReplyBody, isAddonBody, parseGoogleChatEvent, type InboundEvent, type RequestVerifier, type WebhookReply } from "@sd/channels";
 import type { Person, Store } from "@sd/store";
 import type { WorkflowPort } from "@sd/worker";
 
@@ -44,7 +44,11 @@ async function withRetry<T>(fn: () => Promise<T>, attempts = 3): Promise<T> {
 
 export async function handleGoogleChat(deps: GatewayDeps, req: WebhookRequest): Promise<WebhookReply> {
   if (!(await deps.verifyGoogleChat(req.authorization))) return { status: 401, body: { error: "unauthenticated" } };
-  return handleEvent(deps, parseGoogleChatEvent(req.body));
+  const out = await handleEvent(deps, parseGoogleChatEvent(req.body));
+  // Workspace add-on Chat apps expect replies wrapped in a host-app action.
+  const text = (out.body as { text?: unknown }).text;
+  if (typeof text === "string" && isAddonBody(req.body)) return { status: out.status, body: googleChatReplyBody(text, true) };
+  return out;
 }
 
 export async function handleEvent(deps: GatewayDeps, event: InboundEvent): Promise<WebhookReply> {
