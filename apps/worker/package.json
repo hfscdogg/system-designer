@@ -1,0 +1,28 @@
+{
+  "name": "@sd/worker",
+  "version": "0.1.0",
+  "private": true,
+  "type": "module",
+  "dependencies": {
+    "@google-cloud/storage": "^8.2.0",
+    "@sd/channels": "workspace:*",
+    "@sd/core": "workspace:*",
+    "@sd/llm": "workspace:*",
+    "@sd/store": "workspace:*",
+    "@temporalio/activity": "1.24.0",
+    "@temporalio/client": "1.24.0",
+    "@temporalio/worker": "1.24.0",
+    "@temporalio/workflow": "1.24.0",
+    "pg": "^8.23.1"
+  },
+  "devDependencies": {
+    "@temporalio/testing": "1.24.0",
+    "@types/pg": "^8.23.1"
+  },
+  "exports": {
+    ".": "./src/index.ts"
+  },
+  "scripts": {
+    "start": "node src/main.ts"
+  }
+}
