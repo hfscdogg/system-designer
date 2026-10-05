@@ -1,5 +1,5 @@
 import type { ThreadRef } from "@sd/core";
-import type { ChannelAdapter, View } from "./types.ts";
+import type { ChannelAdapter, OutboundFile, View } from "./types.ts";
 
 /** In-memory adapter for tests: records everything, honors idempotency keys. */
 export class FakeChannelAdapter implements ChannelAdapter {
@@ -26,6 +26,16 @@ export class FakeChannelAdapter implements ChannelAdapter {
     if (!m) throw new Error(`unknown message ${messageId}`);
     m.view = view;
     m.history.push(view);
+  }
+
+  readonly files: Array<{ messageId: string; thread: ThreadRef; file: OutboundFile }> = [];
+
+  async postFile(thread: ThreadRef, file: OutboundFile, idempotencyKey: string) {
+    const existing = this.byKey.get(idempotencyKey);
+    if (existing) return { messageId: existing, attachmentRef: `${existing}/attachments/1` };
+    const { messageId } = await this.post(thread, { kind: "text", text: file.text }, idempotencyKey);
+    this.files.push({ messageId, thread, file: { ...file, bytes: new Uint8Array(file.bytes) } });
+    return { messageId, attachmentRef: `${messageId}/attachments/1` };
   }
 
   /** Messages in posting order. */

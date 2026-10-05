@@ -17,7 +17,10 @@ import {
   type ProposalDraft,
   type ValidationResult,
 } from "@sd/build";
-import { RUN_STATES, type RunState, type ScopeDraftV1 } from "@sd/core";
+import { RUN_STATES, sha256Hex, type RunState, type ScopeDraftV1 } from "@sd/core";
+import type { OutboundFile } from "@sd/channels";
+import { loadBrand, preflightPdf, renderProposalHtml, type PreflightResult } from "@sd/render";
+import type { CustomerProposal } from "@sd/build";
 import { DToolsReadError, type DToolsReader } from "@sd/dtools";
 import { IntegrityError, type RunRecord, type Store } from "@sd/store";
 import type { BuildStage, StageOutcome } from "./workflows/logic.ts";
@@ -32,6 +35,9 @@ export interface BuildDeps {
   dtools: DToolsReader;
   patterns: PatternSpec[];
   notify: (run: RunRecord, text: string, key: string) => Promise<void>;
+  renderPdf: (html: string) => Promise<Uint8Array>;
+  fetchImage: (url: string) => Promise<{ bytes: Uint8Array; contentType: string } | null>;
+  postFile: (run: RunRecord, file: OutboundFile, key: string) => Promise<{ messageId: string; attachmentRef: string }>;
 }
 
 interface Approved {
@@ -75,7 +81,7 @@ export function createBuildStage(deps: BuildDeps) {
     await store.transitionRun(runId, to, "system", data);
   }
 
-  const stages: Record<BuildStage, (runId: string) => Promise<StageOutcome>> = {
+  const stages: Partial<Record<BuildStage, (runId: string) => Promise<StageOutcome>>> = {
     async prebuild(runId) {
       const a = await approved(runId);
       const acquired = await store.acquireBuild(runId, a.approvalId, a.scopeHash);
@@ -173,6 +179,18 @@ export function createBuildStage(deps: BuildDeps) {
         return { ok: false, reason: `validation failed (${blocking.join("; ")})` };
       }
       await store.publishArtifact(runId, "validate", "customer_view", customerView(proposal));
+      // Confidential financial report: stored for audit, never posted (PRD §14.5).
+      await store.publishArtifact(runId, "internal", "financial_report", {
+        run_id: runId,
+        policy_version: proposal.internal.policy_version,
+        cost_cents: proposal.internal.cost_cents,
+        priced_cents_with_cost: proposal.internal.priced_cents_with_cost,
+        gross_margin_pct: proposal.internal.gross_margin_pct,
+        lines_without_cost: proposal.internal.lines_without_cost,
+        lines: proposal.sections.flatMap((sec) =>
+          sec.lines.map((l) => ({ role: l.role, record_id: l.record_id, quantity: l.quantity, unit_price_cents: l.unit_price_cents, unit_cost_cents: l.unit_cost_cents })),
+        ),
+      });
       await advance(runId, "VALIDATED");
       const c = proposal.commercial;
       const summary = [
@@ -186,7 +204,113 @@ export function createBuildStage(deps: BuildDeps) {
     },
   };
 
+  Object.assign(stages, {
+    /** Re-read every admitted record right before finalizing (PRD §11.2). Any change stops the run. */
+    async refreshCatalog(runId: string): Promise<StageOutcome> {
+      const admitted = await artifact<AdmittedProduct[]>(runId, "catalog", "admitted");
+      const changed: string[] = [];
+      const reads: Array<{ record_id: string; sha256: string; fetched_at: string }> = [];
+      for (const p of admitted) {
+        let read;
+        try {
+          read = await deps.dtools.getProduct(p.record_id);
+        } catch (err) {
+          if (err instanceof DToolsReadError && err.status !== null && err.status < 500) {
+            changed.push(`${p.brand} ${p.model} is no longer readable (${err.message})`);
+            continue;
+          }
+          throw err;
+        }
+        reads.push({ record_id: p.record_id, sha256: read.sha256, fetched_at: read.fetchedAt });
+        if (read.sha256 !== p.evidence.sha256) {
+          await store.publishBinaryArtifact(runId, "refresh", p.record_id, read.body, "application/json");
+          changed.push(`${p.brand} ${p.model} changed in D-Tools`);
+        }
+      }
+      if (changed.length) return { ok: false, reason: changed.join("; "), outcome: "RECONCILIATION_REQUIRED" };
+      // Fetch times differ between retries, so only the first confirmation is kept.
+      if (!(await store.readArtifact(runId, "refresh", "confirmed"))) {
+        await store.publishArtifact(runId, "refresh", "confirmed", { records: reads.map(({ record_id, sha256 }) => ({ record_id, sha256 })), first_fetch: reads[0]?.fetched_at ?? null });
+      }
+      return { ok: true, summary: `${reads.length} D-Tools records unchanged` };
+    },
+
+    async render(runId: string): Promise<StageOutcome> {
+      const customer = await artifact<CustomerProposal>(runId, "validate", "customer_view");
+      // Rendering is not byte-deterministic (dates, PDF ids), so a retry reuses what was published.
+      let html = await store.readBinaryArtifact(runId, "render", "html");
+      if (!html) {
+        const images: Record<string, string> = {};
+        const manifest: Array<{ url: string; sha256: string | null }> = [];
+        for (const item of customer.sections.flatMap((s) => s.items)) {
+          if (!("url" in item.image) || item.image.url in images) continue;
+          const got = await deps.fetchImage(item.image.url).catch(() => null);
+          manifest.push({ url: item.image.url, sha256: got ? sha256Hex(got.bytes) : null });
+          if (got) images[item.image.url] = `data:${got.contentType};base64,${Buffer.from(got.bytes).toString("base64")}`;
+        }
+        const markup = renderProposalHtml(customer, await loadBrand(), images, { runId, preparedOn: new Date().toISOString().slice(0, 10) });
+        await store.publishBinaryArtifact(runId, "render", "html", new TextEncoder().encode(markup), "text/html");
+        await store.publishArtifact(runId, "render", "images", manifest);
+        html = await store.readBinaryArtifact(runId, "render", "html");
+      }
+      if (!(await store.readBinaryArtifact(runId, "render", "pdf"))) {
+        const pdf = await deps.renderPdf(new TextDecoder().decode(html!.bytes));
+        await store.publishBinaryArtifact(runId, "render", "pdf", pdf, "application/pdf");
+      }
+      await advance(runId, "RENDERED");
+      return { ok: true, summary: "PDF rendered" };
+    },
+
+    async preflight(runId: string): Promise<StageOutcome> {
+      const customer = await artifact<CustomerProposal>(runId, "validate", "customer_view");
+      const pdf = await store.readBinaryArtifact(runId, "render", "pdf");
+      if (!pdf) throw new IntegrityError(`missing render/pdf for ${runId}`);
+      const result: PreflightResult = await preflightPdf(pdf.bytes, { customer, runId, sha256: pdf.sha256 });
+      await store.publishArtifact(runId, "preflight", "result", result);
+      if (!result.ok) return { ok: false, reason: `PDF preflight failed (${result.failures.slice(0, 3).join("; ")})` };
+      await advance(runId, "PREFLIGHT_PASSED", { pages: result.pages, sha256: result.sha256 });
+      return { ok: true, summary: `${result.pages}-page PDF passed preflight` };
+    },
+
+    async handoff(runId: string): Promise<StageOutcome> {
+      const run = await store.getRun(runId);
+      const customer = await artifact<CustomerProposal>(runId, "validate", "customer_view");
+      const pdf = await store.readBinaryArtifact(runId, "render", "pdf");
+      const check = await artifact<PreflightResult>(runId, "preflight", "result");
+      if (!pdf || !check.ok || check.sha256 !== pdf.sha256) throw new IntegrityError(`run ${runId} has no preflighted PDF to hand off`);
+
+      const posted = await deps.postFile(
+        run,
+        {
+          bytes: pdf.bytes,
+          filename: `Livewire-${customer.proposal_number}-conceptual-budget.pdf`,
+          contentType: "application/pdf",
+          text: `Conceptual budget for ${customer.client} — held for internal review, not sent to the customer.\nPDF sha256 ${pdf.sha256.slice(0, 16)}…`,
+        },
+        `${runId}:pdf`,
+      );
+      await store.recordHandoff({ runId, pdfSha256: pdf.sha256, thread: { platform: run.platform, spaceId: run.space_id, threadId: run.thread_id }, providerMessageId: posted.messageId, attachmentRef: posted.attachmentRef });
+
+      // Bound artifact packet (PRD §14.5): what was produced, from which evidence, by which release.
+      const events = await store.listEvents(runId);
+      const models = [...new Set(events.map((e) => e.data.model).filter((m): m is string => typeof m === "string"))];
+      await store.publishArtifact(runId, "packet", "manifest", {
+        run_id: runId,
+        release_id: store.releaseId,
+        models,
+        pdf_sha256: pdf.sha256,
+        provider_message_id: posted.messageId,
+        artifacts: (await store.listArtifacts(runId)).filter((a) => a.stage !== "packet").map(({ stage, name, sha256 }) => ({ stage, name, sha256 })),
+        catalog_evidence: await store.catalogEvidence(runId),
+      });
+      await advance(runId, "READY_HELD", { pdfSha256: pdf.sha256, providerMessageId: posted.messageId });
+      return { ok: true, summary: "PDF posted, held" };
+    },
+  });
+
   return async function buildStage({ runId, stage }: { runId: string; stage: BuildStage }): Promise<StageOutcome> {
-    return stages[stage](runId);
+    const run = stages[stage];
+    if (!run) throw new IntegrityError(`unknown build stage ${stage}`);
+    return run(runId);
   };
 }

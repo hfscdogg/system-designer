@@ -7,6 +7,11 @@ import { TEST_POLICY, testStore } from "../../../packages/store/test/helpers.ts"
 import { recordedDToolsReader } from "@sd/dtools";
 import type { PatternSpec } from "@sd/build";
 import { CATALOG, testPattern } from "../../../packages/build/test/fixtures.ts";
+import { htmlToPdf, preflightPdf } from "@sd/render";
+import { sha256Hex } from "@sd/core";
+import type { DToolsReader } from "@sd/dtools";
+
+const PIXEL = Uint8Array.from(atob("iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mNkYAAAAAYAAjCB0C8AAAAASUVORK5CYII="), (ch) => ch.charCodeAt(0));
 import { handleGoogleChat, type GatewayDeps } from "../src/handler.ts";
 
 const SPACE = "spaces/A";
@@ -43,6 +48,7 @@ function click(receiptId: string, scopeHash: string, user = "users/zack", thread
 
 interface BuildOptions {
   catalog?: Record<string, unknown>;
+  dtools?: DToolsReader & { calls: string[] };
   patterns?: PatternSpec[];
   policy?: boolean;
 }
@@ -53,8 +59,18 @@ async function setup(extractions: unknown[] = [], patches: unknown[] = [], build
   const chat = new FakeChannelAdapter();
   const extractor: ScopeExtractor = { extract: async () => ({ raw: extractions.shift(), model: "fake-model" }) };
   const interpreter: ClarificationInterpreter = { interpret: async () => ({ raw: patches.shift(), model: "fake-model" }) };
-  const dtools = recordedDToolsReader(build.catalog ?? CATALOG);
-  const acts = createActivities({ store, adapters: { google_chat: chat }, extractor, interpreter, dtools, patterns: build.patterns ?? [testPattern()] });
+  const dtools = build.dtools ?? recordedDToolsReader(build.catalog ?? CATALOG);
+  const acts = createActivities({
+    store,
+    adapters: { google_chat: chat },
+    extractor,
+    interpreter,
+    dtools,
+    patterns: build.patterns ?? [testPattern()],
+    renderPdf: (html) => htmlToPdf(html),
+    // Only the panel has a reachable image; everything else must show IMAGE PENDING.
+    fetchImage: async (url) => (url.includes("PANEL") ? { bytes: PIXEL, contentType: "image/png" } : null),
+  });
   const workflows = new InlineWorkflows(acts);
   const deps: GatewayDeps = { store, workflows, verifyGoogleChat: async (h) => h === "Bearer good" };
   const send = async (event: unknown, authorization = "Bearer good") => {
@@ -84,7 +100,7 @@ describe("Google Chat → scope approval vertical slice", () => {
     expect(r[0]!.status).toBe("NEEDS_CLARIFICATION");
     expect(r[0]!.approve).toBeNull();
     expect(r[0]!.lines.some((l) => l.includes("budget expectation"))).toBe(true);
-    expect(t.statusCard()?.steps.map((s) => s.state)).toEqual(["done", "done", "active", "pending", "pending", "pending", "pending"]);
+    expect(t.statusCard()?.steps.map((s) => s.state)).toEqual(["done", "done", "active", "pending", "pending", "pending", "pending", "pending"]);
 
     await t.send(chatMessage("Budget unknown, install Dec 1 2026"));
     r = t.receipts();
@@ -98,15 +114,17 @@ describe("Google Chat → scope approval vertical slice", () => {
     expect(res.body).toEqual({ text: `✅ Scope ${v2.receiptId} approved by Zack Reichert.` });
     const runs = await t.store.listRunsForPerson("zack");
     expect(runs).toHaveLength(1);
-    expect(runs[0]!.state).toBe("VALIDATED");
-    expect(await t.workflows.result(runs[0]!.id)).toMatchObject({ state: "VALIDATED", receiptId: v2.receiptId });
-    expect(t.statusCard()?.steps.map((s) => s.state)).toEqual(["done", "done", "done", "done", "done", "done", "active"]);
-    expect(t.texts().at(-1)).toContain("Proposal validated for Smith Family.");
-    expect(t.texts().at(-1)).toContain("Priced scope to date: $2,740.00");
+    expect(runs[0]!.state).toBe("READY_HELD");
+    expect(await t.workflows.result(runs[0]!.id)).toMatchObject({ state: "READY_HELD", receiptId: v2.receiptId });
+    expect(t.statusCard()?.steps.map((s) => s.state)).toEqual(Array(8).fill("done"));
+    expect(t.statusCard()?.note).toBe("Held for internal review — not sent to the customer.");
+    const summary = t.texts().find((x) => x.startsWith("Proposal validated"));
+    expect(summary).toContain("Proposal validated for Smith Family.");
+    expect(summary).toContain("Priced scope to date: $2,740.00");
 
     const events = (await t.store.listEvents(runs[0]!.id)).map((e) => e.type);
     expect(events).toEqual(
-      expect.arrayContaining(["run_started", "scope_extracted", "receipt_published", "clarification_applied", "scope_approved", "build_acquired", "artifact_published"]),
+      expect.arrayContaining(["run_started", "scope_extracted", "receipt_published", "clarification_applied", "scope_approved", "build_acquired", "artifact_published", "held_handoff"]),
     );
     // Exactly one status card, edited in place.
     expect(t.chat.list().filter((m) => m.view.kind === "status")).toHaveLength(1);
@@ -118,7 +136,7 @@ describe("Google Chat → scope approval vertical slice", () => {
     const [receipt] = t.receipts();
     const res = await t.send(chatMessage(`Approve scope ${receipt!.receiptId}`));
     expect(res.body).toMatchObject({ text: expect.stringContaining("approved") });
-    expect((await t.store.listRunsForPerson("zack"))[0]!.state).toBe("VALIDATED");
+    expect((await t.store.listRunsForPerson("zack"))[0]!.state).toBe("READY_HELD");
   });
 
   it("ignores a replayed provider message: one run, one receipt", async () => {
@@ -243,13 +261,14 @@ describe("Google Chat → scope approval vertical slice", () => {
     expect(t.dtools.calls).toEqual([]);
   });
 
-  it("reads each D-Tools record exactly once per run and builds once", async () => {
+  it("reads each D-Tools record once to build and once to refresh, and builds once", async () => {
     const t = await setup([completeExtraction()]);
     await t.send(chatMessage("Smith security upgrade"));
     const [receipt] = t.receipts();
     await t.send(click(receipt!.receiptId, receipt!.approve!.scopeHash));
     await t.send(click(receipt!.receiptId, receipt!.approve!.scopeHash));
-    expect(new Set(t.dtools.calls).size).toBe(t.dtools.calls.length);
+    const perRecord = Object.values(t.dtools.calls.reduce<Record<string, number>>((m, id) => ((m[id] = (m[id] ?? 0) + 1), m), {}));
+    expect(new Set(perRecord)).toEqual(new Set([2]));
     const [run] = await t.store.listRunsForPerson("zack");
     const builds = await t.db.query(`SELECT 1 FROM builds WHERE run_id = $1`, [run!.id]);
     expect(builds.rows).toHaveLength(1);
@@ -270,7 +289,60 @@ describe("Google Chat → scope approval vertical slice", () => {
     }
     const after = await t.db.query(`SELECT stage, name, sha256 FROM artifacts WHERE run_id = $1 ORDER BY stage, name`, [run!.id]);
     expect(after.rows).toEqual(before.rows);
-    expect((await t.store.getRun(run!.id)).state).toBe("VALIDATED");
+    expect((await t.store.getRun(run!.id)).state).toBe("READY_HELD");
     expect(t.chat.list()).toHaveLength(messages);
+  });
+
+  it("posts exactly one held PDF that independently passes preflight and matches the recorded hand-off", async () => {
+    const t = await setup([completeExtraction()]);
+    await t.send(chatMessage("Smith security upgrade"));
+    const [receipt] = t.receipts();
+    await t.send(click(receipt!.receiptId, receipt!.approve!.scopeHash));
+    const [run] = await t.store.listRunsForPerson("zack");
+    expect(run!.state).toBe("READY_HELD");
+    expect(t.chat.files).toHaveLength(1);
+    const posted = t.chat.files[0]!;
+    expect(posted.thread).toEqual({ platform: "google_chat", spaceId: SPACE, threadId: THREAD });
+    expect(posted.file.filename).toBe("Livewire-UNASSIGNED-conceptual-budget.pdf");
+    expect(posted.file.text).toContain("not sent to the customer");
+
+    const customer = (await t.store.readArtifact<any>(run!.id, "validate", "customer_view"))!;
+    const independent = await preflightPdf(posted.file.bytes, { customer, runId: run!.id, sha256: sha256Hex(posted.file.bytes) });
+    expect(independent.failures).toEqual([]);
+    const handoff = await t.store.getHandoff(run!.id);
+    expect(handoff).toEqual({ pdf_sha256: sha256Hex(posted.file.bytes), provider_message_id: posted.messageId });
+
+    // The confidential report is stored but never posted.
+    expect(await t.store.readArtifact(run!.id, "internal", "financial_report")).toMatchObject({ run_id: run!.id });
+    const everything = JSON.stringify(t.chat.list());
+    expect(everything).not.toMatch(/gross_margin|cost_cents|financial_report/);
+    const manifest = await t.store.readArtifact<any>(run!.id, "packet", "manifest");
+    expect(manifest).toMatchObject({ run_id: run!.id, pdf_sha256: handoff!.pdf_sha256, provider_message_id: posted.messageId, models: ["fake-model"] });
+    expect(manifest.artifacts.map((a: any) => `${a.stage}/${a.name}`)).toEqual(expect.arrayContaining(["render/pdf", "preflight/result", "internal/financial_report", "validate/result"]));
+  });
+
+  it("stops for reconciliation when a D-Tools record changes before the PDF is made", async () => {
+    const base = recordedDToolsReader(CATALOG);
+    const seen = new Map<string, number>();
+    const panelId = Object.keys(CATALOG)[0]!;
+    const changing: DToolsReader & { calls: string[] } = {
+      calls: base.calls,
+      async getProduct(id) {
+        seen.set(id, (seen.get(id) ?? 0) + 1);
+        if (id === panelId && seen.get(id)! > 1) {
+          return recordedDToolsReader({ [id]: { ...(CATALOG[id] as object), unitPrice: 999 } }).getProduct(id);
+        }
+        return base.getProduct(id);
+      },
+    };
+    const t = await setup([completeExtraction()], [], { dtools: changing });
+    await t.send(chatMessage("Smith security upgrade"));
+    const [receipt] = t.receipts();
+    await t.send(click(receipt!.receiptId, receipt!.approve!.scopeHash));
+    const [run] = await t.store.listRunsForPerson("zack");
+    expect(run!.state).toBe("RECONCILIATION_REQUIRED");
+    expect(t.chat.files).toHaveLength(0);
+    expect(t.texts().at(-1)).toContain("TestCo PANEL-1 changed in D-Tools");
+    expect(await t.store.readBinaryArtifact(run!.id, "render", "pdf")).toBeNull();
   });
 });

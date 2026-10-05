@@ -18,14 +18,30 @@ export type Phase =
   | "catalog"
   | "building"
   | "validated"
+  | "rendering"
+  | "ready"
+  | "reconcile"
   | "blocked"
   | "blocked_build"
+  | "blocked_pdf"
   | "expired";
 
 /** Build stages after approval, in order (PRD §13). */
-export const BUILD_STAGES = ["prebuild", "admitCatalog", "compileSelection", "bindProposal", "validate"] as const;
+export const BUILD_STAGES = [
+  "prebuild",
+  "admitCatalog",
+  "compileSelection",
+  "bindProposal",
+  "validate",
+  "refreshCatalog",
+  "render",
+  "preflight",
+  "handoff",
+] as const;
 export type BuildStage = (typeof BUILD_STAGES)[number];
-export type StageOutcome = { ok: true; summary: string } | { ok: false; reason: string };
+export type StageOutcome =
+  | { ok: true; summary: string }
+  | { ok: false; reason: string; outcome?: "BLOCKED" | "RECONCILIATION_REQUIRED" };
 
 const STAGE_PHASE: Record<BuildStage, Phase> = {
   prebuild: "catalog",
@@ -33,6 +49,10 @@ const STAGE_PHASE: Record<BuildStage, Phase> = {
   compileSelection: "building",
   bindProposal: "building",
   validate: "building",
+  refreshCatalog: "validated",
+  render: "rendering",
+  preflight: "rendering",
+  handoff: "rendering",
 };
 
 export type ExtractOutcome = { ok: true; extraction: ScopeExtraction; notes: string[] } | { ok: false; reason: string };
@@ -48,7 +68,7 @@ export interface RunActivities {
   confirmApproval(a: { runId: string; approvalId: string; receiptId: string }): Promise<void>;
   findCommittedApproval(a: { runId: string }): Promise<{ approvalId: string; receiptId: string; scopeHash: string } | null>;
   notify(a: { runId: string; text: string; key: string }): Promise<void>;
-  markOutcome(a: { runId: string; state: "BLOCKED" | "STALE"; reason: string }): Promise<void>;
+  markOutcome(a: { runId: string; state: "BLOCKED" | "STALE" | "RECONCILIATION_REQUIRED"; reason: string }): Promise<void>;
   buildStage(a: { runId: string; stage: BuildStage }): Promise<StageOutcome>;
 }
 
@@ -59,7 +79,8 @@ export interface RunRuntime {
 }
 
 export type RunResult =
-  | { state: "VALIDATED"; approvalId: string; receiptId: string }
+  | { state: "READY_HELD"; approvalId: string; receiptId: string }
+  | { state: "RECONCILIATION_REQUIRED"; reason: string }
   | { state: "BLOCKED" | "STALE"; reason: string };
 
 export const RECONCILE_EVERY_MS = 60 * 60 * 1000;
@@ -138,16 +159,17 @@ export async function runProposal(input: ProposalRunInput, rt: RunRuntime): Prom
   }
 }
 
-/** Exactly one build per approved scope; stops at the first failed stage (PRD §13.8). */
+/** Exactly one build per approved scope, ending at READY_HELD; stops at the first failed stage (PRD §13.8). */
 async function build(rt: RunRuntime, runId: string, approvalId: string, receiptId: string): Promise<RunResult> {
   for (const stage of BUILD_STAGES) {
     await rt.acts.reportProgress({ runId, phase: STAGE_PHASE[stage] });
     const outcome = await rt.acts.buildStage({ runId, stage });
     if (!outcome.ok) {
-      await rt.acts.markOutcome({ runId, state: "BLOCKED", reason: outcome.reason });
-      return { state: "BLOCKED", reason: outcome.reason };
+      const state = outcome.outcome ?? "BLOCKED";
+      await rt.acts.markOutcome({ runId, state, reason: outcome.reason });
+      return { state, reason: outcome.reason };
     }
   }
-  await rt.acts.reportProgress({ runId, phase: "validated" });
-  return { state: "VALIDATED", approvalId, receiptId };
+  await rt.acts.reportProgress({ runId, phase: "ready" });
+  return { state: "READY_HELD", approvalId, receiptId };
 }

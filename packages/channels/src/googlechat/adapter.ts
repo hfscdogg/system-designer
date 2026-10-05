@@ -1,30 +1,96 @@
 import { GoogleAuth } from "google-auth-library";
 import type { ThreadRef } from "@sd/core";
-import type { ChannelAdapter, View } from "../types.ts";
+import type { ChannelAdapter, OutboundFile, View } from "../types.ts";
 import { GOOGLE_CHAT } from "./parse.ts";
 import { renderGoogleChat } from "./render.ts";
 
 const API = "https://chat.googleapis.com/v1";
-const SCOPE = "https://www.googleapis.com/auth/chat.bot";
+const UPLOAD_API = "https://chat.googleapis.com/upload/v1";
+const BOT_SCOPE = "https://www.googleapis.com/auth/chat.bot";
+const USER_CREATE_SCOPE = "https://www.googleapis.com/auth/chat.messages.create";
 
-export type HttpRequest = (opts: { url: string; method: "POST" | "PATCH"; data: unknown }) => Promise<{ data: unknown }>;
+export type HttpRequest = (opts: {
+  url: string;
+  method: "POST" | "PATCH";
+  data: unknown;
+  headers?: Record<string, string>;
+}) => Promise<{ data: unknown }>;
+
+function authRequest(auth: GoogleAuth): HttpRequest {
+  return async (opts) => {
+    const client = await auth.getClient();
+    const res = await client.request({ url: opts.url, method: opts.method, data: opts.data, headers: opts.headers });
+    return { data: res.data };
+  };
+}
 
 /** Default transport: app authentication with the Chat app's service account. */
 export function googleAppAuthRequest(): HttpRequest {
-  const auth = new GoogleAuth({ scopes: [SCOPE] });
-  return async (opts) => {
-    const client = await auth.getClient();
-    const res = await client.request({ url: opts.url, method: opts.method, data: opts.data });
-    return { data: res.data };
-  };
+  return authRequest(new GoogleAuth({ scopes: [BOT_SCOPE] }));
+}
+
+/**
+ * File transport. "app" uploads as the Chat app itself. "delegated" uses the
+ * same service account with domain-wide delegation, scoped to creating Chat
+ * messages only, acting as an existing Workspace user (no extra seat).
+ */
+export function googleFileRequest(mode: "app" | "delegated", delegatedUser?: string): HttpRequest {
+  if (mode === "app") return googleAppAuthRequest();
+  if (!delegatedUser) throw new Error("delegated upload mode needs GOOGLE_CHAT_DELEGATED_USER");
+  return authRequest(new GoogleAuth({ scopes: [USER_CREATE_SCOPE], clientOptions: { subject: delegatedUser } }));
+}
+
+function multipartRelated(metadata: unknown, file: Uint8Array, contentType: string): { body: Uint8Array; boundary: string } {
+  const boundary = `sd_${Math.random().toString(36).slice(2)}${Date.now().toString(36)}`;
+  const enc = new TextEncoder();
+  const head = enc.encode(
+    `--${boundary}\r\nContent-Type: application/json; charset=UTF-8\r\n\r\n${JSON.stringify(metadata)}\r\n--${boundary}\r\nContent-Type: ${contentType}\r\n\r\n`,
+  );
+  const tail = enc.encode(`\r\n--${boundary}--\r\n`);
+  const body = new Uint8Array(head.length + file.length + tail.length);
+  body.set(head, 0);
+  body.set(file, head.length);
+  body.set(tail, head.length + file.length);
+  return { body, boundary };
 }
 
 export class GoogleChatAdapter implements ChannelAdapter {
   readonly platform = GOOGLE_CHAT;
   private readonly request: HttpRequest;
+  private readonly fileRequest: HttpRequest;
 
-  constructor(request: HttpRequest = googleAppAuthRequest()) {
+  constructor(request: HttpRequest = googleAppAuthRequest(), fileRequest: HttpRequest = request) {
     this.request = request;
+    this.fileRequest = fileRequest;
+  }
+
+  async postFile(thread: ThreadRef, file: OutboundFile, idempotencyKey: string) {
+    if (thread.platform !== GOOGLE_CHAT) throw new Error(`thread is on ${thread.platform}, not ${GOOGLE_CHAT}`);
+    const { body, boundary } = multipartRelated({ filename: file.filename }, file.bytes, file.contentType);
+    const uploaded = await this.fileRequest({
+      url: `${UPLOAD_API}/${thread.spaceId}/attachments:upload?uploadType=multipart`,
+      method: "POST",
+      data: body,
+      headers: { "Content-Type": `multipart/related; boundary=${boundary}` },
+    });
+    const ref = (uploaded.data as { attachmentDataRef?: { resourceName?: string } }).attachmentDataRef;
+    if (!ref?.resourceName) throw new Error("Google Chat did not return an attachment reference");
+    const params = new URLSearchParams({
+      messageReplyOption: "REPLY_MESSAGE_FALLBACK_TO_NEW_THREAD",
+      requestId: idempotencyKey.slice(0, 128),
+    });
+    const created = await this.fileRequest({
+      url: `${API}/${thread.spaceId}/messages?${params}`,
+      method: "POST",
+      data: {
+        text: file.text,
+        attachment: [{ attachmentDataRef: ref }],
+        ...(thread.threadId === thread.spaceId ? {} : { thread: { name: thread.threadId } }),
+      },
+    });
+    const name = (created.data as { name?: string }).name;
+    if (!name) throw new Error("Google Chat did not return a message name");
+    return { messageId: name, attachmentRef: ref.resourceName };
   }
 
   async post(thread: ThreadRef, view: View, idempotencyKey: string) {

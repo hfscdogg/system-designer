@@ -117,3 +117,39 @@ describe("googleChatVerifier", () => {
     expect(await googleChatVerifier(audience, fakeClient({}))(undefined)).toBe(false);
   });
 });
+
+describe("GoogleChatAdapter.postFile", () => {
+  it("uploads multipart, then posts the attachment into the thread idempotently", async () => {
+    const appCalls: any[] = [];
+    const fileCalls: any[] = [];
+    const adapter = new GoogleChatAdapter(
+      async (o) => (appCalls.push(o), { data: { name: "x" } }),
+      async (o) => {
+        fileCalls.push(o);
+        return o.url.includes("attachments:upload")
+          ? { data: { attachmentDataRef: { resourceName: "ref-123", attachmentUploadToken: "tok" } } }
+          : { data: { name: "spaces/A/messages/pdf-1" } };
+      },
+    );
+    const bytes = new TextEncoder().encode("%PDF-1.4 test");
+    const out = await adapter.postFile(
+      { platform: "google_chat", spaceId: "spaces/A", threadId: "spaces/A/threads/T" },
+      { bytes, filename: "proposal.pdf", contentType: "application/pdf", text: "Here it is" },
+      "run_1:pdf",
+    );
+    expect(out).toEqual({ messageId: "spaces/A/messages/pdf-1", attachmentRef: "ref-123" });
+    expect(appCalls).toHaveLength(0); // the file path never uses the app-only transport
+    expect(fileCalls[0].url).toBe("https://chat.googleapis.com/upload/v1/spaces/A/attachments:upload?uploadType=multipart");
+    expect(fileCalls[0].headers["Content-Type"]).toMatch(/^multipart\/related; boundary=/);
+    const body = new TextDecoder().decode(fileCalls[0].data);
+    expect(body).toContain('{"filename":"proposal.pdf"}');
+    expect(body).toContain("%PDF-1.4 test");
+    expect(fileCalls[1].url).toContain("requestId=run_1%3Apdf");
+    expect(fileCalls[1].data).toEqual({ text: "Here it is", attachment: [{ attachmentDataRef: { resourceName: "ref-123", attachmentUploadToken: "tok" } }], thread: { name: "spaces/A/threads/T" } });
+  });
+
+  it("requires a user for delegated mode", async () => {
+    const { googleFileRequest } = await import("../src/index.ts");
+    expect(() => googleFileRequest("delegated")).toThrow(/GOOGLE_CHAT_DELEGATED_USER/);
+  });
+});

@@ -1,6 +1,6 @@
 import { Storage } from "@google-cloud/storage";
 import pg from "pg";
-import { GoogleChatAdapter, type ChannelAdapter } from "@sd/channels";
+import { GoogleChatAdapter, googleAppAuthRequest, googleFileRequest, type ChannelAdapter } from "@sd/channels";
 import { GcsBlobStore, pgDb, Store } from "@sd/store";
 
 /** Process configuration shared by the gateway and the worker. Secrets come from the environment (Secret Manager). */
@@ -21,8 +21,16 @@ export function productionStore(): { store: Store; pool: pg.Pool } {
   return { store: new Store(pgDb(pool), new GcsBlobStore(bucket), releaseId()), pool };
 }
 
+/**
+ * GOOGLE_CHAT_UPLOAD_MODE picks how the PDF attachment is uploaded:
+ *  - "app": as the Chat app itself (if Google allows it for this app);
+ *  - "delegated": as GOOGLE_CHAT_DELEGATED_USER via domain-wide delegation
+ *    limited to creating Chat messages. No extra Workspace seat is needed.
+ */
 export function productionAdapters(): Record<string, ChannelAdapter> {
-  return { google_chat: new GoogleChatAdapter() };
+  const mode = (process.env.GOOGLE_CHAT_UPLOAD_MODE ?? "app") as "app" | "delegated";
+  if (mode !== "app" && mode !== "delegated") throw new Error(`GOOGLE_CHAT_UPLOAD_MODE must be app or delegated, not ${mode}`);
+  return { google_chat: new GoogleChatAdapter(googleAppAuthRequest(), googleFileRequest(mode, process.env.GOOGLE_CHAT_DELEGATED_USER)) };
 }
 
 export function temporalSettings() {

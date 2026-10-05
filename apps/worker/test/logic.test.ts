@@ -29,7 +29,7 @@ describe("runProposal", () => {
   it("reconciles an approval whose signal was lost", async () => {
     const acts = fakeActs({ findCommittedApproval: async () => ({ approvalId: "a1", receiptId: "R-X-1", scopeHash: "h1" }) });
     const result = await runProposal({ runId: "run_1" }, { acts, nextSignal: scripted([null]) });
-    expect(result).toEqual({ state: "VALIDATED", approvalId: "a1", receiptId: "R-X-1" });
+    expect(result).toEqual({ state: "READY_HELD", approvalId: "a1", receiptId: "R-X-1" });
     expect(acts.calls).toContain("confirm:a1");
   });
 
@@ -46,7 +46,7 @@ describe("runProposal", () => {
         ]),
       },
     );
-    expect(result).toMatchObject({ state: "VALIDATED", approvalId: "a-new" });
+    expect(result).toMatchObject({ state: "READY_HELD", approvalId: "a-new" });
     expect(acts.calls.filter((c) => c.startsWith("notify:"))).toEqual(["notify:run_1:notice:1:I can't accept that approval: approval names R-X-1, latest receipt is R-X-2."]);
   });
 
@@ -66,15 +66,18 @@ describe("runProposal", () => {
       findCommittedApproval: async () => ({ approvalId: "a1", receiptId: "R-X-1", scopeHash: "h1" }),
     });
     const result = await runProposal({ runId: "run_1" }, { acts, nextSignal: scripted([{ type: "clarification", intakeId: "in_2" }]) });
-    expect(result).toMatchObject({ state: "VALIDATED", receiptId: "R-X-1" });
+    expect(result).toMatchObject({ state: "READY_HELD", receiptId: "R-X-1" });
     expect(acts.calls.some((c) => c.includes("arrived after the scope was approved"))).toBe(true);
   });
 
   it("runs every build stage once, in order, after approval", async () => {
     const acts = fakeActs();
     await runProposal({ runId: "r" }, { acts, nextSignal: scripted([{ type: "approved", receiptId: "R-X-1", scopeHash: "h1", approvalId: "a1" }]) });
-    expect(acts.calls.filter((c) => c.startsWith("stage:"))).toEqual(["stage:prebuild", "stage:admitCatalog", "stage:compileSelection", "stage:bindProposal", "stage:validate"]);
-    expect(acts.calls.at(-1)).toBe("progress:validated");
+    expect(acts.calls.filter((c) => c.startsWith("stage:"))).toEqual([
+      "stage:prebuild", "stage:admitCatalog", "stage:compileSelection", "stage:bindProposal", "stage:validate",
+      "stage:refreshCatalog", "stage:render", "stage:preflight", "stage:handoff",
+    ]);
+    expect(acts.calls.at(-1)).toBe("progress:ready");
   });
 
   it("stops at the first failed build stage and marks the run blocked", async () => {
@@ -82,6 +85,14 @@ describe("runProposal", () => {
     const result = await runProposal({ runId: "r" }, { acts, nextSignal: scripted([{ type: "approved", receiptId: "R-X-1", scopeHash: "h1", approvalId: "a1" }]) });
     expect(result).toEqual({ state: "BLOCKED", reason: "D-Tools record missing" });
     expect(acts.calls).toContain("outcome:BLOCKED");
+  });
+
+  it("routes a changed catalog record to reconciliation, not a blocked run", async () => {
+    const acts = fakeActs({ buildStage: async ({ stage }) => (stage === "refreshCatalog" ? { ok: false, reason: "panel changed", outcome: "RECONCILIATION_REQUIRED" } : { ok: true, summary: "" }) });
+    const result = await runProposal({ runId: "r" }, { acts, nextSignal: scripted([{ type: "approved", receiptId: "R-X-1", scopeHash: "h1", approvalId: "a1" }]) });
+    expect(result).toEqual({ state: "RECONCILIATION_REQUIRED", reason: "panel changed" });
+    expect(acts.calls).toContain("outcome:RECONCILIATION_REQUIRED");
+    expect(acts.calls).not.toContain("stage:render");
   });
 
   it("blocks when extraction fails and expires after long silence", async () => {

@@ -511,10 +511,18 @@ export class Store {
     return blob.key;
   }
 
-  /** Publish a stage artifact once. Republishing identical content is a no-op; different content is refused. */
+  /** Publish a JSON stage artifact once (canonical encoding, so retries hash identically). */
   async publishArtifact(runId: string, stage: string, name: string, content: unknown): Promise<{ key: string; sha256: string }> {
-    const bytes = new TextEncoder().encode(canonicalJson(content));
-    const blob = await this.blobs.putImmutable(`runs/${runId}/${stage}/${name}-${sha256Hex(bytes)}.json`, bytes, "application/json");
+    return this.publishBinaryArtifact(runId, stage, name, new TextEncoder().encode(canonicalJson(content)), "application/json");
+  }
+
+  /**
+   * Publish a stage artifact once. Republishing identical bytes is a no-op;
+   * different bytes under the same name are refused (PRD §16.2).
+   */
+  async publishBinaryArtifact(runId: string, stage: string, name: string, bytes: Uint8Array, contentType: string): Promise<{ key: string; sha256: string }> {
+    const ext = contentType === "application/pdf" ? "pdf" : contentType === "text/html" ? "html" : "json";
+    const blob = await this.blobs.putImmutable(`runs/${runId}/${stage}/${name}-${sha256Hex(bytes)}.${ext}`, bytes, contentType);
     const inserted = await this.db.query(
       `INSERT INTO artifacts (run_id, stage, name, blob_key, sha256) VALUES ($1,$2,$3,$4,$5) ON CONFLICT DO NOTHING RETURNING 1`,
       [runId, stage, name, blob.key, blob.sha256],
@@ -528,7 +536,7 @@ export class Store {
     return blob;
   }
 
-  async readArtifact<T>(runId: string, stage: string, name: string): Promise<T | null> {
+  async readBinaryArtifact(runId: string, stage: string, name: string): Promise<{ bytes: Uint8Array; sha256: string } | null> {
     const row = (await this.db.query<{ blob_key: string; sha256: string }>(
       `SELECT blob_key, sha256 FROM artifacts WHERE run_id = $1 AND stage = $2 AND name = $3`,
       [runId, stage, name],
@@ -536,7 +544,50 @@ export class Store {
     if (!row) return null;
     const bytes = await this.blobs.get(row.blob_key);
     if (sha256Hex(bytes) !== row.sha256) throw new IntegrityError(`artifact ${stage}/${name} for ${runId} does not match its recorded hash`);
-    return JSON.parse(new TextDecoder().decode(bytes)) as T;
+    return { bytes, sha256: row.sha256 };
+  }
+
+  async readArtifact<T>(runId: string, stage: string, name: string): Promise<T | null> {
+    const found = await this.readBinaryArtifact(runId, stage, name);
+    return found ? (JSON.parse(new TextDecoder().decode(found.bytes)) as T) : null;
+  }
+
+  async listArtifacts(runId: string): Promise<Array<{ stage: string; name: string; sha256: string; blob_key: string }>> {
+    const res = await this.db.query<{ stage: string; name: string; sha256: string; blob_key: string }>(
+      `SELECT stage, name, sha256, blob_key FROM artifacts WHERE run_id = $1 ORDER BY stage, name`,
+      [runId],
+    );
+    return res.rows;
+  }
+
+  async catalogEvidence(runId: string): Promise<Array<{ record_id: string; sha256: string; admitted: boolean }>> {
+    const res = await this.db.query<{ record_id: string; sha256: string; admitted: boolean }>(
+      `SELECT record_id, sha256, admitted FROM catalog_evidence WHERE run_id = $1 ORDER BY record_id`,
+      [runId],
+    );
+    return res.rows;
+  }
+
+  /** Record the single held hand-off. A retry with the same PDF and message is a no-op. */
+  async recordHandoff(h: { runId: string; pdfSha256: string; thread: ThreadRef; providerMessageId: string; attachmentRef: string }): Promise<void> {
+    const inserted = await this.db.query(
+      `INSERT INTO held_handoffs (run_id, pdf_sha256, platform, space_id, thread_id, provider_message_id, attachment_ref)
+       VALUES ($1,$2,$3,$4,$5,$6,$7) ON CONFLICT DO NOTHING RETURNING 1`,
+      [h.runId, h.pdfSha256, h.thread.platform, h.thread.spaceId, h.thread.threadId, h.providerMessageId, h.attachmentRef],
+    );
+    if (inserted.rows.length) {
+      await this.event(this.db, h.runId, "held_handoff", "system", { pdfSha256: h.pdfSha256, providerMessageId: h.providerMessageId });
+      return;
+    }
+    const existing = (await this.db.query<{ pdf_sha256: string; provider_message_id: string }>(`SELECT pdf_sha256, provider_message_id FROM held_handoffs WHERE run_id = $1`, [h.runId])).rows[0]!;
+    if (existing.pdf_sha256 !== h.pdfSha256 || existing.provider_message_id !== h.providerMessageId) {
+      throw new IntegrityError(`run ${h.runId} already has a different held hand-off`);
+    }
+  }
+
+  async getHandoff(runId: string): Promise<{ pdf_sha256: string; provider_message_id: string } | null> {
+    const res = await this.db.query<{ pdf_sha256: string; provider_message_id: string }>(`SELECT pdf_sha256, provider_message_id FROM held_handoffs WHERE run_id = $1`, [runId]);
+    return res.rows[0] ?? null;
   }
 
   async latestPolicy(): Promise<{ version: number; policy: unknown } | null> {

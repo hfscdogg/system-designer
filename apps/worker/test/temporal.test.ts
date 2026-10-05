@@ -4,6 +4,7 @@ import { TestWorkflowEnvironment } from "@temporalio/testing";
 import { Worker } from "@temporalio/worker";
 import { FakeChannelAdapter } from "@sd/channels";
 import { recordedDToolsReader } from "@sd/dtools";
+import { htmlToPdf } from "@sd/render";
 import { createActivities, TASK_QUEUE, TemporalWorkflows } from "../src/index.ts";
 import { CATALOG, testPattern } from "../../../packages/build/test/fixtures.ts";
 import { completeExtraction } from "../../../packages/core/test/fixtures.ts";
@@ -24,7 +25,7 @@ describe.skipIf(!process.env.TEMPORAL_TESTS)("proposalRun on Temporal", () => {
     await env?.teardown();
   });
 
-  it("runs intake → receipt → approval → validated build and survives a lost approval signal", async () => {
+  it("runs intake → receipt → approval → held PDF and survives a lost approval signal", async () => {
     const { store } = await testStore();
     await store.publishPolicy(TEST_POLICY, "henry", "test policy");
     const chat = new FakeChannelAdapter();
@@ -39,6 +40,8 @@ describe.skipIf(!process.env.TEMPORAL_TESTS)("proposalRun on Temporal", () => {
         interpreter: { interpret: async () => ({ raw: null, model: "fake" }) },
         dtools: recordedDToolsReader(CATALOG),
         patterns: [testPattern()],
+        renderPdf: (html) => htmlToPdf(html),
+        fetchImage: async () => null,
       }),
     });
     const workflows = new TemporalWorkflows(env.client);
@@ -86,8 +89,9 @@ describe.skipIf(!process.env.TEMPORAL_TESTS)("proposalRun on Temporal", () => {
 
       // Time skipping fast-forwards to the hourly reconcile, which finds the approval.
       const result = await env.client.workflow.getHandle(runId).result();
-      expect(result).toMatchObject({ state: "VALIDATED", receiptId: receipt.id });
-      expect((await store.getRun(runId)).state).toBe("VALIDATED");
+      expect(result).toMatchObject({ state: "READY_HELD", receiptId: receipt.id });
+      expect((await store.getRun(runId)).state).toBe("READY_HELD");
+      expect(chat.files).toHaveLength(1);
     });
   }, 180_000);
 });

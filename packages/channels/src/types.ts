@@ -50,6 +50,16 @@ export interface ChannelAdapter {
   post(thread: ThreadRef, view: View, idempotencyKey: string): Promise<{ messageId: string }>;
   /** Replace a message the app posted (used for the live status card). */
   update(messageId: string, view: View): Promise<void>;
+  /** Post a file into a thread. Same idempotencyKey => same message. */
+  postFile(thread: ThreadRef, file: OutboundFile, idempotencyKey: string): Promise<{ messageId: string; attachmentRef: string }>;
+}
+
+export interface OutboundFile {
+  bytes: Uint8Array;
+  filename: string;
+  contentType: string;
+  /** Message text that accompanies the file. */
+  text: string;
 }
 
 /** Synchronous reply to a provider webhook. */

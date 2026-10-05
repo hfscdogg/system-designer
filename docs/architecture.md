@@ -1,6 +1,6 @@
 # Architecture decision record: System Designer rebuild
 
-**Status:** accepted. M1 and M2 have landed in this repo.
+**Status:** accepted. M1–M3 have landed in this repo.
 **Requirements source:** *Livewire System Designer: Tool-Agnostic PRD* (Henry Clifford).
 
 ## Decision
@@ -47,11 +47,12 @@ Each Hermes failure from PRD §20 maps to a mechanism here:
 | §9.1 | ≤3 questions, partial answers preserved | `questionsForTurn`, `applyClarification` | ✅ |
 | §9.2–9.4 | Deterministic receipt, atomic approval, button bound to receipt + hash | `receipt.ts`, `Store.commitApproval`, Chat card | ✅ |
 | §10 | LLM vs deterministic boundary | `packages/llm` returns untrusted data only | ✅ |
-| §11 | Read-only D-Tools, exact records, no fabrication | `packages/dtools` (GET only), `admitProduct`, `catalog_evidence` per run | ✅ (pre-finalize refresh in M3) |
+| §11 | Read-only D-Tools, exact records, no fabrication, refresh before finalizing | `packages/dtools` (GET only), `admitProduct`, `catalog_evidence`, `refreshCatalog` stage | ✅ |
 | §12 | Architecture patterns, BOM roles, supported / allowance / unresolved, precedent | `packages/build/src/pattern.ts`, `materialize.ts`, `patterns/*.json` | ✅ (standard product IDs pending from Livewire) |
 | §13.1–13.5 | Prebuild, materializer, compiler, binder, validator | `apps/worker/src/build-activities.ts`, `packages/build` | ✅ |
-| §13.6–13.7 | Renderer, preflight | — | M3 |
-| §14 | PDF content, watermark, no internal financials | `packages/render` (port of `generate_proposal_html.js`) + Chromium + preflight | M3 |
+| §13.6–13.7 | Renderer, preflight | `packages/render` (HTML from customer view → Chromium PDF → pdfjs preflight) | ✅ |
+| §13.8 | Coordinator ends at `READY_HELD`, one hand-off | `handoff` stage, `held_handoffs` | ✅ |
+| §14 | PDF content, watermark, no internal financials, bound packet | `packages/render`, `internal/financial_report` (stored only), `packet/manifest` | ✅ |
 | §15.1–15.2 | Route binding, stale sessions | Thread checks in approval; `resetSession` | ✅ |
 | §15.3 | Pilot hold | No delivery or write code paths exist | ✅ structurally |
 | §15.4 | Margin config, Henry-only | `commercial_policies` (admin-only trigger, append-only), frozen per run | ✅ |
@@ -76,7 +77,7 @@ Each Hermes failure from PRD §20 maps to a mechanism here:
 | **M0** | Spikes | Google Chat app in Workspace. **Confirm how an app posts a PDF attachment**: app-auth media upload is limited, so the fallback is a Drive file card or delegated upload. D-Tools read spike. Temporal Cloud namespace. GCP project. |
 | **M1** ✅ | Vertical slice | Chat → intake → scope → clarification → receipt → approval. |
 | **M2** ✅ | Catalog and compile | D-Tools read adapter, evidence admission, security-modernization materializer, compiler / binder / validator, margin config. Bounded LLM selection for uncommon scopes is deferred: unsupported scopes block and go to Zack. |
-| **M3** | Render and hold | Renderer, PDF, preflight, `READY_HELD`, PDF posted in the thread. |
+| **M3** ✅ | Render and hold | Renderer, PDF, preflight, `READY_HELD`, PDF posted in the thread. |
 | **M4** | Hardening | Full PRD §18.2 adversarial suite, worker kill / recovery tests, Terraform, staging → prod pipeline, open-run reconciler. |
 | **M5** | Acceptance | Live acceptance run with Zack. Evidence packet: run ID, release ID, message ID, PDF hash, no side effects. |
 | **M6** | Telegram | Telegram adapter, identity linking, "move run here". |
@@ -84,7 +85,7 @@ Each Hermes failure from PRD §20 maps to a mechanism here:
 ## Open decisions for Henry (configuration, not prompts)
 
 - **Cross-channel rule:** is home-conversation binding plus an explicit "move run here" acceptable?
-- **PDF delivery fallback** if Google Chat app attachments are blocked: a Drive link card, or a delegated bot user?
+- **PDF upload mode:** `GOOGLE_CHAT_UPLOAD_MODE=app` if Google lets the Chat app upload attachments itself; otherwise `delegated`, which acts as an existing Workspace user (for example Henry) through domain-wide delegation limited to Chat message creation. Neither needs a paid seat. A Drive link card is the last resort and is not built.
 - **Production model:** which LLM provider and model are approved? `LLM_MODEL` must be set explicitly.
   - Server-side refusal fallbacks are deliberately **not** enabled, because they would silently switch models.
 - **Commercial values:** production margin thresholds and tax rules.

@@ -12,7 +12,8 @@ const STEPS = [
   "Your approval",
   "D-Tools catalog read",
   "Proposal build",
-  "PDF checks",
+  "PDF + checks",
+  "PDF posted (held)",
 ] as const;
 
 const PROGRESS: Record<Phase, { done: number; active: number | null; failed?: number }> = {
@@ -23,8 +24,12 @@ const PROGRESS: Record<Phase, { done: number; active: number | null; failed?: nu
   catalog: { done: 4, active: 4 },
   building: { done: 5, active: 5 },
   validated: { done: 6, active: 6 },
+  rendering: { done: 6, active: 6 },
+  ready: { done: 8, active: null },
+  reconcile: { done: 6, active: null, failed: 6 },
   blocked: { done: 1, active: null, failed: 1 },
   blocked_build: { done: 4, active: null, failed: 5 },
+  blocked_pdf: { done: 6, active: null, failed: 6 },
   expired: { done: 0, active: null },
 };
 
@@ -40,7 +45,8 @@ export function statusView(runId: string, phase: Phase, note: string | null = nu
     needs_answers: "A few answers needed — see the questions below.",
     awaiting_approval: "Check the receipt below and approve it when it's right.",
     approved: "Scope approved. Building from the D-Tools catalog.",
-    validated: "Proposal validated. PDF rendering arrives in the next release.",
+    validated: "Proposal validated. Re-checking D-Tools and rendering the PDF.",
+    ready: "Held for internal review — not sent to the customer.",
     expired: "This request is closed. Start a new message to begin again.",
   };
   return { kind: "status", title: `Proposal run ${runId.slice(4, 12)}`, steps, note: note ?? defaults[phase] ?? null };

@@ -13,9 +13,9 @@ Hermes kept business state in the agent's conversation. That is the root of the 
 
 The design rationale and requirement mapping are in [`docs/architecture.md`](docs/architecture.md).
 
-## What works today (milestones M1–M2)
+## What works today (milestones M1–M3)
 
-The flow is Google Chat message → captured intake → scope extraction → clarification → receipt card → **Approve** button → D-Tools catalog read → compile → bind → validate → `VALIDATED`, with a summary posted in the thread.
+The flow is Google Chat message → captured intake → scope extraction → clarification → receipt card → **Approve** button → D-Tools catalog read → compile → bind → validate → D-Tools re-check → watermarked PDF → preflight → PDF posted in the thread → `READY_HELD`.
 
 - **Natural conversation.** The salesperson writes normally. The LLM proposes a scope, and code validates it, normalizes it and decides what to ask (at most 3 questions per turn).
 - **Deterministic receipts.** Code generates each receipt. It is shown verbatim as a Chat card, and its Approve button is bound to the receipt ID and scope hash. `Approve scope <id>` also works as text.
@@ -34,7 +34,15 @@ The flow is Google Chat message → captured intake → scope extraction → cla
 - the D-Tools product IDs of its standard products for each role in `packages/build/patterns/security_modernization.json` (they are `null` today, so the validator blocks with "no products could be priced");
 - a commercial policy published by an admin (see below).
 
-**Not built yet:** PDF rendering and preflight (M3), hardening (M4), Telegram (M6). See [`docs/architecture.md`](docs/architecture.md).
+- **PDF (M3).**
+  - The PDF is rendered from the customer-safe view only, fully self-contained: embedded fonts, logo and exact-model images, or **IMAGE PENDING** for any item without one.
+  - `CONCEPTUAL BUDGET • NOT FOR APPROVAL` appears once on every page, and there are no signature or acceptance controls.
+  - Before rendering, every D-Tools record is re-read. If any changed, the run stops at `RECONCILIATION_REQUIRED` with no PDF.
+  - Preflight reads the real PDF bytes and checks: watermark once per page, no form fields, no cost/margin wording, totals that match, the run's title, and the hash.
+  - One PDF is posted per run; the hand-off and a bound evidence manifest are recorded.
+  - The confidential cost and margin report is stored, never posted.
+
+**Not built yet:** hardening and deployment pipeline (M4), Telegram (M6). See [`docs/architecture.md`](docs/architecture.md).
 
 ## Layout
 
@@ -47,6 +55,7 @@ packages/channels/ Channel adapter interface + Google Chat (auth, parsing, cards
 packages/llm/      Claude calls (structured outputs) for extraction and clarification
 packages/dtools/   Read-only D-Tools Cloud client (GET only) + recorded-response reader for tests
 packages/build/    Catalog admission, architecture patterns, materializer, compiler, binder, validator
+packages/render/   Customer HTML, Chromium PDF, PDF preflight
 .claude/skills/d-tools-skill/  Existing D-Tools tooling; its client and renderer get ported in M2/M3
 spikes/thread1-dtools/         D-Tools read-API spike (M0)
 ```
@@ -56,7 +65,7 @@ spikes/thread1-dtools/         D-Tools read-API spike (M0)
 ```bash
 pnpm install
 pnpm typecheck
-pnpm test             # unit + end-to-end slice (PGlite in-process Postgres, fake Chat, inline workflows)
+pnpm test             # unit + end-to-end slice; PDF tests need Chromium (PLAYWRIGHT_BROWSERS_PATH or `pnpm --filter @sd/render exec playwright-core install chromium`) (PGlite in-process Postgres, fake Chat, inline workflows)
 pnpm test:temporal    # same workflow on a Temporal test server (downloads the server binary; runs in CI)
 ```
 

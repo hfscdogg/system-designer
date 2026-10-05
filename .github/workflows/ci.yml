@@ -16,6 +16,8 @@ jobs:
           node-version: 22
           cache: pnpm
       - run: pnpm install --frozen-lockfile
+      # Chromium for PDF rendering, matching the pinned playwright-core version.
+      - run: pnpm --filter @sd/render exec playwright-core install --with-deps chromium
       - run: pnpm typecheck
       - run: pnpm test
       # Runs the real workflow on a Temporal test server (downloaded here; blocked in some sandboxes).

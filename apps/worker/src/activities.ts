@@ -25,6 +25,10 @@ export interface ActivityDeps {
   interpreter: ClarificationInterpreter;
   dtools: DToolsReader;
   patterns: PatternSpec[];
+  /** HTML → PDF (Chromium in production). */
+  renderPdf: (html: string) => Promise<Uint8Array>;
+  /** Fetch an exact-model product image; null when unavailable (→ IMAGE PENDING). */
+  fetchImage: (url: string) => Promise<{ bytes: Uint8Array; contentType: string } | null>;
   /** Model attempts per extraction before the run is blocked. */
   extractionAttempts?: number;
 }
@@ -171,9 +175,18 @@ export function createActivities(deps: ActivityDeps): RunActivities {
     async markOutcome({ runId, state, reason }) {
       const run = await store.getRun(runId);
       const duringBuild = !["RECEIVED", "AUTHENTICATED_AND_CAPTURED", "NEEDS_CLARIFICATION", "AWAITING_SCOPE_APPROVAL", "BLOCKED"].includes(run.state);
+      const duringPdf = ["VALIDATED", "RENDERED", "PREFLIGHT_PASSED"].includes(run.state);
       if (run.state !== state) await store.transitionRun(runId, state, "system", { error: reason, from: run.state });
-      const phase = state === "STALE" ? "expired" : duringBuild ? "blocked_build" : "blocked";
+      const phase =
+        state === "STALE" ? "expired" : state === "RECONCILIATION_REQUIRED" ? "reconcile" : duringPdf ? "blocked_pdf" : duringBuild ? "blocked_build" : "blocked";
       await upsertStatus(await store.getRun(runId), statusView(runId, phase, reason));
+      if (state === "RECONCILIATION_REQUIRED") {
+        await adapterFor(run).post(
+          threadOf(run),
+          { kind: "text", text: `D-Tools changed while this proposal was being built: ${reason}. I stopped before producing a PDF. Nothing was sent to a customer or written to D-Tools. Zack needs to decide whether to rebuild.` },
+          `${runId}:reconcile`,
+        );
+      }
       if (state === "BLOCKED") {
         const text = duringBuild
           ? `I stopped the build after ${run.state}: ${reason}. Nothing was sent to a customer or written to D-Tools. The run is kept for review.`
@@ -186,6 +199,12 @@ export function createActivities(deps: ActivityDeps): RunActivities {
       store,
       dtools: deps.dtools,
       patterns: deps.patterns,
+      renderPdf: deps.renderPdf,
+      fetchImage: deps.fetchImage,
+      postFile: async (run, file, key) => {
+        const a = adapterFor(run);
+        return a.postFile(threadOf(run), file, key);
+      },
       notify: (run, text, key) => adapterFor(run).post(threadOf(run), { kind: "text", text }, key).then(() => undefined),
     }),
   };
