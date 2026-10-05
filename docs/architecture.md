@@ -13,7 +13,7 @@ Rebuild System Designer as a controlled workflow with an LLM inside it. It is no
 | **Business state** | Postgres (Cloud SQL) | Single-use claims, atomic approvals, an append-only audit log enforced by triggers, and identity and space allowlists. |
 | **Evidence** | GCS, write-once with `ifGenerationMatch=0` | Original provider payloads and, later, artifacts are stored hashed. A rewrite with different bytes is an error. |
 | **Chat** | `ChannelAdapter` interface. Google Chat first, Telegram in M6. | One view model (`text`, `receipt`, `status`) rendered natively per platform, so the same agent runs on every app. |
-| **LLM** | Anthropic Messages API, structured outputs | Stateless calls whose outputs are validated by strict zod schemas. They never decide state, identity or approval. |
+| **LLM** | Anthropic Messages API, structured outputs, keyless via Workload Identity Federation | Stateless calls whose outputs are validated by strict zod schemas. They never decide state, identity or approval. The worker's Google identity is exchanged for short-lived Claude tokens, so there is no Anthropic API key to leak or rotate. |
 | **Language / runtime** | TypeScript on Node 22, run directly with no build step | Reuses the existing Node D-Tools client and renderer. Typed contracts between stages. |
 
 iMessage is out of scope because the system runs entirely in the cloud. Hermes is not reused.

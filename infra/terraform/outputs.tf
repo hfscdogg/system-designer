@@ -17,7 +17,7 @@ output "secrets_to_fill" {
 }
 
 output "worker_service_accounts" {
-  description = "For delegated PDF upload, the Workspace admin authorizes this account's client ID (domain-wide delegation)."
+  description = "Claude Console federation rules match each worker's email and unique ID (sub). Delegated PDF upload, if used, authorizes the same ID."
   value       = { for e, sa in google_service_account.worker : e => { email = sa.email, client_id = sa.unique_id } }
 }
 

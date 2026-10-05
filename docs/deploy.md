@@ -27,11 +27,13 @@ Everything runs in the Google Cloud project you created, in **us-east4**. You ru
    - `TEMPORAL_ADDRESS` and `TEMPORAL_NAMESPACE`, from Temporal Cloud.
    - `LLM_MODEL`: the model you approve.
    - `GOOGLE_CHAT_UPLOAD_MODE`: start with `app`.
-3. **Store the four secrets** with the commands the script prints:
-   - Anthropic API key
+   - The Anthropic federation IDs from the next section.
+3. **Store the three secrets** with the commands the script prints:
    - Temporal API key
    - D-Tools API key
    - D-Tools Basic auth value
+
+   There is no Anthropic key; see the next section.
 4. **In GitHub → Settings → Environments**, create `staging` and `production`. Add yourself as a required reviewer on `production`.
 5. **Merge the PR.** The **Deploy** workflow then:
    1. builds one image;
@@ -53,6 +55,28 @@ Everything runs in the Google Cloud project you created, in **us-east4**. You ru
         --args apps/gateway/src/admin.ts,add-person,henry,"Henry Clifford",requester,admin,users/<id>,henry@getlivewire.com
       ```
    3. Read the output in the job's logs.
+
+## Claude API access without a key (Workload Identity Federation)
+
+The worker proves its Google identity to Anthropic and receives a short-lived token. No Anthropic API key exists anywhere. Set it up once per environment in the Claude Console:
+
+1. Go to **console.anthropic.com → Settings → Workload identity → Connect workload → Google Cloud**.
+2. **Issuer:** `https://accounts.google.com`, with discovery. The second rule reuses it.
+3. **Rule match:**
+
+   | Environment | Audience | `sub` (unique ID) | `email` |
+   |---|---|---|---|
+   | staging | `https://api.anthropic.com` | `107114194607962773432` | `sd-worker-staging@livewire-system-designer-deux.iam.gserviceaccount.com` |
+   | prod | `https://api.anthropic.com` | `105805418644926772428` | `sd-worker-prod@livewire-system-designer-deux.iam.gserviceaccount.com` |
+
+4. **Service account and scope:** name the service account `system-designer-staging` / `system-designer-prod`. Scope `workspace:developer`, token lifetime 600 seconds (the wizard defaults).
+5. **GitHub variables:** add the IDs the wizard shows. They are identifiers, not secrets.
+   - `ANTHROPIC_ORGANIZATION_ID`
+   - `ANTHROPIC_FEDERATION_RULE_ID_STAGING` and `ANTHROPIC_FEDERATION_RULE_ID_PROD` (`fdrl_…`)
+   - `ANTHROPIC_SERVICE_ACCOUNT_ID_STAGING` and `ANTHROPIC_SERVICE_ACCOUNT_ID_PROD` (`svac_…`)
+   - `ANTHROPIC_WORKSPACE_ID`, only if the wizard asks for a workspace
+
+If a run fails with an authentication error, **Settings → Workload identity → authentication history** shows the reason. It is usually an `email`, `sub` or audience mismatch.
 
 ## If the app can't upload the PDF itself
 

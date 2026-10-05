@@ -13,7 +13,8 @@ locals {
   ]
   envs = toset(var.environments)
   # Shared runtime secrets. Values are added by hand (see infra/bootstrap.sh output), never by Terraform.
-  shared_secrets = ["anthropic-api-key", "temporal-api-key", "dtools-api-key", "dtools-basic-auth"]
+  # The Claude API needs none: the worker uses Workload Identity Federation (docs/deploy.md).
+  shared_secrets = ["temporal-api-key", "dtools-api-key", "dtools-basic-auth"]
 }
 
 resource "google_project_service" "apis" {

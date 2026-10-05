@@ -40,14 +40,20 @@ echo "   Also add: TEMPORAL_ADDRESS, TEMPORAL_NAMESPACE, LLM_MODEL,"
 echo "             GOOGLE_CHAT_UPLOAD_MODE (app or delegated), GOOGLE_CHAT_DELEGATED_USER (if delegated)."
 echo
 echo "2) Store the secret values (paste each value when prompted; nothing is echoed):"
-for s in anthropic-api-key temporal-api-key dtools-api-key dtools-basic-auth; do
+for s in temporal-api-key dtools-api-key dtools-basic-auth; do
   echo "     read -rs V && printf %s \"\$V\" | gcloud secrets versions add ${s} --data-file=- && unset V"
 done
 echo
-echo "3) In GitHub → Settings → Environments, create 'staging' and 'production';"
+echo "3) Claude API access is keyless. In console.anthropic.com → Settings → Workload identity →"
+echo "   Connect workload → Google Cloud, create one rule per environment (audience https://api.anthropic.com),"
+echo "   matching the worker's email and unique ID (sub) below. Add the IDs it shows as GitHub variables:"
+echo "   ANTHROPIC_ORGANIZATION_ID, ANTHROPIC_FEDERATION_RULE_ID_STAGING/_PROD, ANTHROPIC_SERVICE_ACCOUNT_ID_STAGING/_PROD."
+terraform output worker_service_accounts
+echo
+echo "4) In GitHub → Settings → Environments, create 'staging' and 'production';"
 echo "   on 'production' add yourself as a required reviewer."
 echo
-echo "4) Merge to main. The Deploy workflow builds one image, deploys staging, then waits for your"
+echo "5) Merge to main. The Deploy workflow builds one image, deploys staging, then waits for your"
 echo "   approval to deploy production. Its log prints the gateway URLs to paste into the Chat app's"
 echo "   HTTP endpoint (Google Chat API → Configuration)."
 echo
