@@ -157,9 +157,6 @@ importers:
       '@fontsource/outfit':
         specifier: ^5.3.0
         version: 5.3.0
-      '@fontsource/tinos':
-        specifier: ^5.3.0
-        version: 5.3.0
       '@sd/build':
         specifier: workspace:*
         version: link:../build
@@ -375,9 +372,6 @@ packages:
 
   '@fontsource/outfit@5.3.0':
     resolution: {integrity: sha512-0AVHzTTVJSxWDOxPKSfMeHhZeBFDU3cmgrcOb76ZEyhGo0+xgyG3GsLF3h9+X8w0IX7G4jzjJgFQEBiWdX6VgA==}
-
-  '@fontsource/tinos@5.3.0':
-    resolution: {integrity: sha512-VVDyyZdbcsLKxo/W7rClAvacD/7DsGc7J5xzzp51Tndib8kDkEe/0bqbb3Xb3iH6+IUjt07aRsvtQ9MGeGGi4w==}
 
   '@google-cloud/paginator@7.1.0':
     resolution: {integrity: sha512-PNCXdAQgNoQODZuqyhmkN2nUpB2q9UFzawZ1oyCDyEyhcheRoCKJJhSKhEIeKpM/NCLnC6Q4We4HEkGCwNDnCA==}
@@ -1982,8 +1976,6 @@ snapshots:
     optional: true
 
   '@fontsource/outfit@5.3.0': {}
-
-  '@fontsource/tinos@5.3.0': {}
 
   '@google-cloud/paginator@7.1.0':
     dependencies:

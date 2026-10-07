@@ -24,14 +24,14 @@ export interface CustomerProposal {
       quantity: number;
       quantity_note: string | null;
       image: { url: string } | { pending: true };
-      /** Sell prices, as a D-Tools proposal shows them. */
-      unit_price_cents: number;
-      total_cents: number;
     }>;
     subtotal_cents: number;
   }>;
-  /** Labor, parts and service lines, priced like the equipment lines. */
-  labor_lines: Array<{ name: string; description: string; quantity: number; unit_price_cents: number; total_cents: number }>;
+  /** Labor and service lines; like a D-Tools proposal, only quantities per line and a section total. */
+  labor_lines: Array<{ name: string; description: string; quantity: number }>;
+  labor_total_cents: number;
+  /** For the System Proposal introduction. */
+  intro: { systems: string; rooms: string[]; labor_hours: number | null };
   services: string[];
   allowances: Array<{ label: string; note: string }>;
   assumptions: string[];
@@ -42,6 +42,8 @@ export interface CustomerProposal {
     subtotal_cents: number;
     tax: "TBD" | { rate_pct: number; cents: number };
     total_cents: number | null;
+    /** Shown in the Summary as "Shipping & Handling/Parts", as Livewire's D-Tools proposals do. */
+    parts_cents: number;
     /** DESIGN_RETAINER_PCT of the total, or of the priced scope while the total is incomplete. */
     retainer: { pct: number; cents: number };
   };
@@ -64,28 +66,17 @@ export function customerView(p: Proposal): CustomerProposal {
         quantity: l.quantity,
         quantity_note: l.quantity_basis === "minimum_to_verify" ? `Minimum; ${l.verify}` : null,
         image: l.image_url ? { url: l.image_url } : { pending: true as const },
-        unit_price_cents: l.unit_price_cents,
-        total_cents: l.extended_cents,
       })),
       subtotal_cents: s.subtotal_cents,
     })),
     labor_lines: [
-      ...p.services.map((s) => ({ name: s.label, description: "", quantity: 1, unit_price_cents: s.unit_price_cents, total_cents: s.unit_price_cents })),
+      ...p.services.map((s) => ({ name: s.label, description: "", quantity: 1 })),
       ...(p.labor
-        ? [
-            {
-              name: "Installation Labor",
-              description: `${capitalize(labelFor(p.labor.included).replace(/^Labor: /, ""))} (estimated ${p.labor.hours} hours)`,
-              quantity: p.labor.hours,
-              unit_price_cents: p.labor.price_per_hour_cents,
-              total_cents: p.labor.price_cents,
-            },
-          ]
-        : []),
-      ...(p.parts
-        ? [{ name: p.parts.label, description: "Wire, connectors, mounting hardware and consumables", quantity: p.parts.quantity, unit_price_cents: p.parts.unit_price_cents, total_cents: p.parts.price_cents }]
+        ? [{ name: "Installation Labor", description: `${capitalize(labelFor(p.labor.included).replace(/^Labor: /, ""))} (estimated ${p.labor.hours} hours)`, quantity: p.labor.hours }]
         : []),
     ],
+    labor_total_cents: p.services.reduce((sum, s) => sum + s.unit_price_cents, 0) + (p.labor?.price_cents ?? 0),
+    intro: { systems: titleCase(p.pattern.name).toLowerCase(), rooms: p.rooms, labor_hours: p.labor?.hours ?? null },
     services: [
       ...p.services.map((s) => s.label),
       ...(p.labor ? [`${labelFor(p.labor.included)} (estimated ${p.labor.hours} hours)`] : []),
@@ -100,6 +91,7 @@ export function customerView(p: Proposal): CustomerProposal {
       subtotal_cents: p.commercial.subtotal_cents,
       tax: p.commercial.tax.status === "calculated" ? { rate_pct: p.commercial.tax.rate_pct, cents: p.commercial.tax.cents } : "TBD",
       total_cents: p.commercial.total_cents,
+      parts_cents: p.commercial.parts_cents,
       retainer: {
         pct: DESIGN_RETAINER_PCT,
         cents: Math.round(((p.commercial.total_cents ?? p.commercial.subtotal_cents) * DESIGN_RETAINER_PCT) / 100),
@@ -129,8 +121,7 @@ function labelFor(covers: string[]): string {
   return `Labor: ${text}`;
 }
 
-// Sell prices per line are shown, as on a D-Tools proposal; cost and margin never are.
-const FORBIDDEN_KEY = /(cost|margin|markup|commission|extended|internal|discount|record_id|evidence|approval)/i;
+const FORBIDDEN_KEY = /(cost|margin|markup|commission|unit_price|extended|internal|discount|record_id|evidence|approval)/i;
 
 /** Keys in a customer document that must never appear (defense in depth for the validator). */
 export function forbiddenCustomerKeys(value: unknown, path = "$"): string[] {

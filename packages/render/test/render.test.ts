@@ -67,11 +67,13 @@ describe("PDF + preflight", () => {
     let text = "";
     for (let n = 1; n <= doc.numPages; n++) text += " " + (await (await doc.getPage(n)).getTextContent()).items.map((i) => ("str" in i ? i.str : "")).join(" ");
     text = text.replace(/\s+/g, " ");
-    for (const s of ["Henry Clifford", "henry@getlivewire.com", "Why Livewire?", "Your Custom Quote:", "UNIT PRICE", "Installation Labor", "Warranty", "Summary", "Product + Labor", "Payment Terms", "Terms & Conditions"]) {
+    for (const s of ["Henry Clifford", "henry@getlivewire.com", "Project Number", "Why Livewire?", "System Proposal", "Your Custom Quote:", "ITEM QTY", "Installation Labor", "90 Day Warranty", "Summary", "Product + Labor", "Shipping & Handling/Parts", "Looking for Financing or ACH Options?", "Terms & Conditions"]) {
       expect(text, s).toContain(s);
     }
     expect(text).toContain(`Design Retainer (4%) ${formatUsd(c.commercial.retainer.cents)}`);
-    expect(text).toMatch(/10\/05\/2026 .*V1 Page 1 of \d/);
+    expect(text).toMatch(/10\/05\/2026 Smith Family Security Modernization Budget Page 1 of \d/);
+    // Like Livewire's current proposals: quantities per line, prices only as area totals.
+    expect(text).not.toMatch(/UNIT PRICE/);
     expect(text).not.toMatch(/Signature/i);
   }, 60_000);
 

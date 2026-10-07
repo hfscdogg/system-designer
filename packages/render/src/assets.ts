@@ -13,19 +13,29 @@ export interface Brand {
   tagline: string;
   address: string[];
   website: string;
-  colors: Record<"navy" | "green" | "gray" | "label" | "rule" | "watermark", string>;
-  copy: { why: string[]; warranty: string[]; terms: string[]; budget: string };
+  colors: Record<"navy" | "green" | "gray" | "label" | "rule" | "watermark" | "link", string>;
+  copy: {
+    why: string[];
+    intro_after: string[];
+    no_surprises: string;
+    team: [string, string];
+    warranty_title: string;
+    warranty: string[];
+    financing: Array<[string, string]>;
+    terms: string[];
+    budget: string;
+  };
   logoDataUri: string;
   heroDataUri: string;
   fontCss: string;
 }
 
-// Outfit stands in for D-Tools' Gilroy headings; Tinos is metric-compatible with its Liberation Serif body.
+// Outfit stands in for Gilroy, the licensed typeface of Livewire's D-Tools proposals.
 const FONTS: Array<[family: string, file: string, weight: number, style: "normal" | "italic"]> = [
+  ["Outfit", "@fontsource/outfit/files/outfit-latin-400-normal.woff2", 400, "normal"],
+  ["Outfit", "@fontsource/outfit/files/outfit-latin-500-normal.woff2", 500, "normal"],
   ["Outfit", "@fontsource/outfit/files/outfit-latin-600-normal.woff2", 600, "normal"],
   ["Outfit", "@fontsource/outfit/files/outfit-latin-700-normal.woff2", 700, "normal"],
-  ["Tinos", "@fontsource/tinos/files/tinos-latin-400-normal.woff2", 400, "normal"],
-  ["Tinos", "@fontsource/tinos/files/tinos-latin-700-normal.woff2", 700, "normal"],
 ];
 
 let cached: Promise<Brand> | null = null;
