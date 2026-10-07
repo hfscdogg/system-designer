@@ -134,10 +134,7 @@ export class GoogleChatAdapter implements ChannelAdapter {
     });
     const ref = (uploaded.data as { attachmentDataRef?: { resourceName?: string } }).attachmentDataRef;
     if (!ref?.resourceName) throw new Error("Google Chat did not return an attachment reference");
-    const params = new URLSearchParams({
-      messageReplyOption: "REPLY_MESSAGE_FALLBACK_TO_NEW_THREAD",
-      requestId: idempotencyKey.slice(0, 128),
-    });
+    const params = createParams(thread, idempotencyKey);
     const created = await this.fileRequest({
       url: `${API}/${thread.spaceId}/messages?${params}`,
       method: "POST",
@@ -154,11 +151,7 @@ export class GoogleChatAdapter implements ChannelAdapter {
 
   async post(thread: ThreadRef, view: View, idempotencyKey: string) {
     if (thread.platform !== GOOGLE_CHAT) throw new Error(`thread is on ${thread.platform}, not ${GOOGLE_CHAT}`);
-    // requestId makes create idempotent: a retry returns the message created the first time.
-    const params = new URLSearchParams({
-      messageReplyOption: "REPLY_MESSAGE_FALLBACK_TO_NEW_THREAD",
-      requestId: idempotencyKey.slice(0, 128),
-    });
+    const params = createParams(thread, idempotencyKey);
     const res = await this.request({
       url: `${API}/${thread.spaceId}/messages?${params}`,
       method: "POST",
@@ -175,4 +168,18 @@ export class GoogleChatAdapter implements ChannelAdapter {
     const mask = "cardsV2" in body ? "text,cardsV2" : "text";
     await this.request({ url: `${API}/${messageId}?updateMask=${mask}`, method: "PATCH", data: body });
   }
+}
+
+/**
+ * Query for messages.create. requestId makes create idempotent (a retry returns
+ * the first message). A reply option is only valid with a thread: DMs are keyed
+ * by space (threadId === spaceId) and post without one, and Chat rejects a
+ * reply option there ("does not specify which message to reply to").
+ */
+function createParams(thread: ThreadRef, idempotencyKey: string): URLSearchParams {
+  const threaded = thread.threadId !== thread.spaceId;
+  return new URLSearchParams({
+    ...(threaded ? { messageReplyOption: "REPLY_MESSAGE_FALLBACK_TO_NEW_THREAD" } : {}),
+    requestId: idempotencyKey.slice(0, 128),
+  });
 }

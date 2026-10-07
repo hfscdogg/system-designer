@@ -57,7 +57,13 @@ async function setup(extractions: unknown[] = [], patches: unknown[] = [], build
   const { store, db } = await testStore();
   if (build.policy !== false) await store.publishPolicy(typeof build.policy === "object" ? build.policy : TEST_POLICY, "henry", "test policy");
   const chat = new FakeChannelAdapter();
-  const extractor: ScopeExtractor = { extract: async () => ({ raw: extractions.shift(), model: "fake-model" }) };
+  const extractor: ScopeExtractor = {
+    extract: async () => {
+      const next = extractions.shift();
+      if (next instanceof Error) throw next; // simulates an activity that keeps failing
+      return { raw: next, model: "fake-model" };
+    },
+  };
   const interpreter: ClarificationInterpreter = { interpret: async () => ({ raw: patches.shift(), model: "fake-model" }) };
   const dtools = build.dtools ?? recordedDToolsReader(build.catalog ?? CATALOG);
   const acts = createActivities({
@@ -367,6 +373,20 @@ describe("Google Chat → scope approval vertical slice", () => {
     });
     expect(JSON.stringify(res.body)).toContain("approved by Zack Reichert");
     expect((await t.store.listRunsForPerson("zack"))[0]!.state).toBe("READY_HELD");
+  });
+});
+
+describe("runs whose workflow stopped", () => {
+  it("closes a request whose workflow died instead of swallowing the next message", async () => {
+    const t = await setup([new Error("Chat rejected the post")]);
+    await t.send(chatMessage("Smith family wants their old alarm modernized…"));
+    const [run] = await t.store.listRunsForPerson("zack");
+    await expect(t.workflows.result(run!.id)).rejects.toThrow("Chat rejected the post");
+
+    const res = await t.send(chatMessage("Hi"));
+    expect(res.body).toEqual({ text: "Your previous request in this conversation stopped with an error, so I've closed it. Please send your request again as a new message." });
+    expect((await t.store.getRun(run!.id)).state).toBe("FAILED");
+    expect(await t.store.findOpenRun({ platform: "google_chat", spaceId: SPACE, threadId: THREAD })).toBeNull();
   });
 });
 
