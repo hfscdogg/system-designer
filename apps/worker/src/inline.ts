@@ -1,5 +1,5 @@
 import type { RunSignal } from "@sd/core";
-import type { WorkflowPort } from "./port.ts";
+import { WorkflowClosedError, type WorkflowPort } from "./port.ts";
 import { runProposal, type RunActivities, type RunResult } from "./workflows/logic.ts";
 
 interface InlineRun {
@@ -8,6 +8,7 @@ interface InlineRun {
   idle: Promise<void>;
   markIdle: () => void;
   result: Promise<RunResult>;
+  closed: boolean;
 }
 
 /**
@@ -41,12 +42,15 @@ export class InlineWorkflows implements WorkflowPort {
         },
       },
     );
-    run.result.finally(() => run.markIdle());
+    run.result.finally(() => {
+      run.closed = true;
+      run.markIdle();
+    }).catch(() => {});
   }
 
   async signal(runId: string, signal: RunSignal): Promise<void> {
     const run = this.runs.get(runId);
-    if (!run) throw new Error(`run ${runId} is not running`);
+    if (!run || run.closed) throw new WorkflowClosedError(`run ${runId} is not running`);
     this.resetIdle(run);
     run.queue.push(signal);
     run.wake?.();

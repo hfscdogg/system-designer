@@ -123,6 +123,21 @@ describe("GoogleChatAdapter", () => {
     expect(calls[1]).toMatchObject({ method: "PATCH", url: "https://chat.googleapis.com/v1/spaces/A/messages/app-1?updateMask=text,cardsV2" });
     await expect(adapter.post({ ...thread, platform: "telegram" }, { kind: "text", text: "x" }, "k")).rejects.toThrow();
   });
+
+  it("posts into a DM without a thread or a reply option (Chat rejects a reply option there)", async () => {
+    const calls: Array<{ url: string; data: any }> = [];
+    const adapter = new GoogleChatAdapter(async (opts) => {
+      calls.push(opts as any);
+      return { data: { name: "spaces/DM/messages/app-1", attachmentDataRef: { resourceName: "ref" } } };
+    });
+    const dm = { platform: "google_chat", spaceId: "spaces/DM", threadId: "spaces/DM" };
+    await adapter.post(dm, { kind: "text", text: "hi" }, "run_1:status");
+    await adapter.postFile(dm, { bytes: new Uint8Array([1]), filename: "a.pdf", contentType: "application/pdf", text: "pdf" }, "run_1:pdf");
+    expect(calls[0]!.url).toBe("https://chat.googleapis.com/v1/spaces/DM/messages?requestId=run_1%3Astatus");
+    expect(calls[0]!.data.thread).toBeUndefined();
+    expect(calls[2]!.url).toBe("https://chat.googleapis.com/v1/spaces/DM/messages?requestId=run_1%3Apdf");
+    expect(calls[2]!.data.thread).toBeUndefined();
+  });
 });
 
 describe("googleChatVerifier", () => {

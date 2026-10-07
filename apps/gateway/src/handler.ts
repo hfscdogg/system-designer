@@ -1,7 +1,7 @@
 import { parseApprovalText, type RunSignal, type ThreadRef } from "@sd/core";
 import { googleChatReplyBody, isAddonBody, parseGoogleChatEvent, type InboundEvent, type RequestVerifier, type WebhookReply } from "@sd/channels";
 import type { Person, Store } from "@sd/store";
-import type { WorkflowPort } from "@sd/worker";
+import { WorkflowClosedError, type WorkflowPort } from "@sd/worker";
 
 /**
  * Webhook front door. Deterministic code only: verify the provider, resolve the
@@ -35,6 +35,7 @@ async function withRetry<T>(fn: () => Promise<T>, attempts = 3): Promise<T> {
     try {
       return await fn();
     } catch (err) {
+      if ((err as { final?: boolean }).final) throw err;
       last = err;
       await new Promise((r) => setTimeout(r, 200 * 2 ** i));
     }
@@ -148,7 +149,11 @@ async function message(deps: GatewayDeps, person: Person, event: Extract<Inbound
       return reply("This conversation has an open request from someone else. Start a new thread for yours.");
     }
     if (!(await claim("clarification", open.id))) return silent;
-    await signal(deps, open.id, { type: "clarification", intakeId: intake.id });
+    if ((await signal(deps, open.id, { type: "clarification", intakeId: intake.id })) === "closed") {
+      // The run's workflow stopped without closing the run (for example after an error): close it, don't go silent.
+      await store.transitionRun(open.id, "FAILED", "system", { error: "workflow is no longer running", intakeId: intake.id });
+      return reply("Your previous request in this conversation stopped with an error, so I've closed it. Please send your request again as a new message.");
+    }
     return silent;
   }
 
@@ -205,10 +210,20 @@ async function decideMargin(
   return reply(decision === "approved" ? `✅ Margin exception ${exceptionId} approved by ${person.display_name}. The PDF is on its way to the requester.` : `Margin exception ${exceptionId} declined by ${person.display_name}. The run is stopped.`);
 }
 
-async function signal(deps: GatewayDeps, runId: string, s: RunSignal): Promise<void> {
+async function signal(deps: GatewayDeps, runId: string, s: RunSignal): Promise<"delivered" | "closed" | "failed"> {
   try {
-    await withRetry(() => deps.workflows.signal(runId, s));
+    await withRetry(async () => {
+      try {
+        await deps.workflows.signal(runId, s);
+      } catch (err) {
+        // A closed workflow will not reopen: retrying only delays the answer.
+        if (err instanceof WorkflowClosedError) throw Object.assign(err, { final: true });
+        throw err;
+      }
+    });
+    return "delivered";
   } catch (err) {
     await deps.store.appendEvent(runId, "signal_delivery_failed", "system", { signal: s.type, error: String(err) });
+    return err instanceof WorkflowClosedError ? "closed" : "failed";
   }
 }

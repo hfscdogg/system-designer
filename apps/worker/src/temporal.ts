@@ -1,6 +1,6 @@
-import { Client, Connection, WorkflowExecutionAlreadyStartedError } from "@temporalio/client";
+import { Client, Connection, WorkflowExecutionAlreadyStartedError, WorkflowNotFoundError } from "@temporalio/client";
 import type { RunSignal } from "@sd/core";
-import type { WorkflowPort } from "./port.ts";
+import { WorkflowClosedError, type WorkflowPort } from "./port.ts";
 
 export const TASK_QUEUE = "proposal-runs";
 
@@ -47,6 +47,12 @@ export class TemporalWorkflows implements WorkflowPort {
   }
 
   async signal(runId: string, signal: RunSignal): Promise<void> {
-    await this.client.workflow.getHandle(runId).signal("run", signal);
+    try {
+      await this.client.workflow.getHandle(runId).signal("run", signal);
+    } catch (err) {
+      // Temporal reports a closed workflow as "not found" for signals.
+      if (err instanceof WorkflowNotFoundError) throw new WorkflowClosedError(`workflow ${runId} is not running`);
+      throw err;
+    }
   }
 }
