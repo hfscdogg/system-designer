@@ -75,6 +75,12 @@ export async function handleEvent(deps: GatewayDeps, event: InboundEvent): Promi
     return reply("This space isn't approved for System Designer. Message me directly or ask Henry to add the space.");
   }
 
+  // Remember each person's direct conversation, so admins can be asked for margin decisions.
+  if (event.isDirectMessage) await store.rememberDirectSpace(event.platform, event.sender.providerUserId, event.thread.spaceId);
+
+  if (event.kind === "margin_click") {
+    return decideMargin(deps, person, event.exceptionId, event.decision, event.providerEventId, "button");
+  }
   if (event.kind === "approve_click") {
     return approve(deps, person, event.thread, event.receiptId, event.scopeHash, event.providerEventId, "button");
   }
@@ -118,6 +124,13 @@ async function message(deps: GatewayDeps, person: Person, event: Extract<Inbound
     const { staleRunIds } = await store.resetSession(event.thread, person.id);
     for (const runId of staleRunIds) await signal(deps, runId, { type: "invalidate", reason: "session reset" });
     return reply(staleRunIds.length ? "Cleared. The open request here is closed and its receipt can no longer be approved." : "Nothing to clear.");
+  }
+
+  const marginText = /^\s*(approve|decline) exception\s+(MX-[A-Z0-9]+)\s*$/i.exec(text);
+  if (marginText) {
+    if (!(await claim("margin_decision"))) return silent;
+    const decision = marginText[1]!.toLowerCase() === "approve" ? "approved" : "declined";
+    return decideMargin(deps, person, marginText[2]!.toUpperCase(), decision, event.providerMessageId, "text");
   }
 
   const approvalReceipt = parseApprovalText(text);
@@ -174,6 +187,22 @@ async function approve(
   // The approval is committed. If this signal is lost the workflow reconciles it from the database.
   await signal(deps, result.runId, { type: "approved", receiptId, scopeHash, approvalId: result.approvalId });
   return reply(`✅ Scope ${receiptId} approved by ${person.display_name}.`);
+}
+
+async function decideMargin(
+  deps: GatewayDeps,
+  person: Person,
+  exceptionId: string,
+  decision: "approved" | "declined",
+  providerEventId: string,
+  method: "button" | "text",
+): Promise<WebhookReply> {
+  const result = await deps.store.decideMarginException({ exceptionId, deciderPersonId: person.id, decision, providerEventId, method });
+  if (!result.ok) return reply(`I can't record that decision: ${result.reason}.`);
+  if (result.duplicate) return reply(`${exceptionId} is already ${result.decision}.`);
+  // The decision is committed. If this signal is lost the workflow reconciles it from the database.
+  await signal(deps, result.runId, { type: "margin_decision", exceptionId, decision });
+  return reply(decision === "approved" ? `✅ Margin exception ${exceptionId} approved by ${person.display_name}. The PDF is on its way to the requester.` : `Margin exception ${exceptionId} declined by ${person.display_name}. The run is stopped.`);
 }
 
 async function signal(deps: GatewayDeps, runId: string, s: RunSignal): Promise<void> {

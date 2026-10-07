@@ -90,7 +90,13 @@ Margin, labor-rate and tax rules are versioned configuration, never prompt text.
 - the 07LABOR1MAN rate of $179 per hour, costing $89.50;
 - tax "tbd".
 
-A build below its market's floor is blocked as a margin exception. Parts are sized to the parts share at the parts margin. `tax` can also be `{ "mode": "rate", "rate_pct": <n>, "applies_to": "taxable_equipment" }`.
+A build below its market's floor is **held** as a margin exception:
+- The requester is told it is waiting.
+- Each admin gets an internal card in their direct conversation with the app, showing the margin, the floor and the mix, with **Approve exception** / **Decline** buttons. They can also reply `approve exception MX-…` or `decline exception MX-…`.
+- Approving is the written exception the comp policy requires. It is recorded once, admin-only (also enforced by the database), and the PDF then posts to the requester. Declining stops the run.
+- An admin must have messaged the app directly at least once to be reachable.
+
+Parts are sized to the parts share at the parts margin. `tax` can also be `{ "mode": "rate", "rate_pct": <n>, "applies_to": "taxable_equipment" }`.
 
 The file ships in the image. Publish it with the admin job (see `docs/deploy.md`):
 

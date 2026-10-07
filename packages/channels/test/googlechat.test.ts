@@ -81,6 +81,31 @@ describe("renderGoogleChat", () => {
   });
 });
 
+describe("margin exception cards", () => {
+  it("renders approve and decline buttons that parse back to a margin decision", () => {
+    const view: View = { kind: "margin_exception", exceptionId: "MX-ABC", title: "Margin exception MX-ABC", lines: ["Gross margin 36% vs the 40% residential floor."] };
+    const body = renderGoogleChat(view, { actionFunction: "https://gateway.example/chat/google" }) as { cardsV2: Array<{ card: { sections: Array<{ widgets: Array<{ buttonList?: { buttons: Array<{ onClick: { action: { function: string; parameters: Array<{ key: string; value: string }> } } }> } }> }> } }> };
+    const buttons = body.cardsV2[0]!.card.sections[1]!.widgets[0]!.buttonList!.buttons;
+    expect(buttons.map((b) => Object.fromEntries(b.onClick.action.parameters.map((p) => [p.key, p.value])))).toEqual([
+      { action: "margin_exception", exception_id: "MX-ABC", decision: "approved" },
+      { action: "margin_exception", exception_id: "MX-ABC", decision: "declined" },
+    ]);
+    const params = Object.fromEntries(buttons[0]!.onClick.action.parameters.map((p) => [p.key, p.value]));
+    const event = parseGoogleChatEvent(
+      new TextEncoder().encode(
+        JSON.stringify({
+          type: "CARD_CLICKED",
+          space: { name: "spaces/DM", spaceType: "DIRECT_MESSAGE" },
+          message: { name: "spaces/DM/messages/1" },
+          user: { name: "users/henry", type: "HUMAN" },
+          common: { invokedFunction: buttons[0]!.onClick.action.function, parameters: params },
+        }),
+      ),
+    );
+    expect(event).toMatchObject({ kind: "margin_click", exceptionId: "MX-ABC", decision: "approved", isDirectMessage: true });
+  });
+});
+
 describe("GoogleChatAdapter", () => {
   it("posts into the thread with an idempotent requestId and patches messages", async () => {
     const calls: Array<{ url: string; method: string; data: any }> = [];

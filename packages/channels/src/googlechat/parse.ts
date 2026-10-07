@@ -2,6 +2,7 @@ import type { InboundEvent } from "../types.ts";
 
 export const GOOGLE_CHAT = "google_chat";
 export const APPROVE_FUNCTION = "approve_scope";
+export const MARGIN_FUNCTION = "margin_exception";
 
 interface ChatUser {
   name?: string;
@@ -127,9 +128,23 @@ export function parseGoogleChatEvent(rawBytes: Uint8Array): InboundEvent {
     for (const p of event.action?.parameters ?? []) if (p.key && p.value !== undefined) params[p.key] ??= p.value;
     // Add-on apps invoke the endpoint URL as the "function", so the action name travels as a parameter.
     const fn = params.action ?? event.common?.invokedFunction ?? event.action?.actionMethodName;
+    const who = event.user ?? {};
+    if (fn === MARGIN_FUNCTION) {
+      const decision = params.decision;
+      if (!params.exception_id || (decision !== "approved" && decision !== "declined") || !threadId) return { kind: "ignored", reason: "margin click missing parameters" };
+      return {
+        kind: "margin_click",
+        platform: GOOGLE_CHAT,
+        providerEventId: `${event.message?.name ?? "?"}#${who.name ?? "?"}@${event.eventTime ?? "?"}`,
+        thread: { platform: GOOGLE_CHAT, spaceId, threadId },
+        isDirectMessage: isDm,
+        sender: sender(who),
+        exceptionId: params.exception_id,
+        decision,
+      };
+    }
     if (fn !== APPROVE_FUNCTION) return { kind: "ignored", reason: `unknown card action ${fn ?? "(none)"}` };
     if (!params.receipt_id || !params.scope_hash || !threadId) return { kind: "ignored", reason: "approve click missing parameters" };
-    const who = event.user ?? {};
     return {
       kind: "approve_click",
       platform: GOOGLE_CHAT,

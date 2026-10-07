@@ -17,6 +17,7 @@ export type Phase =
   | "approved"
   | "catalog"
   | "building"
+  | "awaiting_exception"
   | "validated"
   | "rendering"
   | "ready"
@@ -41,7 +42,11 @@ export const BUILD_STAGES = [
 export type BuildStage = (typeof BUILD_STAGES)[number];
 export type StageOutcome =
   | { ok: true; summary: string }
-  | { ok: false; reason: string; outcome?: "BLOCKED" | "RECONCILIATION_REQUIRED" };
+  | { ok: false; reason: string; outcome?: "BLOCKED" | "RECONCILIATION_REQUIRED" }
+  /** Below the margin floor: hold for an admin's decision, then repeat the stage. */
+  | { ok: false; reason: string; outcome: "MARGIN_EXCEPTION"; exceptionId: string };
+
+export type MarginDecision = { exceptionId: string; decision: "approved" | "declined"; decidedBy: string };
 
 const STAGE_PHASE: Record<BuildStage, Phase> = {
   prebuild: "catalog",
@@ -70,6 +75,10 @@ export interface RunActivities {
   notify(a: { runId: string; text: string; key: string }): Promise<void>;
   markOutcome(a: { runId: string; state: "BLOCKED" | "STALE" | "RECONCILIATION_REQUIRED"; reason: string }): Promise<void>;
   buildStage(a: { runId: string; stage: BuildStage }): Promise<StageOutcome>;
+  /** Ask the admins to decide a margin exception, and tell the requester it is held. */
+  requestMarginApproval(a: { runId: string; exceptionId: string; reason: string }): Promise<void>;
+  /** A decision already committed in the database (its signal may have been lost). */
+  findMarginDecision(a: { runId: string }): Promise<MarginDecision | null>;
 }
 
 export interface RunRuntime {
@@ -152,6 +161,8 @@ export async function runProposal(input: ProposalRunInput, rt: RunRuntime): Prom
         }
         return closedRun(republished.runState);
       }
+      case "ignore":
+        break;
       case "approve":
         await acts.confirmApproval({ runId, approvalId: decision.approvalId, receiptId: current.receiptId });
         return build(rt, runId, decision.approvalId, current.receiptId);
@@ -161,15 +172,48 @@ export async function runProposal(input: ProposalRunInput, rt: RunRuntime): Prom
 
 /** Exactly one build per approved scope, ending at READY_HELD; stops at the first failed stage (PRD §13.8). */
 async function build(rt: RunRuntime, runId: string, approvalId: string, receiptId: string): Promise<RunResult> {
-  for (const stage of BUILD_STAGES) {
+  for (let i = 0; i < BUILD_STAGES.length; i++) {
+    const stage = BUILD_STAGES[i]!;
     await rt.acts.reportProgress({ runId, phase: STAGE_PHASE[stage] });
     const outcome = await rt.acts.buildStage({ runId, stage });
-    if (!outcome.ok) {
-      const state = outcome.outcome ?? "BLOCKED";
-      await rt.acts.markOutcome({ runId, state, reason: outcome.reason });
-      return { state, reason: outcome.reason };
+    if (outcome.ok) continue;
+    if (outcome.outcome === "MARGIN_EXCEPTION") {
+      const decided = await awaitMarginDecision(rt, runId, outcome.exceptionId, outcome.reason);
+      if (decided.decision === "approved") {
+        i--; // repeat the stage; it now finds the approved exception
+        continue;
+      }
+      const [state, reason] =
+        "reason" in decided ? (["STALE", decided.reason] as const) : (["BLOCKED", `margin exception declined by ${decided.decidedBy}`] as const);
+      await rt.acts.markOutcome({ runId, state, reason });
+      return { state, reason };
     }
+    const state = outcome.outcome ?? "BLOCKED";
+    await rt.acts.markOutcome({ runId, state, reason: outcome.reason });
+    return { state, reason: outcome.reason };
   }
   await rt.acts.reportProgress({ runId, phase: "ready" });
   return { state: "READY_HELD", approvalId, receiptId };
+}
+
+/** Hold until an admin decides the exception. Lost signals are reconciled hourly from the database. */
+async function awaitMarginDecision(
+  rt: RunRuntime,
+  runId: string,
+  exceptionId: string,
+  reason: string,
+): Promise<MarginDecision | { decision: "expired"; reason: string }> {
+  await rt.acts.requestMarginApproval({ runId, exceptionId, reason });
+  await rt.acts.reportProgress({ runId, phase: "awaiting_exception", note: reason });
+  let idleChecks = 0;
+  for (;;) {
+    const signal = await rt.nextSignal(RECONCILE_EVERY_MS);
+    if (signal?.type === "invalidate") return { decision: "expired", reason: signal.reason };
+    if (signal === null || (signal.type === "margin_decision" && signal.exceptionId === exceptionId)) {
+      // The database is the record; the signal only says when to look.
+      const decided = await rt.acts.findMarginDecision({ runId });
+      if (decided?.exceptionId === exceptionId) return decided;
+      if (signal === null && ++idleChecks >= EXPIRE_AFTER_IDLE_CHECKS) return { decision: "expired", reason: "no margin decision for 14 days" };
+    }
+  }
 }

@@ -1,5 +1,5 @@
 import type { View } from "../types.ts";
-import { APPROVE_FUNCTION } from "./parse.ts";
+import { APPROVE_FUNCTION, MARGIN_FUNCTION } from "./parse.ts";
 
 const ICON: Record<string, string> = { done: "✅", active: "⏳", pending: "▫️", failed: "❌" };
 
@@ -41,6 +41,36 @@ export function renderGoogleChat(view: View, opts: RenderOptions = {}): Record<s
           },
         ],
       };
+    case "margin_exception": {
+      const button = (text: string, decision: "approved" | "declined") => ({
+        text,
+        onClick: {
+          action: {
+            function: opts.actionFunction ?? MARGIN_FUNCTION,
+            parameters: [
+              { key: "action", value: MARGIN_FUNCTION },
+              { key: "exception_id", value: view.exceptionId },
+              { key: "decision", value: decision },
+            ],
+          },
+        },
+      });
+      return {
+        text: [view.title, ...view.lines, `Reply "approve exception ${view.exceptionId}" or "decline exception ${view.exceptionId}".`].join("\n"),
+        cardsV2: [
+          {
+            cardId: `margin-${view.exceptionId}`,
+            card: {
+              header: { title: view.title, subtitle: "Internal — below the margin floor" },
+              sections: [
+                { widgets: [{ textParagraph: { text: view.lines.map(escape).join("<br>") } }] },
+                { widgets: [{ buttonList: { buttons: [button("Approve exception", "approved"), button("Decline", "declined")] } }] },
+              ],
+            },
+          },
+        ],
+      };
+    }
     case "receipt": {
       // Lines are rendered verbatim and in order; the plain-text fallback carries the same lines.
       const sections: unknown[] = [{ widgets: [{ textParagraph: { text: view.lines.map(escape).join("<br>") } }] }];

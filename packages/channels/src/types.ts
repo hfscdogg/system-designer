@@ -26,6 +26,16 @@ export type InboundEvent =
       receiptId: string;
       scopeHash: string;
     }
+  | {
+      kind: "margin_click";
+      platform: string;
+      providerEventId: string;
+      thread: ThreadRef;
+      isDirectMessage: boolean;
+      sender: { providerUserId: string; email: string | null; displayName: string | null; isHuman: boolean };
+      exceptionId: string;
+      decision: "approved" | "declined";
+    }
   | { kind: "ignored"; reason: string };
 
 export type StepState = "done" | "active" | "pending" | "failed";
@@ -42,7 +52,9 @@ export type View =
       lines: string[];
       approve: { receiptId: string; scopeHash: string } | null;
     }
-  | { kind: "status"; title: string; steps: Array<{ label: string; state: StepState }>; note: string | null };
+  | { kind: "status"; title: string; steps: Array<{ label: string; state: StepState }>; note: string | null }
+  /** Internal, admin-only: a build below the margin floor, with approve/decline buttons. */
+  | { kind: "margin_exception"; exceptionId: string; title: string; lines: string[] };
 
 export interface ChannelAdapter {
   readonly platform: string;
