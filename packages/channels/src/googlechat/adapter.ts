@@ -140,8 +140,12 @@ export class GoogleChatAdapter implements ChannelAdapter {
       headers: { "Content-Type": `multipart/related; boundary=${boundary}` },
       subject: file.actAs,
     });
-    const ref = (uploaded.data as { attachmentDataRef?: { resourceName?: string } }).attachmentDataRef;
-    if (!ref?.resourceName) throw new Error("Google Chat did not return an attachment reference");
+    // Uploads return an attachmentUploadToken; resourceName (for downloads) may be absent.
+    const ref = (uploaded.data as { attachmentDataRef?: { resourceName?: string; attachmentUploadToken?: string } }).attachmentDataRef;
+    const refId = ref?.resourceName || ref?.attachmentUploadToken;
+    if (!ref || !refId) {
+      throw new Error(`Google Chat did not return an attachment reference (got ${JSON.stringify(Object.keys((uploaded.data as object) ?? {}))}, ref ${JSON.stringify(Object.keys(ref ?? {}))})`);
+    }
     const params = createParams(thread, idempotencyKey);
     const created = await this.fileRequest({
       url: `${API}/${thread.spaceId}/messages?${params}`,
@@ -155,7 +159,7 @@ export class GoogleChatAdapter implements ChannelAdapter {
     });
     const name = (created.data as { name?: string }).name;
     if (!name) throw new Error("Google Chat did not return a message name");
-    return { messageId: name, attachmentRef: ref.resourceName };
+    return { messageId: name, attachmentRef: refId };
   }
 
   async post(thread: ThreadRef, view: View, idempotencyKey: string) {
