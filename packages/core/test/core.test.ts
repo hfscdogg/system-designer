@@ -86,6 +86,16 @@ describe("blockers and receipts", () => {
     expect(computeBlockers(completeExtraction())).toEqual([]);
   });
 
+  it("normalizes stated quantities and shows them on the receipt", () => {
+    const r = receiptFor(completeExtraction({ requested_quantities: [{ item: " Keypads ", quantity: 2 }, { item: "glass-break sensors", quantity: 3 }] }));
+    expect(r.scope?.requested_quantities).toEqual([{ item: "glass-break sensors", quantity: 3 }, { item: "keypads", quantity: 2 }]);
+    expect(r.lines).toContain("Stated quantities: glass-break sensors × 3; keypads × 2");
+  });
+
+  it("classifies keypads and wireless contacts as security, not networking", () => {
+    expect(normalizeExtraction(completeExtraction({ functional_systems: ["keypads", "wireless contacts"] })).scope.functional_systems).toEqual(["intrusion_security"]);
+  });
+
   it("asks whether the job is residential or commercial only when the request does not say", () => {
     expect(computeBlockers(normalizeExtraction(completeExtraction({ market: "not_provided" })).scope).map((b) => b.field)).toEqual(["market"]);
     const r = receiptFor(completeExtraction({ market: "commercial" }));

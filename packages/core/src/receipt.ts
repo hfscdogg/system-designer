@@ -57,6 +57,7 @@ export function toScopeDraft(s: ScopeExtraction): ScopeDraftV1 {
     room_types: s.room_types,
     functional_systems: s.functional_systems,
     requested_changes: s.requested_changes,
+    requested_quantities: s.requested_quantities,
     existing_equipment_disposition: status === "not_provided" ? "unknown" : status,
     retained_equipment: s.existing_equipment.retained,
     existing_detectors: needsDetectorAnswer(s) && s.existing_detectors !== "not_provided" ? s.existing_detectors : "not_applicable",
@@ -102,6 +103,7 @@ function scopeLines(s: ScopeExtraction): string[] {
     `Rooms/areas: ${s.room_types.length ? s.room_types.join("; ") : missing}`,
     `Systems: ${s.functional_systems.length ? s.functional_systems.join("; ") : missing}`,
     `Requested outcomes: ${s.requested_changes.length ? s.requested_changes.join("; ") : missing}`,
+    ...(s.requested_quantities.length ? [`Stated quantities: ${s.requested_quantities.map((q) => `${q.item} × ${q.quantity}`).join("; ")}`] : []),
     `Existing equipment: ${equipment}`,
     ...(needsDetectorAnswer(s)
       ? [`Existing smoke/CO detectors: ${{ not_provided: missing, none: "none", keep_and_monitor: "keep and monitor", replace: "replace with new" }[s.existing_detectors]}`]

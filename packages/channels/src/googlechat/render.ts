@@ -16,14 +16,18 @@ export interface RenderOptions {
   actionFunction?: string;
 }
 
-/** Google Chat message body (text + cardsV2) for a view. */
+/**
+ * Google Chat message body for a view. Cards carry their plain-text form as
+ * fallbackText (used for notifications and clients without cards): sending it
+ * as text as well would show every card twice.
+ */
 export function renderGoogleChat(view: View, opts: RenderOptions = {}): Record<string, unknown> {
   switch (view.kind) {
     case "text":
       return { text: view.text };
     case "status":
       return {
-        text: `${view.title}\n${view.steps.map((s) => `${ICON[s.state]} ${s.label}`).join("\n")}`,
+        fallbackText: `${view.title}\n${view.steps.map((s) => `${ICON[s.state]} ${s.label}`).join("\n")}`,
         cardsV2: [
           {
             cardId: "status",
@@ -56,7 +60,7 @@ export function renderGoogleChat(view: View, opts: RenderOptions = {}): Record<s
         },
       });
       return {
-        text: [view.title, ...view.lines, `Reply "approve exception ${view.exceptionId}" or "decline exception ${view.exceptionId}".`].join("\n"),
+        fallbackText: [view.title, ...view.lines, `Reply "approve exception ${view.exceptionId}" or "decline exception ${view.exceptionId}".`].join("\n"),
         cardsV2: [
           {
             cardId: `margin-${view.exceptionId}`,
@@ -100,7 +104,7 @@ export function renderGoogleChat(view: View, opts: RenderOptions = {}): Record<s
         });
       }
       return {
-        text: view.lines.join("\n"),
+        fallbackText: view.lines.join("\n"),
         cardsV2: [
           {
             cardId: `receipt-${view.receiptId}`,

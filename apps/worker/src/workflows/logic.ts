@@ -99,7 +99,30 @@ function closedRun(runState: string): RunResult {
   return { state: "STALE", reason: `run is ${runState}` };
 }
 
+/**
+ * A step that still fails after its retries (an outage, a rejected Chat post)
+ * must not end the run silently: mark it BLOCKED, which tells the requester
+ * where it stopped. Cancellation is not a failure and is passed through.
+ */
 export async function runProposal(input: ProposalRunInput, rt: RunRuntime): Promise<RunResult> {
+  try {
+    return await proposal(input, rt);
+  } catch (err) {
+    if (err instanceof Error && err.name === "CancelledFailure") throw err;
+    const reason = `an internal step failed (${failureMessage(err)})`;
+    await rt.acts.markOutcome({ runId: input.runId, state: "BLOCKED", reason });
+    return { state: "BLOCKED", reason };
+  }
+}
+
+/** The innermost cause, e.g. the activity's own error rather than "Activity task failed". */
+function failureMessage(err: unknown): string {
+  let e = err as { message?: string; cause?: unknown } | undefined;
+  while (e && typeof e === "object" && e.cause) e = e.cause as typeof e;
+  return (e?.message ?? String(err)).slice(0, 300);
+}
+
+async function proposal(input: ProposalRunInput, rt: RunRuntime): Promise<RunResult> {
   const { acts } = rt;
   const { runId } = input;
   let notices = 0;

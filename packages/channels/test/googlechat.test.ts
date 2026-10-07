@@ -67,8 +67,10 @@ describe("renderGoogleChat", () => {
   };
 
   it("keeps receipt lines verbatim and binds the button to receipt and hash", () => {
-    const body = renderGoogleChat(receipt) as { text: string; cardsV2: any[] };
-    expect(body.text).toBe(receipt.kind === "receipt" ? receipt.lines.join("\n") : "");
+    const body = renderGoogleChat(receipt) as { text?: string; fallbackText: string; cardsV2: any[] };
+    // The plain-text form is only a fallback: as text it would show the card twice in Chat.
+    expect(body.text).toBeUndefined();
+    expect(body.fallbackText).toBe(receipt.kind === "receipt" ? receipt.lines.join("\n") : "");
     const json = JSON.stringify(body.cardsV2);
     expect(json).toContain("A &amp; B &lt;Co&gt;");
     expect(json).toContain('"function":"approve_scope"');

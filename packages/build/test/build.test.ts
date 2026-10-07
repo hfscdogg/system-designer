@@ -149,6 +149,14 @@ describe("materialize → compile → bind → validate", () => {
     expect(validation.ok).toBe(true);
   });
 
+  it("uses the counts the requester stated, and verifies only the rest", async () => {
+    const { selection, proposal } = await pipeline({ requested_quantities: [{ item: "Keypads", quantity: 2 }, { item: "glass-break sensors", quantity: 3 }] });
+    expect(selection.lines.find((l) => l.role === "keypad")).toMatchObject({ quantity: 2, quantity_basis: "fixed", verify: null });
+    expect(selection.lines.find((l) => l.role === "glass_break")).toMatchObject({ quantity: 3, quantity_basis: "fixed" });
+    expect(selection.lines.find((l) => l.role === "smoke_heat_detector")).toMatchObject({ quantity: 1, quantity_basis: "minimum_to_verify" });
+    expect(proposal.remaining_verification.some((v) => v.startsWith("Keypad:"))).toBe(false);
+  });
+
   it("adds motion detectors only when the request mentions them", async () => {
     expect((await pipeline()).selection.lines.map((l) => l.role)).not.toContain("motion_detector");
     const withMotion = await pipeline({ requested_changes: ["Replace legacy panel and keypads", "Add motion detectors in the hallways"] });
