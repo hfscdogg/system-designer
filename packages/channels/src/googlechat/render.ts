@@ -76,6 +76,10 @@ export function renderGoogleChat(view: View, opts: RenderOptions = {}): Record<s
       };
     }
     case "question": {
+      // The recommended choice comes first and says so, like a good assistant's question.
+      const options = [...(view.choices?.options ?? [])]
+        .sort((a, b) => Number(!!b.recommended) - Number(!!a.recommended))
+        .map((o) => ({ ...o, label: o.recommended ? `${o.label} (Recommended)` : o.label }));
       const action = (extra: Array<{ key: string; value: string }>) => ({
         action: {
           function: opts.actionFunction ?? ANSWER_FUNCTION,
@@ -89,12 +93,19 @@ export function renderGoogleChat(view: View, opts: RenderOptions = {}): Record<s
             name: ANSWER_INPUT,
             label: "Pick all that apply",
             type: "CHECK_BOX",
-            items: view.choices.options.map((o) => ({ text: o.label, value: o.value, selected: false })),
+            items: options.map((o) => ({ text: o.label, value: o.value, selected: !!o.recommended })),
           },
         });
         widgets.push({ buttonList: { buttons: [{ text: "Done", onClick: action([]) }] } });
       } else if (view.choices) {
-        widgets.push({ buttonList: { buttons: view.choices.options.map((o) => ({ text: o.label, onClick: action([{ key: "value", value: o.value }]) })) } });
+        widgets.push({
+          buttonList: {
+            buttons: options.map((o) => ({
+              text: o.label,
+              onClick: action([{ key: "value", value: o.value }]),
+            })),
+          },
+        });
       }
       widgets.push({ textParagraph: { text: `<i>${view.choices ? "Or type" : "Type"} your answer in the chat. You can answer several questions in one message.</i>` } });
       return {

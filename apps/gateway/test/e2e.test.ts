@@ -47,7 +47,7 @@ function click(receiptId: string, scopeHash: string, user = "users/zack", thread
 }
 
 function answerClick(receiptId: string, field: string, values: string[], user = "users/zack") {
-  const single = values.length === 1 && field !== "service_categories";
+  const single = values.length === 1 && !["functional_systems", "service_categories", "room_types"].includes(field);
   return {
     type: "CARD_CLICKED",
     eventTime: `2026-10-05T12:1${++seq % 10}:00Z`,
@@ -114,26 +114,27 @@ beforeEach(() => {
 
 describe("Google Chat → scope approval vertical slice", () => {
   it("captures, clarifies, publishes receipts verbatim and approves via the button", async () => {
-    const partial = completeExtraction({ budget: { status: "not_provided", amount_usd: null }, target_installation_date: null });
-    const t = await setup([partial], [{ ...noPatch, budget: { status: "unknown", amount_usd: null }, target_installation_date: "2026-12-01" }]);
+    // Only what can't be inferred is asked: here the client and the market. The budget and date are assumed.
+    const partial = completeExtraction({ client: null, market: "not_provided", budget: { status: "not_provided", amount_usd: null }, target_installation_date: null });
+    const t = await setup([partial], [{ ...noPatch, client: "Smith Family", market: "residential" }]);
 
-    expect(await t.send(chatMessage("Smith family wants their old alarm modernized…"))).toEqual({ status: 200, body: {} });
+    expect(await t.send(chatMessage("Old alarm needs modernizing…"))).toEqual({ status: 200, body: {} });
     // Open questions are asked one at a time; the receipt rides along verbatim.
     expect(t.receipts()).toHaveLength(0);
     const q = t.questions();
     expect(q).toHaveLength(1);
-    expect(q[0]).toMatchObject({ field: "budget", remaining: 2, choices: { multi: false, options: [{ value: "unknown", label: "Unknown" }] } });
+    expect(q[0]).toMatchObject({ field: "client", remaining: 2, choices: null });
     expect(q[0]!.lines[1]).toBe("Status: NEEDS_CLARIFICATION");
-    expect(q[0]!.lines.some((l) => l.includes("budget expectation"))).toBe(true);
+    expect(q[0]!.lines).toEqual(expect.arrayContaining(["Budget: unknown (assumed)", "Target install: unknown (assumed)"]));
     expect(t.statusCard()?.steps.map((s) => s.state)).toEqual(["done", "done", "active", "pending", "pending", "pending", "pending", "pending"]);
 
     // One typed reply can answer several questions.
-    await t.send(chatMessage("Budget unknown, install Dec 1 2026"));
+    await t.send(chatMessage("It's the Smith family, residential"));
     const r = t.receipts();
     expect(r).toHaveLength(1);
     const v2 = r[0]!;
     expect(v2.status).toBe("AWAITING_APPROVAL");
-    expect(v2.lines).toContain("Target install: 2026-12-01");
+    expect(v2.lines).toContain("Client: Smith Family");
     expect(v2.lines.at(-1)).toBe(`To approve: Approve scope ${v2.receiptId}`);
 
     const res = await t.send(click(v2.approve!.receiptId, v2.approve!.scopeHash));
@@ -156,41 +157,43 @@ describe("Google Chat → scope approval vertical slice", () => {
     expect(t.chat.list().filter((m) => m.view.kind === "status")).toHaveLength(1);
   });
 
-  it("asks one question at a time and takes tapped answers without a model", async () => {
-    const partial = completeExtraction({
-      market: "not_provided",
-      service_categories: [],
-      budget: { status: "not_provided", amount_usd: null },
-    });
+  it("asks one question at a time, recommends an answer, and takes taps without a model", async () => {
+    const partial = completeExtraction({ market: "not_provided", functional_systems: [], existing_detectors: "not_provided" });
     const t = await setup([partial]);
     await t.send(chatMessage("Smith family wants their old alarm modernized…"));
     let q = t.questions().at(-1)!;
-    expect(q).toMatchObject({ field: "market", remaining: 3 });
+    expect(q).toMatchObject({ field: "functional_systems", remaining: 2, choices: { multi: true } });
 
-    // Someone else, an older card, or a value that isn't offered changes nothing.
-    expect((await t.send(answerClick(q.receiptId, "market", ["residential"], "users/henry"))).body).toEqual({ text: "Only the person who made this request can answer its questions." });
-    expect((await t.send(answerClick(q.receiptId, "market", ["industrial"]))).body).toEqual({ text: "That isn't one of the choices. Pick from the card, or type your answer." });
-
-    expect((await t.send(answerClick(q.receiptId, "market", ["residential"]))).body).toEqual({ text: "✓ Residential" });
-    expect((await t.send(answerClick(q.receiptId, "market", ["commercial"]))).body).toEqual({ text: "That question was already answered. Use the latest card." });
-    q = t.questions().at(-1)!;
-    expect(q).toMatchObject({ field: "service_categories", remaining: 2, choices: { multi: true } });
-
-    expect((await t.send(answerClick(q.receiptId, "service_categories", []))).body).toEqual({ text: "Pick at least one option, then tap Done." });
-    expect((await t.send(answerClick(q.receiptId, "service_categories", ["installation", "programming", "monitoring activation"]))).body).toEqual({
-      text: "✓ Installation, Programming, Monitoring activation",
+    // Someone else, an empty pick, an older card, or a value that isn't offered changes nothing.
+    expect((await t.send(answerClick(q.receiptId, "functional_systems", ["security", "smoke detectors"], "users/henry"))).body).toEqual({
+      text: "Only the person who made this request can answer its questions.",
     });
+    expect((await t.send(answerClick(q.receiptId, "functional_systems", []))).body).toEqual({ text: "Pick at least one option, then tap Done." });
+    expect((await t.send(answerClick(q.receiptId, "functional_systems", ["pool heater"]))).body).toEqual({ text: "That isn't one of the choices. Pick from the card, or type your answer." });
+
+    const systems = ["security", "monitoring", "smoke detectors", "carbon monoxide detectors", "thermostats", "video doorbell"];
+    expect((await t.send(answerClick(q.receiptId, "functional_systems", systems))).body).toEqual({
+      text: "✓ Security / alarm, Alarm monitoring, Smoke detection, CO detection, Thermostats, Video doorbell",
+    });
+    expect((await t.send(answerClick(q.receiptId, "functional_systems", systems))).body).toEqual({ text: "That question was already answered. Use the latest card." });
+
     q = t.questions().at(-1)!;
-    expect(q.field).toBe("budget");
-    await t.send(answerClick(q.receiptId, "budget", ["unknown"]));
+    expect(q).toMatchObject({ field: "market", remaining: 2 });
+    expect(q.choices!.options[0]).toEqual({ value: "residential", label: "Residential", recommended: true });
+    expect((await t.send(answerClick(q.receiptId, "market", ["residential"]))).body).toEqual({ text: "✓ Residential" });
+
+    // Smoke/CO detection is now in scope, so the detector question follows.
+    q = t.questions().at(-1)!;
+    expect(q).toMatchObject({ field: "existing_detectors", remaining: 1 });
+    expect(q.choices!.options.find((o) => o.recommended)?.value).toBe("replace");
+    await t.send(answerClick(q.receiptId, "existing_detectors", ["replace"]));
 
     const [receipt] = t.receipts();
     expect(receipt!.status).toBe("AWAITING_APPROVAL");
-    expect(receipt!.lines).toEqual(expect.arrayContaining(["Market: residential", "Budget: unknown"]));
-    expect(receipt!.lines.find((l) => l.startsWith("Services:"))).toContain("monitoring_activation");
+    expect(receipt!.lines).toEqual(expect.arrayContaining(["Market: residential", "Existing smoke/CO detectors: replace with new"]));
     const [run] = await t.store.listRunsForPerson("zack");
     const events = await t.store.listEvents(run!.id);
-    expect(events.filter((e) => e.type === "answer_applied").map((e) => e.data.field)).toEqual(["market", "service_categories", "budget"]);
+    expect(events.filter((e) => e.type === "answer_applied").map((e) => e.data.field)).toEqual(["functional_systems", "market", "existing_detectors"]);
     expect(events.some((e) => e.type === "answer_applied" && "model" in e.data)).toBe(false);
   });
 

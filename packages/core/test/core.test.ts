@@ -203,7 +203,8 @@ describe("clarification", () => {
     expect(next.budget).toEqual({ status: "known", amount_usd: 45000 });
     expect(next.target_installation_date).toBeNull();
     expect(next.client).toBe("Smith Family");
-    expect(computeBlockers(next).map((b) => b.field)).toEqual(["target_installation_date"]);
+    // An unknown install date is assumed, not asked (minimal questions).
+    expect(computeBlockers(next)).toEqual([]);
   });
 
   it("fills only the address components supplied", () => {

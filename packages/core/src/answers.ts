@@ -8,6 +8,8 @@ import type { ClarificationPatch } from "./scope.ts";
 export interface AnswerChoice {
   value: string;
   label: string;
+  /** The usual answer; shown first and marked "(Recommended)". */
+  recommended?: true;
 }
 
 export interface QuestionChoices {
@@ -17,15 +19,18 @@ export interface QuestionChoices {
 }
 
 const choice = (value: string, label = value[0]!.toUpperCase() + value.slice(1)): AnswerChoice => ({ value, label });
+const recommended = (c: AnswerChoice): AnswerChoice => ({ ...c, recommended: true });
 
 /** Values are phrases the normalizer maps to canonical terms, so a tap and a typed answer agree. */
 export const ANSWER_CHOICES: Record<string, QuestionChoices> = {
-  market: { multi: false, options: [choice("residential"), choice("commercial")] },
-  project_type: { multi: false, options: [choice("new construction"), choice("renovation"), choice("upgrade", "Upgrade / retrofit")] },
+  // Most Livewire work is residential.
+  market: { multi: false, options: [recommended(choice("residential")), choice("commercial")] },
+  project_type: { multi: false, options: [recommended(choice("upgrade", "Upgrade / retrofit")), choice("new construction"), choice("renovation")] },
   existing_equipment: { multi: false, options: [choice("none", "None"), choice("unknown", "Unknown")] },
   existing_detectors: {
     multi: false,
-    options: [choice("none", "None"), choice("keep_and_monitor", "Keep and monitor them"), choice("replace", "Replace with wireless")],
+    // Replacing prices the fuller scope, so a budget does not come in low.
+    options: [recommended(choice("replace", "Replace with wireless")), choice("keep_and_monitor", "Keep and monitor them"), choice("none", "None")],
   },
   room_types: {
     multi: true,

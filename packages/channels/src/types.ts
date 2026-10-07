@@ -74,7 +74,7 @@ export type View =
       question: string;
       /** Blocking questions left, this one included. */
       remaining: number;
-      choices: { multi: boolean; options: Array<{ value: string; label: string }> } | null;
+      choices: { multi: boolean; options: Array<{ value: string; label: string; recommended?: boolean }> } | null;
       lines: string[];
     }
   | { kind: "status"; title: string; steps: Array<{ label: string; state: StepState }>; note: string | null }
