@@ -238,8 +238,9 @@ export function createActivities(deps: ActivityDeps): RunActivities {
       renderPdf: deps.renderPdf,
       fetchImage: deps.fetchImage,
       postFile: async (run, file, key) => {
-        const a = adapterFor(run);
-        return a.postFile(threadOf(run), file, key);
+        // Chat uploads need a user; a delegated upload acts as the requester, who is in the conversation.
+        const actAs = (await store.requesterEmail(run.id)) ?? undefined;
+        return adapterFor(run).postFile(threadOf(run), { ...file, actAs }, key);
       },
       notify: (run, text, key) => adapterFor(run).post(threadOf(run), { kind: "text", text }, key).then(() => undefined),
     }),

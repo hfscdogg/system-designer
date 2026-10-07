@@ -43,7 +43,7 @@ echo "1) Add these GitHub repository variables"
 echo "   (github.com/hfscdogg/system-designer → Settings → Secrets and variables → Actions → Variables):"
 terraform output github_variables
 echo "   Also add: TEMPORAL_ADDRESS, TEMPORAL_NAMESPACE, LLM_MODEL,"
-echo "             GOOGLE_CHAT_UPLOAD_MODE (app or delegated), GOOGLE_CHAT_DELEGATED_USER (if delegated)."
+echo "             GOOGLE_CHAT_UPLOAD_MODE=delegated."
 echo
 echo "2) Store the secret values (paste each value when prompted; nothing is echoed):"
 for s in temporal-api-key dtools-api-key dtools-basic-auth; do
@@ -63,7 +63,7 @@ echo "5) Merge to main. After its checks pass, the CI workflow builds one image,
 echo "   approval to deploy production. Its log prints the gateway URLs to paste into the Chat app's"
 echo "   HTTP endpoint (Google Chat API → Configuration)."
 echo
-echo "Only if you use delegated PDF upload: in the Workspace Admin console → Security → API controls →"
+echo "6) PDF upload (Chat needs a user for uploads): in the Workspace Admin console → Security → API controls →"
 echo "Domain-wide delegation, add the worker's client ID with the scope"
 echo "https://www.googleapis.com/auth/chat.messages.create :"
 terraform output worker_service_accounts

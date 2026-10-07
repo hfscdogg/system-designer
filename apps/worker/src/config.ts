@@ -33,9 +33,10 @@ export function productionStore(): { store: Store; pool: pg.Pool } {
 
 /**
  * GOOGLE_CHAT_UPLOAD_MODE picks how the PDF attachment is uploaded:
- *  - "app": as the Chat app itself (if Google allows it for this app);
- *  - "delegated": as GOOGLE_CHAT_DELEGATED_USER via domain-wide delegation
- *    limited to creating Chat messages. No extra Workspace seat is needed.
+ *  - "app": as the Chat app itself (Google normally requires a user for uploads);
+ *  - "delegated": as the requester via domain-wide delegation limited to
+ *    creating Chat messages, falling back to GOOGLE_CHAT_DELEGATED_USER.
+ *    No extra Workspace seat is needed.
  */
 export function productionAdapters(): Record<string, ChannelAdapter> {
   const mode = (process.env.GOOGLE_CHAT_UPLOAD_MODE ?? "app") as "app" | "delegated";

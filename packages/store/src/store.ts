@@ -155,6 +155,15 @@ export class Store {
     return res.rows[0] ?? null;
   }
 
+  /** The email the run's request came from, as Google Chat reported it. */
+  async requesterEmail(runId: string): Promise<string | null> {
+    const res = await this.db.query<{ requester_email: string | null }>(
+      `SELECT i.requester_email FROM runs r JOIN intake_messages i ON i.id = r.intake_id WHERE r.id = $1`,
+      [runId],
+    );
+    return res.rows[0]?.requester_email ?? null;
+  }
+
   async resolvePersonById(personId: string): Promise<Person | null> {
     const res = await this.db.query<Person>(`SELECT id, display_name, roles, active FROM persons WHERE id = $1`, [personId]);
     return res.rows[0] ?? null;

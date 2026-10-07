@@ -14,6 +14,8 @@ export type HttpRequest = (opts: {
   method: "POST" | "PATCH";
   data: unknown;
   headers?: Record<string, string>;
+  /** Delegated transport only: the Workspace user to act as. */
+  subject?: string;
 }) => Promise<{ data: unknown }>;
 
 function authRequest(auth: GoogleAuth): HttpRequest {
@@ -30,15 +32,17 @@ export function googleAppAuthRequest(): HttpRequest {
 }
 
 /**
- * File transport. "app" uploads as the Chat app itself. "delegated" uses the
- * same service account with domain-wide delegation, scoped to creating Chat
- * messages only, acting as an existing Workspace user (no extra seat).
+ * File transport. Google Chat accepts attachment uploads only with user
+ * authentication, so "app" works only where Google allows it for the app.
+ * "delegated" uses the same service account with domain-wide delegation,
+ * scoped to creating Chat messages only, acting as the requester (who is a
+ * member of the conversation), or as `delegatedUser` when the requester's
+ * email is unknown. No extra Workspace seat is needed.
  */
 export function googleFileRequest(mode: "app" | "delegated", delegatedUser?: string, serviceAccountEmail?: string): HttpRequest {
   if (mode === "app") return googleAppAuthRequest();
-  if (!delegatedUser) throw new Error("delegated upload mode needs GOOGLE_CHAT_DELEGATED_USER");
   if (!serviceAccountEmail) throw new Error("delegated upload mode needs the worker's service account email");
-  return delegatedRequest({ serviceAccountEmail, subject: delegatedUser, scope: USER_CREATE_SCOPE });
+  return delegatedRequest({ serviceAccountEmail, subject: delegatedUser || undefined, scope: USER_CREATE_SCOPE });
 }
 
 type Fetch = typeof fetch;
@@ -47,11 +51,11 @@ type Fetch = typeof fetch;
  * Domain-wide delegation without a key file. Cloud Run has no private key, so
  * the service account signs the delegation JWT through the IAM Credentials API
  * (it needs roles/iam.serviceAccountTokenCreator on itself), then exchanges it
- * for a token acting as `subject`.
+ * for a token acting as the request's `subject`, or the default `subject`.
  */
 export function delegatedRequest(opts: {
   serviceAccountEmail: string;
-  subject: string;
+  subject?: string;
   scope: string;
   auth?: { getAccessToken(): Promise<string | null | undefined> };
   fetch?: Fetch;
@@ -60,12 +64,13 @@ export function delegatedRequest(opts: {
   const doFetch = opts.fetch ?? fetch;
   const now = opts.now ?? (() => Date.now());
   const auth = opts.auth ?? new GoogleAuth({ scopes: ["https://www.googleapis.com/auth/cloud-platform"] });
-  let cached: { token: string; expiresAt: number } | null = null;
+  const cache = new Map<string, { token: string; expiresAt: number }>();
 
-  async function token(): Promise<string> {
+  async function token(subject: string): Promise<string> {
+    const cached = cache.get(subject);
     if (cached && cached.expiresAt - 60_000 > now()) return cached.token;
     const iat = Math.floor(now() / 1000);
-    const claims = { iss: opts.serviceAccountEmail, sub: opts.subject, scope: opts.scope, aud: "https://oauth2.googleapis.com/token", iat, exp: iat + 3600 };
+    const claims = { iss: opts.serviceAccountEmail, sub: subject, scope: opts.scope, aud: "https://oauth2.googleapis.com/token", iat, exp: iat + 3600 };
     const platformToken = await auth.getAccessToken();
     const signed = await doFetch(
       `https://iamcredentials.googleapis.com/v1/projects/-/serviceAccounts/${encodeURIComponent(opts.serviceAccountEmail)}:signJwt`,
@@ -80,18 +85,20 @@ export function delegatedRequest(opts: {
     });
     if (!exchanged.ok) throw new Error(`delegated token exchange failed: ${exchanged.status} (is domain-wide delegation configured for this scope?)`);
     const body = (await exchanged.json()) as { access_token: string; expires_in: number };
-    cached = { token: body.access_token, expiresAt: now() + body.expires_in * 1000 };
-    return cached.token;
+    cache.set(subject, { token: body.access_token, expiresAt: now() + body.expires_in * 1000 });
+    return body.access_token;
   }
 
-  return async ({ url, method, data, headers }) => {
+  return async ({ url, method, data, headers, subject }) => {
+    const user = subject || opts.subject;
+    if (!user) throw new Error("delegated upload has no user to act as (no requester email and no GOOGLE_CHAT_DELEGATED_USER)");
     const isBytes = data instanceof Uint8Array;
     const res = await doFetch(url, {
       method,
-      headers: { Authorization: `Bearer ${await token()}`, ...(isBytes ? {} : { "Content-Type": "application/json" }), ...headers },
+      headers: { Authorization: `Bearer ${await token(user)}`, ...(isBytes ? {} : { "Content-Type": "application/json" }), ...headers },
       body: isBytes ? Buffer.from(data as Uint8Array) : JSON.stringify(data),
     });
-    if (!res.ok) throw new Error(`Google Chat ${method} ${new URL(url).pathname} failed: ${res.status}`);
+    if (!res.ok) throw new Error(`Google Chat ${method} ${new URL(url).pathname} failed: ${res.status} ${(await res.text()).slice(0, 200)}`);
     return { data: await res.json() };
   };
 }
@@ -131,6 +138,7 @@ export class GoogleChatAdapter implements ChannelAdapter {
       method: "POST",
       data: body,
       headers: { "Content-Type": `multipart/related; boundary=${boundary}` },
+      subject: file.actAs,
     });
     const ref = (uploaded.data as { attachmentDataRef?: { resourceName?: string } }).attachmentDataRef;
     if (!ref?.resourceName) throw new Error("Google Chat did not return an attachment reference");
@@ -143,6 +151,7 @@ export class GoogleChatAdapter implements ChannelAdapter {
         attachment: [{ attachmentDataRef: ref }],
         ...(thread.threadId === thread.spaceId ? {} : { thread: { name: thread.threadId } }),
       },
+      subject: file.actAs,
     });
     const name = (created.data as { name?: string }).name;
     if (!name) throw new Error("Google Chat did not return a message name");
