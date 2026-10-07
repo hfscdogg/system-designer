@@ -3,6 +3,11 @@ import type { InboundEvent } from "../types.ts";
 export const GOOGLE_CHAT = "google_chat";
 export const APPROVE_FUNCTION = "approve_scope";
 export const MARGIN_FUNCTION = "margin_exception";
+export const ANSWER_FUNCTION = "answer_question";
+/** Name of the checkbox input on a multi-choice question card. */
+export const ANSWER_INPUT = "answer";
+
+type FormInputs = Record<string, { stringInputs?: { value?: string[] } }>;
 
 interface ChatUser {
   name?: string;
@@ -25,7 +30,7 @@ interface ChatEvent {
     attachment?: Array<{ name?: string; contentName?: string; contentType?: string; attachmentDataRef?: { resourceName?: string } }>;
   };
   user?: ChatUser;
-  common?: { invokedFunction?: string; parameters?: Record<string, string> };
+  common?: { invokedFunction?: string; parameters?: Record<string, string>; formInputs?: FormInputs };
   action?: { actionMethodName?: string; parameters?: Array<{ key?: string; value?: string }> };
 }
 
@@ -36,7 +41,7 @@ interface ChatEvent {
  * classic shape so the rest of the parser and the gateway stay the same.
  */
 interface AddonEvent {
-  commonEventObject?: { invokedFunction?: string; parameters?: Record<string, string> };
+  commonEventObject?: { invokedFunction?: string; parameters?: Record<string, string>; formInputs?: FormInputs };
   chat?: {
     user?: ChatUser;
     eventTime?: string;
@@ -69,7 +74,11 @@ function fromAddonEvent(e: AddonEvent): ChatEvent {
       space: chat.buttonClickedPayload.space,
       message: chat.buttonClickedPayload.message,
       user: chat.user,
-      common: { invokedFunction: e.commonEventObject?.invokedFunction, parameters: e.commonEventObject?.parameters ?? {} },
+      common: {
+        invokedFunction: e.commonEventObject?.invokedFunction,
+        parameters: e.commonEventObject?.parameters ?? {},
+        formInputs: e.commonEventObject?.formInputs,
+      },
     };
   }
   return { type: "ADDON_OTHER", eventTime: chat.eventTime };
@@ -129,6 +138,22 @@ export function parseGoogleChatEvent(rawBytes: Uint8Array): InboundEvent {
     // Add-on apps invoke the endpoint URL as the "function", so the action name travels as a parameter.
     const fn = params.action ?? event.common?.invokedFunction ?? event.action?.actionMethodName;
     const who = event.user ?? {};
+    if (fn === ANSWER_FUNCTION) {
+      // A single choice travels as a parameter; checkboxes arrive as form input.
+      const values = params.value !== undefined ? [params.value] : (event.common?.formInputs?.[ANSWER_INPUT]?.stringInputs?.value ?? []);
+      if (!params.receipt_id || !params.field || !threadId) return { kind: "ignored", reason: "answer click missing parameters" };
+      return {
+        kind: "answer_click",
+        platform: GOOGLE_CHAT,
+        providerEventId: `${event.message?.name ?? "?"}#${who.name ?? "?"}@${event.eventTime ?? "?"}`,
+        thread: { platform: GOOGLE_CHAT, spaceId, threadId },
+        isDirectMessage: isDm,
+        sender: sender(who),
+        receiptId: params.receipt_id,
+        field: params.field,
+        values,
+      };
+    }
     if (fn === MARGIN_FUNCTION) {
       const decision = params.decision;
       if (!params.exception_id || (decision !== "approved" && decision !== "declined") || !threadId) return { kind: "ignored", reason: "margin click missing parameters" };

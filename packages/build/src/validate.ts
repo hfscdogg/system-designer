@@ -125,7 +125,7 @@ export function validateProposal(
   const leaked = forbiddenCustomerKeys(customer);
   if (leaked.length) block("confidentiality", `customer view exposes internal fields: ${leaked.join(", ")}`);
   if (p.mode !== "conceptual_budget" || p.watermark !== PILOT_WATERMARK) block("pilot_safety", "pilot output must be a watermarked conceptual budget");
-  if (/sign|accept|authori[sz]e/i.test(JSON.stringify(customer.commercial))) block("pilot_safety", "acceptance language in commercial section");
+  if (/\b(sign|signed|signature|accept|accepted|acceptance|authori[sz]e)\b/i.test(JSON.stringify(customer.commercial))) block("pilot_safety", "acceptance language in commercial section");
 
   return { ok: !f.some((x) => x.severity === "block"), findings: f };
 }

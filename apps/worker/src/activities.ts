@@ -1,15 +1,16 @@
 import {
+  ANSWER_CHOICES,
+  answerPatch,
   applyClarification,
   buildReceipt,
   computeBlockers,
   hashCanonical,
   normalizeExtraction,
-  questionsForTurn,
   validateClarificationPatch,
   validateExtraction,
   type CurrentReceipt,
 } from "@sd/core";
-import type { ChannelAdapter } from "@sd/channels";
+import type { ChannelAdapter, View } from "@sd/channels";
 import type { ClarificationInterpreter, ScopeExtractor } from "@sd/llm";
 import { formatUsd, type PatternSpec, type Proposal } from "@sd/build";
 import type { DToolsReader } from "@sd/dtools";
@@ -56,13 +57,18 @@ export function createActivities(deps: ActivityDeps): RunActivities {
   }
 
   async function validateModelScope(raw: unknown, model: string, runId: string, kind: string): Promise<ExtractOutcome> {
+    return validateScope(raw, runId, kind, { model });
+  }
+
+  /** `source` is recorded with the event: the model that proposed the scope, or how the requester answered. */
+  async function validateScope(raw: unknown, runId: string, kind: string, source: Record<string, unknown>): Promise<ExtractOutcome> {
     const valid = validateExtraction(raw);
     if (!valid.ok) {
-      await store.appendEvent(runId, `${kind}_rejected`, "system", { model, errors: valid.errors });
+      await store.appendEvent(runId, `${kind}_rejected`, "system", { ...source, errors: valid.errors });
       return { ok: false, reason: `the scope could not be validated (${valid.errors.slice(0, 3).join("; ")})` };
     }
     const { scope, notes } = normalizeExtraction(valid.value);
-    await store.appendEvent(runId, kind, "system", { model, scopeSha256: hashCanonical(scope), notes });
+    await store.appendEvent(runId, kind, "system", { ...source, scopeSha256: hashCanonical(scope), notes });
     return { ok: true, extraction: scope, notes };
   }
 
@@ -110,19 +116,28 @@ export function createActivities(deps: ActivityDeps): RunActivities {
         throw err;
       }
       const adapter = adapterFor(run);
+      // While questions remain, ask the next one (with tap-to-answer choices); the full receipt rides along.
+      const next = receipt.blockers[0];
+      const view: View = next
+        ? {
+            kind: "question",
+            receiptId: receipt.receipt_id,
+            field: next.field,
+            question: next.question,
+            remaining: receipt.blockers.length,
+            choices: ANSWER_CHOICES[next.field] ?? null,
+            lines: receipt.lines,
+          }
+        : {
+            kind: "receipt",
+            receiptId: receipt.receipt_id,
+            version: receipt.version,
+            status: receipt.status,
+            lines: receipt.lines,
+            approve: receipt.scope_hash ? { receiptId: receipt.receipt_id, scopeHash: receipt.scope_hash } : null,
+          };
       // The receipt id is the idempotency key: a retried activity cannot post it twice.
-      const { messageId } = await adapter.post(
-        threadOf(run),
-        {
-          kind: "receipt",
-          receiptId: receipt.receipt_id,
-          version: receipt.version,
-          status: receipt.status,
-          lines: receipt.lines,
-          approve: receipt.scope_hash ? { receiptId: receipt.receipt_id, scopeHash: receipt.scope_hash } : null,
-        },
-        receipt.receipt_id,
-      );
+      const { messageId } = await adapter.post(threadOf(run), view, receipt.receipt_id);
       if (!record.message_id) await store.setReceiptMessage(receipt.receipt_id, messageId);
       await upsertStatus(await store.getRun(runId), statusView(runId, receipt.status === "AWAITING_APPROVAL" ? "awaiting_approval" : "needs_answers"));
       const current: CurrentReceipt = { receiptId: receipt.receipt_id, status: receipt.status, scopeHash: receipt.scope_hash };
@@ -135,7 +150,8 @@ export function createActivities(deps: ActivityDeps): RunActivities {
       const answer = await store.getIntake(intakeId);
       if (answer.person_id !== latest.body.requester_person_id) throw new IntegrityError("clarification is not from the requester");
       const base = latest.body.extraction;
-      const questions = questionsForTurn(computeBlockers(base)).map((b) => b.question);
+      // Every open question, so one typed or dictated reply can answer several.
+      const questions = computeBlockers(base).map((b) => b.question);
       const { raw, model } = await deps.interpreter.interpret({ current: base, questions, answer: answer.text });
       const patch = validateClarificationPatch(raw);
       if (!patch.ok) {
@@ -150,6 +166,16 @@ export function createActivities(deps: ActivityDeps): RunActivities {
         };
       }
       const outcome = await validateModelScope(applyClarification(base, patch.value), model, runId, "clarification_applied");
+      return outcome.ok ? { ...outcome, notes: latest.body.notes } : outcome;
+    },
+
+    async applyAnswer({ runId, receiptId, field, values }) {
+      const latest = await store.latestReceipt(runId);
+      if (!latest) throw new IntegrityError(`run ${runId} has no receipt to answer`);
+      if (latest.id !== receiptId) return { ok: false, reason: "That question was already answered; use the latest card." };
+      const patch = answerPatch(field, values);
+      if (!patch) return { ok: false, reason: "That answer isn't one of the choices. Pick one, or type your answer." };
+      const outcome = await validateScope(applyClarification(latest.body.extraction, patch), runId, "answer_applied", { source: "button", field, values });
       return outcome.ok ? { ...outcome, notes: latest.body.notes } : outcome;
     },
 

@@ -1,5 +1,7 @@
 import { describe, expect, it } from "vitest";
 import {
+  ANSWER_CHOICES,
+  answerPatch,
   applyClarification,
   buildReceipt,
   canTransition,
@@ -8,6 +10,8 @@ import {
   findAuthorityFields,
   hashCanonical,
   normalizeExtraction,
+  normalizeFunctionalSystems,
+  normalizeServiceCategories,
   parseApprovalText,
   validateClarificationPatch,
   validateExtraction,
@@ -78,6 +82,50 @@ describe("normalization", () => {
     const { scope, notes } = normalizeExtraction(completeExtraction({ service_categories: ["installation", "keypads"] }));
     expect(scope.service_categories).toEqual(["installation"]);
     expect(notes[0]).toContain("keypads");
+  });
+  it("is idempotent, including canonical service names", () => {
+    const once = normalizeExtraction(completeExtraction({ service_categories: ["monitoring activation", "project management", "installation"] })).scope;
+    expect(once.service_categories).toEqual(["installation", "monitoring_activation", "project_management"]);
+    expect(normalizeExtraction(once)).toEqual({ scope: once, notes: [] });
+  });
+});
+
+describe("tap-to-answer choices", () => {
+  it("maps every system and service choice to exactly one canonical term", () => {
+    for (const o of ANSWER_CHOICES.functional_systems!.options) expect(normalizeFunctionalSystems([o.value]), o.value).toHaveLength(1);
+    for (const o of ANSWER_CHOICES.service_categories!.options) {
+      const n = normalizeServiceCategories([o.value]);
+      expect(n.categories, o.value).toHaveLength(1);
+      expect(n.rejected).toEqual([]);
+    }
+  });
+
+  it("turns each offered choice into a patch that clears its question, and refuses anything else", () => {
+    const base = normalizeExtraction(
+      completeExtraction({
+        market: "not_provided",
+        project_type: null,
+        room_types: [],
+        functional_systems: ["smoke detectors"],
+        existing_equipment: { status: "not_provided", retained: [], removed_or_replaced: [] },
+        existing_detectors: "not_provided",
+        service_categories: [],
+        budget: { status: "not_provided", amount_usd: null },
+        target_installation_date: null,
+      }),
+    ).scope;
+    for (const [field, choices] of Object.entries(ANSWER_CHOICES)) {
+      for (const o of choices.options) {
+        const patch = answerPatch(field, [o.value]);
+        expect(validateClarificationPatch(patch).ok, `${field}=${o.value}`).toBe(true);
+        const next = normalizeExtraction(applyClarification(base, patch!)).scope;
+        expect(computeBlockers(next).map((b) => b.field), `${field}=${o.value}`).not.toContain(field);
+      }
+    }
+    expect(answerPatch("market", ["industrial"])).toBeNull();
+    expect(answerPatch("market", ["residential", "commercial"])).toBeNull();
+    expect(answerPatch("client", ["Smith"])).toBeNull();
+    expect(answerPatch("room_types", [])).toBeNull();
   });
 });
 
@@ -155,7 +203,8 @@ describe("clarification", () => {
     expect(next.budget).toEqual({ status: "known", amount_usd: 45000 });
     expect(next.target_installation_date).toBeNull();
     expect(next.client).toBe("Smith Family");
-    expect(computeBlockers(next).map((b) => b.field)).toEqual(["target_installation_date"]);
+    // An unknown install date is assumed, not asked (minimal questions).
+    expect(computeBlockers(next)).toEqual([]);
   });
 
   it("fills only the address components supplied", () => {

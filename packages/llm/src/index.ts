@@ -26,16 +26,19 @@ export class LlmOutputError extends Error {}
 
 const EXTRACT_SYSTEM = `You extract a project scope for Livewire, a residential and commercial technology integrator, from a salesperson's message.
 
+The goal is a quick, roughly right budget from a short, often dictated message: capture everything the message implies, and leave the rest null (code fills sensible defaults and asks only what it must).
+
 Rules:
-- Record only what the message states. Never infer an address component, budget, date, product, price or quantity that is not written.
+- Record what the message states or clearly implies. Never invent an address component, budget, date, product, price or quantity that is not written.
+- client: the person or company the work is for ("customer Henry Clifford", "for the Smiths" → "Henry Clifford", "Smith Family").
+- functional_systems: every system the message names or implies through its devices ("door contacts, motions, glass breaks" → security; "Alarm.com monitoring" → monitoring; "smoke detectors" → smoke detection).
 - Use null for anything not mentioned. Use the explicit "unknown" forms only when the salesperson says it is unknown, TBD or undecided:
   budget.status "unknown", target_installation_date "unknown", existing_equipment.status "unknown".
 - budget.status "not_provided" with amount_usd null when the budget is not mentioned.
 - existing_equipment.status: "none" if there is none, "described" if they say what to keep/replace/remove, "not_provided" if not mentioned.
-- market: "residential" for homes, condos and other residences; "commercial" for offices, stores, restaurants, schools and other businesses; "not_provided" only when the message gives no clear sign of either.
+- market: "residential" for homes, houses, condos and other residences (a named private person as the client usually means residential); "commercial" for offices, stores, restaurants, schools and other businesses; "not_provided" only when the message gives no clear sign of either.
 - existing_detectors: for existing hard-wired smoke/CO detectors, "keep_and_monitor" if they stay and should be monitored, "replace" if new detectors replace them, "none" if there are none, "not_provided" if not mentioned.
 - service_categories are labor/services only (design, prewire, installation, programming, testing, commissioning, training, removal, project management). Equipment goes in functional_systems or requested_changes, never in service_categories.
-- functional_systems: the systems involved, in the salesperson's words.
 - requested_quantities: only counts the message states as numbers ("2 keypads" → {"item": "keypads", "quantity": 2}). Never estimate or infer a count from words like "all", "each" or "several".
 - target_installation_date: YYYY-MM-DD only if a specific date is given.
 - proposal.number / proposal.name: only if the salesperson references an existing proposal or quote.

@@ -27,6 +27,17 @@ export type InboundEvent =
       scopeHash: string;
     }
   | {
+      kind: "answer_click";
+      platform: string;
+      providerEventId: string;
+      thread: ThreadRef;
+      isDirectMessage: boolean;
+      sender: { providerUserId: string; email: string | null; displayName: string | null; isHuman: boolean };
+      receiptId: string;
+      field: string;
+      values: string[];
+    }
+  | {
       kind: "margin_click";
       platform: string;
       providerEventId: string;
@@ -51,6 +62,20 @@ export type View =
       /** Shown verbatim and in order (PRD §9.2). */
       lines: string[];
       approve: { receiptId: string; scopeHash: string } | null;
+    }
+  /**
+   * The receipt's next blocking question, with tap-to-answer choices when the
+   * field has them. `lines` is the full receipt, shown verbatim (collapsed).
+   */
+  | {
+      kind: "question";
+      receiptId: string;
+      field: string;
+      question: string;
+      /** Blocking questions left, this one included. */
+      remaining: number;
+      choices: { multi: boolean; options: Array<{ value: string; label: string; recommended?: boolean }> } | null;
+      lines: string[];
     }
   | { kind: "status"; title: string; steps: Array<{ label: string; state: StepState }>; note: string | null }
   /** Internal, admin-only: a build below the margin floor, with approve/decline buttons. */

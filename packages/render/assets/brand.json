@@ -1,21 +1,62 @@
 {
-  "companyName": "Livewire",
-  "tagline": "High-end home lighting and control",
+  "companyName": "Livewire LLC",
+  "tagline": "technology made simple",
+  "address": [
+    "4900 W Clay St.",
+    "Richmond, VA 23230",
+    "United States"
+  ],
+  "website": "www.getlivewire.com",
   "colors": {
-    "primary": "#12120F",
-    "primaryDark": "#0B0B09",
-    "accent": "#F08223",
-    "accentHover": "#D46C13",
-    "textAccent": "#A85200",
-    "ink": "#12120F",
-    "muted": "#5B5B52",
-    "line": "#D8D6CC",
-    "soft": "#FAFAF9",
-    "cream": "#F5EFE6",
-    "pageBackground": "#F4F0E8"
+    "navy": "#01162F",
+    "green": "#0DBB7D",
+    "gray": "#5F6874",
+    "label": "#9AA0A7",
+    "rule": "#E3E6EA",
+    "watermark": "#A85200",
+    "link": "#1A56DB"
   },
-  "contact": {
-    "email": "hello@getlivewire.com",
-    "website": "getlivewire.com"
+  "copy": {
+    "why": [
+      "At Livewire, we provide a wide range of state-of-the-art technology integration services and prides itself on quality products, quality installation, and excellent customer service. We’ve been making technology simple for our clients for over 20 years.",
+      "Livewire is officially a licensed Class A contractor. This certification underscores our dedication to maintaining the highest standards of professionalism, quality, and safety in all our projects. With this advanced qualification, we are authorized and fully equipped to manage complex and large-scale installations, ensuring our clients receive exceptional service and expertise for all their low or high voltage requirements.",
+      "Through hard work, honesty, and quality craftsmanship, Livewire has become the premier technology integrator in Central Virginia. Livewire’s installation and service techs have years of experience and a wide range of technological, construction, and electronic certifications. The quality of their craftsmanship is the reason 80% of Livewire’s business comes through customer referrals."
+    ],
+    "intro_after": [
+      "Livewire will carefully remove and de-install all specified existing equipment and will return it to the client unless otherwise requested. We will also re-dress and organize all wiring in each location for improved cable management and visual appearance.",
+      "Any work performed outside of this specified scope or any additional parts required for the system will be subject to a change order, ensuring complete transparency before proceeding with any changes as covered in our “No Surprises” policy here:"
+    ],
+    "no_surprises": "www.getlivewire.com/nosurprises/",
+    "team": [
+      "Livewire was formed in 2002 to meet the growing demand for technologically integrated homes and businesses. Through hard work, honesty, and quality service we’ve become Central Virginia’s premier technology integrator. Meet the talented Livewire team here:",
+      "www.getlivewire.com/meet-the-team/"
+    ],
+    "warranty_title": "90 Day Warranty",
+    "warranty": [
+      "We stand behind our work.",
+      "All installation labor and manufacturer warranties for Livewire-supplied parts and equipment are covered for 90 days from the date of project completion.",
+      "PLEASE NOTE: Client-supplied equipment is not covered under this warranty.",
+      "If a service call is requested and no issue is found with workmanship, parts or product under the terms above, a minimum service fee of $199 may apply at the time of the visit.",
+      "NOTE: After initial deposit has been received, any change orders or return requests may be subject to a discretionary restocking fee."
+    ],
+    "financing": [
+      [
+        "Residential Financing:",
+        "www.getlivewire.com/financing/"
+      ],
+      [
+        "Commercial Financing:",
+        "www.getlivewire.com/commercial-financing/"
+      ],
+      [
+        "ACH:",
+        "804-937-9001 x4 - accounting@getlivewire.com"
+      ]
+    ],
+    "terms": [
+      "All labor, parts and materials will be accurately accounted upon completion of the project and the invoice updated prior to final billing. The most frequent instances that may increase the price of a project can be found in Livewire's \"No Surprises Policy\": www.getlivewire.com/nosurprises. Below is our best estimate for the scope of work.",
+      "*** Disclaimer: As a result of ongoing price increases from our suppliers/vendors, this estimate is subject to change until 90% of the total has been paid. ***"
+    ],
+    "budget": "This is a conceptual budget prepared from an initial conversation, so it is roughly right rather than final. The design retainer starts detailed design, after which a final proposal sets exact products, quantities, price and payment terms."
   }
 }

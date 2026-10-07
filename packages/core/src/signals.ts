@@ -13,12 +13,15 @@ export interface CurrentReceipt {
 
 export type RunSignal =
   | { type: "clarification"; intakeId: string }
+  /** A tapped answer to the receipt's current question (see answers.ts). */
+  | { type: "answer"; receiptId: string; field: string; values: string[] }
   | { type: "approved"; receiptId: string; scopeHash: string; approvalId: string }
   | { type: "invalidate"; reason: string }
   | { type: "margin_decision"; exceptionId: string; decision: "approved" | "declined" };
 
 export type SignalDecision =
   | { action: "clarify"; intakeId: string }
+  | { action: "answer"; receiptId: string; field: string; values: string[] }
   | { action: "approve"; approvalId: string }
   | { action: "reject"; reason: string }
   | { action: "stop"; reason: string }
@@ -30,6 +33,10 @@ export function decideSignal(current: CurrentReceipt, signal: RunSignal): Signal
       return { action: "stop", reason: signal.reason };
     case "clarification":
       return { action: "clarify", intakeId: signal.intakeId };
+    case "answer":
+      // A tap on an older card: the gateway already said so; the newer receipt stands.
+      if (signal.receiptId !== current.receiptId) return { action: "ignore" };
+      return { action: "answer", receiptId: signal.receiptId, field: signal.field, values: signal.values };
     case "margin_decision":
       // Only meaningful while a build is held for a margin exception.
       return { action: "ignore" };

@@ -285,3 +285,53 @@ describe("Workspace add-on Chat apps", () => {
     expect(await googleChatVerifier(audience, client, [CHAT_ISSUER, addonIssuer("123")])("Bearer t")).toBe(true);
   });
 });
+
+describe("question cards", () => {
+  const base = { kind: "question" as const, receiptId: "R-RUN1-2", question: "Is this a residential or a commercial project?", remaining: 3, lines: ["Scope receipt R-RUN1-2 (version 2)", "Status: NEEDS_CLARIFICATION"] };
+  const ACTION = "https://gw.example/chat/google";
+
+  it("offers one button per single choice, keeps the receipt verbatim, and hints that typing works", () => {
+    const view: View = { ...base, field: "market", choices: { multi: false, options: [{ value: "residential", label: "Residential" }, { value: "commercial", label: "Commercial" }] } };
+    const body = renderGoogleChat(view, { actionFunction: ACTION }) as any;
+    expect(body.fallbackText).toBe(base.lines.join("\n"));
+    const card = body.cardsV2[0].card;
+    expect(card.header.subtitle).toBe("3 questions left · receipt R-RUN1-2");
+    const buttons = card.sections[0].widgets.find((w: any) => w.buttonList).buttonList.buttons;
+    expect(buttons.map((b: any) => b.text)).toEqual(["Residential", "Commercial"]);
+    expect(buttons[0].onClick.action).toEqual({
+      function: ACTION,
+      parameters: [{ key: "action", value: "answer_question" }, { key: "receipt_id", value: "R-RUN1-2" }, { key: "field", value: "market" }, { key: "value", value: "residential" }],
+    });
+    expect(JSON.stringify(card)).toContain("Or type your answer in the chat");
+    expect(card.sections[1]).toMatchObject({ header: "Scope so far", collapsible: true });
+  });
+
+  it("uses checkboxes and a Done button for multiple choices, and plain text for open questions", () => {
+    const multi = renderGoogleChat({ ...base, field: "service_categories", choices: { multi: true, options: [{ value: "design", label: "Design" }] } }) as any;
+    const widgets = multi.cardsV2[0].card.sections[0].widgets;
+    expect(widgets[1].selectionInput).toMatchObject({ name: "answer", type: "CHECK_BOX", items: [{ text: "Design", value: "design", selected: false }] });
+    expect(widgets[2].buttonList.buttons[0].text).toBe("Done");
+    const open = renderGoogleChat({ ...base, field: "client", question: "Who is the client?", choices: null }) as any;
+    expect(JSON.stringify(open)).not.toContain("buttonList");
+    expect(JSON.stringify(open)).toContain("Type your answer in the chat");
+  });
+
+  it("parses single-choice and checkbox answers from add-on events", () => {
+    const click = (parameters: Record<string, string>, formInputs?: unknown) => ({
+      commonEventObject: { parameters: { action: "answer_question", receipt_id: "R-RUN1-2", ...parameters }, ...(formInputs ? { formInputs } : {}) },
+      chat: { user: { name: "users/zack", type: "HUMAN" }, eventTime: "2026-10-07T21:00:00Z", buttonClickedPayload: { space: { name: "spaces/DM1", spaceType: "DIRECT_MESSAGE" }, message: { name: "spaces/DM1/messages/q1" } } },
+    });
+    expect(parseGoogleChatEvent(enc(click({ field: "market", value: "residential" })))).toMatchObject({
+      kind: "answer_click",
+      receiptId: "R-RUN1-2",
+      field: "market",
+      values: ["residential"],
+      thread: { spaceId: "spaces/DM1", threadId: "spaces/DM1" },
+    });
+    expect(parseGoogleChatEvent(enc(click({ field: "service_categories" }, { answer: { stringInputs: { value: ["design", "installation"] } } })))).toMatchObject({
+      kind: "answer_click",
+      values: ["design", "installation"],
+    });
+    expect(parseGoogleChatEvent(enc(click({ field: "service_categories" })))).toMatchObject({ kind: "answer_click", values: [] });
+  });
+});

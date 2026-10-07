@@ -12,6 +12,8 @@ export const IMAGE_PENDING = "IMAGE PENDING";
 export interface RenderMeta {
   runId: string;
   preparedOn: string; // YYYY-MM-DD
+  /** The salesperson presenting the budget, shown on the cover like a D-Tools proposal. */
+  presenter?: { name: string; email: string | null };
 }
 
 /** Embedded product images keyed by their D-Tools URL. Missing → IMAGE PENDING. */
@@ -30,148 +32,243 @@ export function escapeHtml(input: unknown): string {
     .replace(/'/g, "&#39;");
 }
 
-function list(items: string[], empty: string): string {
-  return items.length ? `<ul>${items.map((i) => `<li>${escapeHtml(i)}</li>`).join("")}</ul>` : `<p class="muted">${escapeHtml(empty)}</p>`;
+function list(items: string[]): string {
+  return `<ul>${items.map((i) => `<li>${escapeHtml(i)}</li>`).join("")}</ul>`;
 }
 
+/** "2026-10-07" → "Oct 7, 2026", as D-Tools prints dates (UTC, so the date never shifts). */
+export function longDate(iso: string): string {
+  return new Date(`${iso}T12:00:00Z`).toLocaleDateString("en-US", { month: "short", day: "numeric", year: "numeric", timeZone: "UTC" });
+}
+
+/** "2026-10-07" → "10/07/2026" for the page footer. */
+export function shortDate(iso: string): string {
+  const [y, m, d] = iso.split("-");
+  return `${m}/${d}/${y}`;
+}
+
+const qty = (n: number) => (Number.isInteger(n) ? String(n) : n.toFixed(1));
+
+function itemTable(rows: string): string {
+  return `<table class="items">
+    <thead><tr><th class="item" colspan="2">ITEM</th><th class="num qty">QTY</th></tr></thead>
+    <tbody>${rows}</tbody>
+  </table>`;
+}
+
+function row(img: string, name: string, description: string, quantity: number): string {
+  return `<tr class="line">
+      <td class="img">${img}</td>
+      <td class="name"><div class="item-name">${escapeHtml(name)}</div>${description ? `<div class="item-desc">${escapeHtml(description)}</div>` : ""}</td>
+      <td class="num qty">${escapeHtml(qty(quantity))}</td>
+    </tr>`;
+}
+
+const joinWords = (xs: string[]) => (xs.length > 1 ? `${xs.slice(0, -1).join(", ")} and ${xs.at(-1)}` : (xs[0] ?? ""));
+
+/**
+ * Customer-facing HTML in the look of Livewire's current D-Tools proposals:
+ * cover, Why Livewire?, System Proposal introduction, Your Custom Quote (each
+ * area with a short scope paragraph, ITEM / QTY and an area total), Warranty,
+ * Summary, Payment Terms (financing options and the design retainer) and
+ * Terms & Conditions. No signature or acceptance block (pilot hold, PRD
+ * §14.4). Input is the CustomerProposal projection only, so internal cost and
+ * margin cannot reach this document.
+ */
 export function renderProposalHtml(c: CustomerProposal, brand: Brand, images: ImageMap, meta: RenderMeta): string {
   const col = brand.colors;
+  const presenter = meta.presenter;
   const sections = c.sections
-    .map(
-      (s) => `
-      <table class="items">
-        <thead>
-          <tr><th class="group-head" colspan="3">${escapeHtml(s.location)}</th></tr>
-          <tr><th class="img-col"></th><th>Equipment</th><th class="num">Qty</th></tr>
-        </thead>
-        <tbody>${s.items
+    .map((s) => {
+      const toVerify = s.items.some((i) => i.quantity_note);
+      const scope = `Livewire will furnish, install and program the equipment below for the ${s.location.toLowerCase()}.${toVerify ? " Quantities marked as minimums are confirmed during design." : ""}`;
+      return `
+    <div class="quote-section">
+      <h3>${escapeHtml(s.location)}</h3>
+      <p class="scope">${escapeHtml(scope)}</p>
+      ${itemTable(
+        s.items
           .map((i) => {
             const src = "url" in i.image ? images[i.image.url] : undefined;
             const img = src ? `<img class="product" src="${escapeHtml(src)}" alt="${escapeHtml(i.model)}" />` : `<div class="pending">${IMAGE_PENDING}</div>`;
-            return `
-          <tr>
-            <td class="img-col">${img}</td>
-            <td>
-              <div class="item-name">${escapeHtml(i.manufacturer)} ${escapeHtml(i.model)}</div>
-              <div class="item-desc">${escapeHtml(i.description)}</div>
-              ${i.quantity_note ? `<div class="item-note">${escapeHtml(i.quantity_note)}</div>` : ""}
-            </td>
-            <td class="num">${escapeHtml(i.quantity)}</td>
-          </tr>`;
+            const description = [i.description, i.quantity_note].filter(Boolean).join(" — ");
+            return row(img, `${i.manufacturer} ${i.model}`, description, i.quantity);
           })
-          .join("")}
-        </tbody>
-        <tfoot><tr><td></td><td class="subtotal-label">${escapeHtml(s.location)} subtotal</td><td class="num">${formatUsd(s.subtotal_cents)}</td></tr></tfoot>
-      </table>`,
-    )
+          .join(""),
+      )}
+      <div class="section-total">${formatUsd(s.subtotal_cents)}</div>
+    </div>`;
+    })
     .join("\n");
 
+  const labor = c.labor_lines.length
+    ? `
+    <div class="quote-section">
+      <h3>Labor &amp; Installation</h3>
+      <p class="scope">Design, installation, programming and testing by Livewire's technicians.</p>
+      ${itemTable(c.labor_lines.map((l) => row("", l.name, l.description, l.quantity)).join(""))}
+      <div class="section-total">${formatUsd(c.labor_total_cents)}</div>
+    </div>`
+    : "";
+  const allowances = c.allowances.length
+    ? `
+    <div class="quote-section">
+      <h3>Allowances</h3>
+      ${itemTable(c.allowances.map((a) => row("", a.label, a.note, 1)).join(""))}
+    </div>`
+    : "";
+
   const k = c.commercial;
-  const taxRow = k.tax === "TBD" ? `<div class="totals-row"><span>Tax</span><span>TBD</span></div>` : `<div class="totals-row"><span>Estimated tax (${k.tax.rate_pct}%)</span><span>${formatUsd(k.tax.cents)}</span></div>`;
-  const totalRow = k.total_cents !== null ? `<div class="totals-row grand"><span>Total</span><span>${formatUsd(k.total_cents)}</span></div>` : "";
+  const complete = k.total_cents !== null;
+  const summaryRows = [
+    ["Product + Labor", formatUsd(k.subtotal_cents - k.parts_cents), ""],
+    ...(k.parts_cents > 0 ? [["Shipping & Handling/Parts", formatUsd(k.parts_cents), ""]] : []),
+    [complete ? "Subtotal" : k.label, formatUsd(k.subtotal_cents), "strong"],
+    ["Tax", k.tax === "TBD" ? "TBD" : formatUsd(k.tax.cents), ""],
+    ...(complete ? [["Total Price", formatUsd(k.total_cents!), "grand"]] : []),
+  ]
+    .map(([label, value, cls]) => `<div class="sum-row ${cls}"><span>${escapeHtml(label)}</span><span class="amt">${value}</span></div>`)
+    .join("");
+
+  const intro = [
+    `Livewire is proud to present the following conceptual budget for the ${c.intro.systems} of the client's ${c.project_type.toLowerCase().includes("commercial") ? "property" : "residence"}${c.intro.rooms.length ? `, covering the ${joinWords(c.intro.rooms.map((r) => r.toLowerCase()))}` : ""}. Our team will deliver a turnkey solution with reliable, high-performance systems and a clean, organized installation.`,
+    "The scope of work is outlined alongside each area's bill of materials.",
+    ...(c.intro.labor_hours ? [`We expect the work to take approximately ${c.intro.labor_hours} technician hours to complete.`] : []),
+  ];
+
+  const about = [
+    ["Assumptions", c.assumptions],
+    ["Exclusions", c.exclusions],
+    ["To verify on site", c.remaining_verification],
+  ].filter(([, items]) => (items as string[]).length);
 
   return `<!doctype html>
 <html lang="en">
 <head>
 <meta charset="UTF-8" />
 <title>${escapeHtml(documentTitle(c, meta.runId))}</title>
+<meta name="pdf-footer" content="${escapeHtml(`${shortDate(meta.preparedOn)}|${c.client} ${c.title}`)}" />
 <style>
 ${brand.fontCss}
-:root{--primary:${col.primary};--primary-dark:${col.primaryDark};--accent:${col.accent};--text-accent:${col.textAccent};--ink:${col.ink};--muted:${col.muted};--line:${col.line};--soft:${col.soft};--cream:${col.cream}}
+:root{--navy:${col.navy};--green:${col.green};--gray:${col.gray};--label:${col.label};--rule:${col.rule};--link:${col.link}}
 *{box-sizing:border-box}
 html,body{margin:0;padding:0}
-body{font-family:'Montserrat',Arial,sans-serif;letter-spacing:-0.005em;color:var(--ink);font-size:13px;-webkit-print-color-adjust:exact;print-color-adjust:exact}
-.masthead{display:flex;justify-content:space-between;align-items:flex-end;gap:24px;padding:28px 36px 22px;background:linear-gradient(120deg,var(--primary-dark) 0%,var(--primary) 70%);color:#fff}
-.logo{max-height:64px;max-width:200px}
-.tagline{margin-top:6px;font-size:12px;opacity:.85;font-style:italic;font-family:'Fraunces',Georgia,serif;font-weight:300}
-.doc-meta{text-align:right}
-.doc-meta .kind{font-size:11px;text-transform:uppercase;letter-spacing:3px;opacity:.8}
-.doc-meta .number{font-size:20px;font-weight:700;margin-top:4px}
-.doc-meta .dates{font-size:11px;margin-top:6px;opacity:.9}
-.accentbar{height:5px;background:var(--accent)}
-.notice{margin:18px 36px 0;padding:10px 14px;background:var(--cream);border-left:4px solid var(--accent);font-size:12px}
-.section{padding:20px 36px;border-bottom:1px solid var(--line)}
-h1.project{margin:0;font-family:'Fraunces',Georgia,serif;font-weight:500;font-size:26px;letter-spacing:-0.02em;line-height:1.05}
-.prepared{display:grid;grid-template-columns:1fr 1fr;gap:16px;margin-top:14px}
-.label{font-size:10px;text-transform:uppercase;letter-spacing:1.2px;color:var(--muted);margin-bottom:3px}
-h2{margin:0 0 12px;font-size:11px;font-weight:600;text-transform:uppercase;letter-spacing:.24em;color:var(--text-accent)}
-table.items{width:100%;border-collapse:collapse;margin-bottom:18px;page-break-inside:auto}
+body{font-family:'Outfit',Arial,sans-serif;font-weight:400;color:var(--navy);font-size:11px;line-height:1.5;-webkit-print-color-adjust:exact;print-color-adjust:exact}
+h2{font-weight:700;font-size:20px;margin:26px 0 14px;padding-bottom:12px;border-bottom:1px solid var(--rule);break-after:avoid;page-break-after:avoid}
+h2.first{margin-top:0}
+h3{font-weight:500;font-size:16px;margin:24px 0 12px;padding-bottom:12px;border-bottom:1px solid var(--rule);break-after:avoid;page-break-after:avoid}
+h4.sub{font-weight:600;font-size:16px;margin:16px 0 2px}
+p{margin:0 0 12px}
+.link{color:var(--link)}
+.cover{page-break-after:always}
+.letterhead{display:flex;align-items:flex-start;gap:20px}
+.letterhead .logo{width:122px}
+.letterhead .company{color:var(--gray);font-size:11px;line-height:1.35;flex:1}
+.letterhead .company .name{font-size:12.5px}
+.letterhead .contact{text-align:right;font-size:10.5px;line-height:1.35;color:var(--gray)}
+.letterhead .contact .web{color:var(--green);font-weight:600}
+.letterhead .contact .mail{color:var(--green)}
+h1.title{font-weight:400;font-size:32px;margin:22px 0 16px;letter-spacing:-.01em}
+.hero{width:100%;height:265px;object-fit:cover;display:block}
+.client{margin-top:18px}
+.client .who{font-weight:600;font-size:12.5px;margin-bottom:4px}
+.client .where{font-size:10.5px;line-height:1.3}
+.meta-row{display:flex;justify-content:space-between;margin-top:30px}
+.meta-row.near{margin-top:22px}
+.meta-label{font-size:10px;font-weight:600}
+.meta-value{font-weight:600;font-size:13px;margin-top:2px}
+.right{text-align:right}
+p.scope{margin:0 0 18px}
+table.items{width:100%;border-collapse:collapse;break-before:avoid}
+table.items thead{break-after:avoid;page-break-after:avoid}
+table.items th{font-weight:400;font-size:7.5px;color:var(--label);padding:6px 0 10px;border-bottom:1px solid var(--rule);text-align:left}
+table.items th.qty{text-align:center}
+table.items tr.line td{padding:12px 0;vertical-align:top;border-bottom:1px solid var(--rule)}
 table.items tr{page-break-inside:avoid}
-.group-head{text-align:left;background:var(--primary);color:#fff;padding:8px 10px;font-size:12px;letter-spacing:1px;text-transform:uppercase}
-table.items th{text-align:left;font-size:10px;text-transform:uppercase;letter-spacing:1px;color:var(--muted);background:var(--soft);padding:6px 10px;border-bottom:1px solid var(--line)}
-table.items td{padding:8px 10px;border-bottom:1px solid var(--line);vertical-align:top}
-.img-col{width:76px}
-img.product{width:64px;height:64px;object-fit:contain}
-.pending{width:64px;height:64px;border:1px dashed var(--muted);color:var(--muted);font-size:8px;font-weight:600;display:flex;align-items:center;justify-content:center;text-align:center}
-.num{text-align:right;white-space:nowrap}
-.item-name{font-weight:600}
-.item-desc{color:var(--muted);font-size:12px;margin-top:2px;line-height:1.45}
-.item-note{color:var(--text-accent);font-size:11px;margin-top:3px}
-.subtotal-label{text-align:right;font-weight:600}
-.totals{margin-left:auto;width:300px}
-.totals-row{display:flex;justify-content:space-between;padding:8px 10px;border-bottom:1px solid var(--line)}
-.totals-row.grand{border:0;background:var(--primary-dark);color:#fff;font-weight:700;margin-top:4px}
-.muted{color:var(--muted)}
-.spaced{margin-top:12px}
-ul{margin:0;padding-left:18px;line-height:1.6}
-.cols{display:grid;grid-template-columns:1fr 1fr;gap:24px}
-footer{padding:14px 36px;font-size:11px;color:var(--muted)}
+td.img{width:58px}
+img.product{width:46px;height:40px;object-fit:contain}
+.pending{width:46px;height:34px;border:1px dashed var(--label);color:var(--label);font-family:Arial,sans-serif;font-size:4.5px;white-space:nowrap;display:flex;align-items:center;justify-content:center}
+.item-name{font-weight:600;font-size:12px}
+.item-desc{font-size:11px;margin-top:3px}
+.qty{width:70px;text-align:center;font-size:12px}
+.section-total{text-align:right;font-size:15px;margin:20px 0 10px}
+.warranty p{font-weight:500}
+.sum-row{display:flex;justify-content:space-between;padding:17px 0;border-bottom:1px solid var(--rule);font-size:12px}
+.sum-row .amt{color:var(--gray)}
+.sum-row.strong{font-weight:600}
+.sum-row.strong .amt,.sum-row.grand .amt{color:var(--navy)}
+.sum-row.grand{font-weight:600;font-size:14px;border-bottom:0}
+.terms-head{display:flex;justify-content:space-between;align-items:baseline}
+.terms-head .amount{font-weight:600;font-size:11px}
+.financing{padding:4px 0 10px 24px;border-bottom:1px solid var(--rule);margin-bottom:16px}
+.financing h4{font-weight:500;font-size:16px;margin:4px 0 10px}
+.financing p{margin:0 0 8px;font-size:10px}
+h3.plan{border-bottom:0;margin:10px 0 8px;padding-bottom:0}
+.milestone{display:flex;justify-content:space-between;align-items:center;padding:10px 0 10px 36px;position:relative;font-weight:600;font-size:12px}
+.milestone:before{content:"";position:absolute;left:0;top:50%;width:12px;height:12px;margin-top:-7px;border:1px solid var(--label);border-radius:50%}
+.milestone .amt{color:var(--gray);font-weight:500}
+.milestone-note{font-size:10px;color:var(--gray);padding-left:36px}
+ul{margin:0 0 10px;padding-left:18px}
+.about h4{font-weight:600;font-size:12px;margin:12px 0 4px}
 </style>
 </head>
 <body>
-<header class="masthead">
-  <div>
+<section class="cover">
+  <div class="letterhead">
     <img class="logo" src="${brand.logoDataUri}" alt="${escapeHtml(brand.companyName)} logo" />
-    <div class="tagline">${escapeHtml(brand.tagline)}</div>
+    <div class="company"><div class="name">${escapeHtml(brand.companyName)}</div>${brand.address.map(escapeHtml).join("<br>")}</div>
+    <div class="contact"><span class="web">${escapeHtml(brand.website)}</span>${presenter ? `<br>${escapeHtml(presenter.name)}${presenter.email ? `<br><span class="mail">${escapeHtml(presenter.email)}</span>` : ""}` : ""}</div>
   </div>
-  <div class="doc-meta">
-    <div class="kind">Conceptual budget</div>
-    <div class="number">${escapeHtml(c.proposal_number)}</div>
-    <div class="dates">Prepared ${escapeHtml(meta.preparedOn)}</div>
+  <h1 class="title">${escapeHtml(c.title)}</h1>
+  <img class="hero" src="${brand.heroDataUri}" alt="" />
+  <div class="client">
+    <div class="who">${escapeHtml(c.client)}</div>
+    <div class="where">${escapeHtml(c.property)}</div>
   </div>
-</header>
-<div class="accentbar"></div>
-<div class="notice">This is a preliminary conceptual budget for discussion. It is not an offer and does not authorize work. Quantities, products and pricing are subject to design and site verification.</div>
-
-<section class="section">
-  <h1 class="project">${escapeHtml(c.project_type)}</h1>
-  <div class="prepared">
-    <div><div class="label">Prepared for</div><div>${escapeHtml(c.client)}</div><div>${escapeHtml(c.property)}</div></div>
-    <div><div class="label">Prepared by</div><div>${escapeHtml(brand.companyName)}</div>${Object.values(brand.contact).map((v) => `<div>${escapeHtml(v)}</div>`).join("")}</div>
+  <div class="meta-row">
+    <div><div class="meta-label">Presented By</div><div class="meta-value">${escapeHtml(brand.companyName)}</div></div>
+    <div class="right"><div class="meta-label">Project Number</div><div class="meta-value">${escapeHtml(c.proposal_number === "UNASSIGNED" ? "Budget" : c.proposal_number)}</div></div>
   </div>
-</section>
-
-<section class="section">
-  <h2>Recommended equipment</h2>
-  ${sections || '<p class="muted">No equipment priced yet.</p>'}
-</section>
-
-<section class="section">
-  <h2>Services</h2>
-  ${list(c.services, "Services to be defined during design.")}
-  ${c.allowances.length ? `<div class="label spaced">Allowances</div>${list(c.allowances.map((a) => `${a.label}: ${a.note}`), "")}` : ""}
-</section>
-
-<section class="section">
-  <h2>Budget summary</h2>
-  <div class="totals">
-    <div class="totals-row"><span>${escapeHtml(k.label === "Total" ? "Subtotal" : k.label)}</span><span>${formatUsd(k.subtotal_cents)}</span></div>
-    ${taxRow}
-    ${totalRow}
+  <div class="meta-row near">
+    <div><div class="meta-label">Presented On</div><div class="meta-value">${escapeHtml(longDate(meta.preparedOn))}</div></div>
   </div>
 </section>
 
-<section class="section cols">
-  <div><h2>Assumptions</h2>${list(c.assumptions, "None.")}</div>
-  <div><h2>Exclusions</h2>${list(c.exclusions, "None.")}</div>
-</section>
+<h2 class="first">Why Livewire?</h2>
+${brand.copy.why.map((t) => `<p>${escapeHtml(t)}</p>`).join("")}
 
-<section class="section">
-  <h2>To verify on site</h2>
-  ${list(c.remaining_verification, "Nothing outstanding.")}
-</section>
+<h2>System Proposal</h2>
+<h4 class="sub">Introduction</h4>
+${intro.map((t) => `<p>${escapeHtml(t)}</p>`).join("")}
+${brand.copy.intro_after.map((t) => `<p>${escapeHtml(t)}</p>`).join("")}
+<p class="link">${escapeHtml(brand.copy.no_surprises)}</p>
+<p>${escapeHtml(brand.copy.team[0])}<br><span class="link">${escapeHtml(brand.copy.team[1])}</span></p>
 
-<footer>${escapeHtml(brand.companyName)} · Run ${escapeHtml(meta.runId)}</footer>
+<h2>Your Custom Quote:</h2>
+${sections || "<p>No equipment priced yet.</p>"}
+${labor}
+${allowances}
+
+<h2>${escapeHtml(brand.copy.warranty_title)}</h2>
+<div class="warranty">${brand.copy.warranty.map((t) => `<p>${escapeHtml(t)}</p>`).join("")}</div>
+
+<h2>Summary</h2>
+${summaryRows}
+
+<h2 class="terms-head"><span>Payment Terms</span><span class="amount">Amount</span></h2>
+<div class="financing">
+  <h4>Looking for Financing or ACH Options?</h4>
+  ${brand.copy.financing.map(([label, value]) => `<p>${escapeHtml(label)}</p><p class="${value.startsWith("www.") ? "link" : ""}">${escapeHtml(value)}</p>`).join("")}
+</div>
+<h3 class="plan">Design Payment Terms</h3>
+<div class="milestone"><span>Design Retainer (${escapeHtml(k.retainer.pct)}%)</span><span class="amt">${formatUsd(k.retainer.cents)}</span></div>
+<div class="milestone-note">Due to begin design. Project payment terms are set in the final proposal.</div>
+
+<h2>Terms &amp; Conditions</h2>
+${brand.copy.terms.map((t) => `<p>${escapeHtml(t)}</p>`).join("")}
+<p>${escapeHtml(brand.copy.budget)}</p>
+
+${about.length ? `<h2>About This Budget</h2><div class="about">${about.map(([h, items]) => `<h4>${escapeHtml(h)}</h4>${list(items as string[])}`).join("")}</div>` : ""}
 </body>
 </html>`;
 }

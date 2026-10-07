@@ -1,3 +1,4 @@
+import { ADDRESS_TO_CONFIRM, applyAssumptions } from "./assumptions.ts";
 import { computeBlockers, needsDetectorAnswer, questionsForTurn, type Blocker } from "./blockers.ts";
 import { hashCanonical } from "./canonical.ts";
 import { ScopeDraftV1Schema, type ScopeDraftV1, type ScopeExtraction } from "./scope.ts";
@@ -43,15 +44,24 @@ export function formatAddress(p: ScopeExtraction["property"]): string | null {
   return `${p.line1}, ${p.city}, ${p.region}${p.postal_code ? ` ${p.postal_code}` : ""}`;
 }
 
+/** The full address, else whatever parts were given, else a placeholder; never blocks a budget. */
+export function displayAddress(p: ScopeExtraction["property"]): string {
+  const full = formatAddress(p);
+  if (full) return full;
+  const parts = [p.line1, p.city, p.region, p.postal_code].filter((x): x is string => !!x);
+  return parts.length ? `${parts.join(", ")} (to be confirmed)` : ADDRESS_TO_CONFIRM;
+}
+
 /** Convert a blocker-free extraction to the PRD contract. Throws if blockers remain. */
-export function toScopeDraft(s: ScopeExtraction): ScopeDraftV1 {
-  const blockers = computeBlockers(s);
+export function toScopeDraft(raw: ScopeExtraction): ScopeDraftV1 {
+  const blockers = computeBlockers(raw);
   if (blockers.length) throw new Error(`Scope still has blockers: ${blockers.map((b) => b.field).join(", ")}`);
+  const s = applyAssumptions(raw).scope;
   const status = s.existing_equipment.status;
   const draft: ScopeDraftV1 = {
     schema: "preliminary_scope_draft_v1",
     client: s.client!,
-    property: formatAddress(s.property)!,
+    property: displayAddress(s.property),
     project_type: s.project_type!,
     market: s.market as ScopeDraftV1["market"],
     room_types: s.room_types,
@@ -81,8 +91,9 @@ export function toScopeDraft(s: ScopeExtraction): ScopeDraftV1 {
 const none = (xs: string[]) => (xs.length ? xs.join("; ") : "none");
 const usd = (n: number) => `$${n.toLocaleString("en-US", { maximumFractionDigits: 2 })}`;
 
-function scopeLines(s: ScopeExtraction): string[] {
+function scopeLines(s: ScopeExtraction, assumed: string[]): string[] {
   const missing = "— (needed)";
+  const mark = (field: string, line: string) => (assumed.includes(field) ? `${line} (assumed)` : line);
   const eq = s.existing_equipment;
   const equipment =
     eq.status === "not_provided"
@@ -96,36 +107,38 @@ function scopeLines(s: ScopeExtraction): string[] {
       : "UNASSIGNED (draft)";
   return [
     `Client: ${s.client ?? missing}`,
-    `Property: ${formatAddress(s.property) ?? missing}`,
+    `Property: ${displayAddress(s.property)}`,
     `Proposal: ${proposal}`,
-    `Project type: ${s.project_type ?? missing}`,
+    mark("project_type", `Project type: ${s.project_type ?? missing}`),
     `Market: ${s.market === "not_provided" ? missing : s.market}`,
-    `Rooms/areas: ${s.room_types.length ? s.room_types.join("; ") : missing}`,
+    mark("room_types", `Rooms/areas: ${s.room_types.length ? s.room_types.join("; ") : missing}`),
     `Systems: ${s.functional_systems.length ? s.functional_systems.join("; ") : missing}`,
-    `Requested outcomes: ${s.requested_changes.length ? s.requested_changes.join("; ") : missing}`,
+    mark("requested_changes", `Requested outcomes: ${s.requested_changes.length ? s.requested_changes.join("; ") : missing}`),
     ...(s.requested_quantities.length ? [`Stated quantities: ${s.requested_quantities.map((q) => `${q.item} × ${q.quantity}`).join("; ")}`] : []),
-    `Existing equipment: ${equipment}`,
+    mark("existing_equipment", `Existing equipment: ${equipment}`),
     ...(needsDetectorAnswer(s)
       ? [`Existing smoke/CO detectors: ${{ not_provided: missing, none: "none", keep_and_monitor: "keep and monitor", replace: "replace with new" }[s.existing_detectors]}`]
       : []),
     `Excluded: ${none(s.excluded_scope)}`,
-    `Services: ${s.service_categories.length ? s.service_categories.join("; ") : missing}`,
+    mark("service_categories", `Services: ${s.service_categories.length ? s.service_categories.join("; ") : missing}`),
     `Size: ${s.size ? `${s.size.value.toLocaleString("en-US")} ${s.size.unit}` : "unknown"}`,
-    `Budget: ${s.budget.status === "known" ? usd(s.budget.amount_usd!) : s.budget.status === "unknown" ? "unknown" : missing}`,
-    `Target install: ${s.target_installation_date ?? missing}`,
+    mark("budget", `Budget: ${s.budget.status === "known" ? usd(s.budget.amount_usd!) : s.budget.status === "unknown" ? "unknown" : missing}`),
+    mark("target_installation_date", `Target install: ${s.target_installation_date ?? missing}`),
   ];
 }
 
 export function buildReceipt(input: BuildReceiptInput): Receipt {
   const receiptId = receiptIdFor(input.runId, input.version);
   const blockers = computeBlockers(input.extraction);
+  const { scope: effective, assumed } = applyAssumptions(input.extraction);
   const status: ReceiptStatus = blockers.length ? "NEEDS_CLARIFICATION" : "AWAITING_APPROVAL";
   const scope = status === "AWAITING_APPROVAL" ? toScopeDraft(input.extraction) : null;
   const scopeHash = scope ? hashCanonical(scope) : null;
   const approvalAction = scope ? `Approve scope ${receiptId}` : null;
   const notes = input.notes ?? [];
 
-  const lines = [`Scope receipt ${receiptId} (version ${input.version})`, `Status: ${status}`, ...scopeLines(input.extraction)];
+  const lines = [`Scope receipt ${receiptId} (version ${input.version})`, `Status: ${status}`, ...scopeLines(effective, assumed)];
+  if (assumed.length) lines.push("Items marked (assumed) were inferred to keep this quick. Reply to change any of them.");
   if (input.extraction.unresolved_questions.length) {
     lines.push(`Open items (not blocking): ${input.extraction.unresolved_questions.join("; ")}`);
   }

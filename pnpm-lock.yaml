@@ -154,10 +154,7 @@ importers:
 
   packages/render:
     dependencies:
-      '@fontsource/fraunces':
-        specifier: ^5.3.0
-        version: 5.3.0
-      '@fontsource/montserrat':
+      '@fontsource/outfit':
         specifier: ^5.3.0
         version: 5.3.0
       '@sd/build':
@@ -373,11 +370,8 @@ packages:
     cpu: [x64]
     os: [win32]
 
-  '@fontsource/fraunces@5.3.0':
-    resolution: {integrity: sha512-LEHTOBiZufQzAvnAe2rZ8ZknbDS28Q9kzwb0L+gZJEmjLGr8hhZ/5NuHXwDuHBWhVXYoiGGXmrb0H6Ko/RrHTg==}
-
-  '@fontsource/montserrat@5.3.0':
-    resolution: {integrity: sha512-iQPDtZOnmM5ih4JBGaMSXisRap0ixb9bAUw2hDtY7EjVfaqiiNlKtVuJl9XclxUwtwMMHNcWXfQR6zI9x05+Tg==}
+  '@fontsource/outfit@5.3.0':
+    resolution: {integrity: sha512-0AVHzTTVJSxWDOxPKSfMeHhZeBFDU3cmgrcOb76ZEyhGo0+xgyG3GsLF3h9+X8w0IX7G4jzjJgFQEBiWdX6VgA==}
 
   '@google-cloud/paginator@7.1.0':
     resolution: {integrity: sha512-PNCXdAQgNoQODZuqyhmkN2nUpB2q9UFzawZ1oyCDyEyhcheRoCKJJhSKhEIeKpM/NCLnC6Q4We4HEkGCwNDnCA==}
@@ -1981,9 +1975,7 @@ snapshots:
   '@esbuild/win32-x64@0.28.2':
     optional: true
 
-  '@fontsource/fraunces@5.3.0': {}
-
-  '@fontsource/montserrat@5.3.0': {}
+  '@fontsource/outfit@5.3.0': {}
 
   '@google-cloud/paginator@7.1.0':
     dependencies:
