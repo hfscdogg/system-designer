@@ -1,4 +1,4 @@
-import { parseApprovalText, type RunSignal, type ThreadRef } from "@sd/core";
+import { answerLabels, OPEN_INTAKE_STATES, parseApprovalText, type RunSignal, type ThreadRef } from "@sd/core";
 import { googleChatReplyBody, isAddonBody, parseGoogleChatEvent, type InboundEvent, type RequestVerifier, type WebhookReply } from "@sd/channels";
 import type { Person, Store } from "@sd/store";
 import { WorkflowClosedError, type WorkflowPort } from "@sd/worker";
@@ -85,7 +85,29 @@ export async function handleEvent(deps: GatewayDeps, event: InboundEvent): Promi
   if (event.kind === "approve_click") {
     return approve(deps, person, event.thread, event.receiptId, event.scopeHash, event.providerEventId, "button");
   }
+  if (event.kind === "answer_click") return answer(deps, person, event);
   return message(deps, person, event);
+}
+
+/** A tapped answer to a question card. The workflow applies it and posts the next question or the receipt. */
+async function answer(deps: GatewayDeps, person: Person, event: Extract<InboundEvent, { kind: "answer_click" }>): Promise<WebhookReply> {
+  const { store } = deps;
+  const receipt = await store.getReceipt(event.receiptId);
+  if (!receipt) return reply("I can't find that question any more.");
+  const run = await store.getRun(receipt.run_id);
+  if (run.person_id !== person.id) return reply("Only the person who made this request can answer its questions.");
+  const latest = await store.latestReceipt(run.id);
+  if (!OPEN_INTAKE_STATES.includes(run.state) || receipt.superseded_at || latest?.id !== receipt.id) {
+    return reply("That question was already answered. Use the latest card.");
+  }
+  const labels = answerLabels(event.field, event.values);
+  if (!labels) return reply(event.values.length ? "That isn't one of the choices. Pick from the card, or type your answer." : "Pick at least one option, then tap Done.");
+  if (!(await store.claimMessage(event.platform, event.providerEventId, "answer", run.id))) return silent;
+  if ((await signal(deps, run.id, { type: "answer", receiptId: receipt.id, field: event.field, values: event.values })) === "closed") {
+    await store.transitionRun(run.id, "FAILED", "system", { error: "workflow is no longer running" });
+    return reply("Your previous request in this conversation stopped with an error, so I've closed it. Please send your request again as a new message.");
+  }
+  return reply(`✓ ${labels.join(", ")}`);
 }
 
 async function message(deps: GatewayDeps, person: Person, event: Extract<InboundEvent, { kind: "message" }>): Promise<WebhookReply> {

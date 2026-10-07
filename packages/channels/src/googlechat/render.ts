@@ -1,5 +1,5 @@
 import type { View } from "../types.ts";
-import { APPROVE_FUNCTION, MARGIN_FUNCTION } from "./parse.ts";
+import { ANSWER_FUNCTION, ANSWER_INPUT, APPROVE_FUNCTION, MARGIN_FUNCTION } from "./parse.ts";
 
 const ICON: Record<string, string> = { done: "✅", active: "⏳", pending: "▫️", failed: "❌" };
 
@@ -69,6 +69,53 @@ export function renderGoogleChat(view: View, opts: RenderOptions = {}): Record<s
               sections: [
                 { widgets: [{ textParagraph: { text: view.lines.map(escape).join("<br>") } }] },
                 { widgets: [{ buttonList: { buttons: [button("Approve exception", "approved"), button("Decline", "declined")] } }] },
+              ],
+            },
+          },
+        ],
+      };
+    }
+    case "question": {
+      const action = (extra: Array<{ key: string; value: string }>) => ({
+        action: {
+          function: opts.actionFunction ?? ANSWER_FUNCTION,
+          parameters: [{ key: "action", value: ANSWER_FUNCTION }, { key: "receipt_id", value: view.receiptId }, { key: "field", value: view.field }, ...extra],
+        },
+      });
+      const widgets: unknown[] = [{ textParagraph: { text: `<b>${escape(view.question)}</b>` } }];
+      if (view.choices?.multi) {
+        widgets.push({
+          selectionInput: {
+            name: ANSWER_INPUT,
+            label: "Pick all that apply",
+            type: "CHECK_BOX",
+            items: view.choices.options.map((o) => ({ text: o.label, value: o.value, selected: false })),
+          },
+        });
+        widgets.push({ buttonList: { buttons: [{ text: "Done", onClick: action([]) }] } });
+      } else if (view.choices) {
+        widgets.push({ buttonList: { buttons: view.choices.options.map((o) => ({ text: o.label, onClick: action([{ key: "value", value: o.value }]) })) } });
+      }
+      widgets.push({ textParagraph: { text: `<i>${view.choices ? "Or type" : "Type"} your answer in the chat. You can answer several questions in one message.</i>` } });
+      return {
+        // The plain-text form is the full receipt, verbatim (PRD §9.2).
+        fallbackText: view.lines.join("\n"),
+        cardsV2: [
+          {
+            cardId: `question-${view.receiptId}`,
+            card: {
+              header: {
+                title: "Quick question",
+                subtitle: `${view.remaining} question${view.remaining === 1 ? "" : "s"} left · receipt ${view.receiptId}`,
+              },
+              sections: [
+                { widgets },
+                {
+                  header: "Scope so far",
+                  collapsible: true,
+                  uncollapsibleWidgetsCount: 0,
+                  widgets: [{ textParagraph: { text: view.lines.map(escape).join("<br>") } }],
+                },
               ],
             },
           },

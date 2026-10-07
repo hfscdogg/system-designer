@@ -74,6 +74,11 @@ export function normalizeServiceCategories(items: string[]): ServiceNormalizatio
   const categories: string[] = [];
   const rejected: string[] = [];
   for (const item of items) {
+    // Canonical names stay as they are, so normalizing twice changes nothing.
+    if (SERVICE_CATEGORIES.some(([c]) => c === fold(item))) {
+      categories.push(fold(item));
+      continue;
+    }
     const hits = matchAll(SERVICE_CATEGORIES, item);
     if (hits.length) categories.push(...hits);
     else rejected.push(clean(item));

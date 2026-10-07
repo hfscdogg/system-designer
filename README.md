@@ -15,7 +15,7 @@ The design rationale and requirement mapping are in [`docs/architecture.md`](doc
 
 ## What works today (milestones M1–M3)
 
-The flow is Google Chat message → captured intake → scope extraction → clarification → receipt card → **Approve** button → D-Tools catalog read → compile → bind → validate → D-Tools re-check → watermarked PDF → preflight → PDF posted in the thread → `READY_HELD`.
+The flow is Google Chat message → captured intake → scope extraction → one question at a time (tap-to-answer buttons, or a typed reply that can answer several) → receipt card → **Approve** button → D-Tools catalog read → compile → bind → validate → D-Tools re-check → watermarked PDF → preflight → PDF posted in the thread → `READY_HELD`.
 
 - **Natural conversation.** The salesperson writes normally. The LLM proposes a scope, and code validates it, normalizes it and decides what to ask (at most 3 questions per turn).
 - **Deterministic receipts.** Code generates each receipt. It is shown verbatim as a Chat card, and its Approve button is bound to the receipt ID and scope hash. `Approve scope <id>` also works as text.

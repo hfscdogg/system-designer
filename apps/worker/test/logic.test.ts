@@ -10,6 +10,7 @@ function fakeActs(overrides: Partial<RunActivities> = {}): RunActivities & { cal
     extractScope: async () => ({ ok: true, extraction: completeExtraction(), notes: [] }),
     publishReceipt: async ({ version }) => (calls.push(`publish:${version}`), { ok: true, receipt: { receiptId: `R-X-${version}`, status: "AWAITING_APPROVAL", scopeHash: `h${version}` } }),
     interpretClarification: async () => ({ ok: true, extraction: completeExtraction(), notes: [] }),
+    applyAnswer: async () => ({ ok: true, extraction: completeExtraction(), notes: [] }),
     confirmApproval: async ({ approvalId }) => void calls.push(`confirm:${approvalId}`),
     findCommittedApproval: async () => null,
     notify: async ({ text, key }) => void calls.push(`notify:${key}:${text}`),

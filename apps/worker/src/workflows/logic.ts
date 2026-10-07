@@ -70,6 +70,8 @@ export interface RunActivities {
   /** Fails softly when the run already left scope collection (approved or reset meanwhile). */
   publishReceipt(a: { runId: string; version: number; extraction: ScopeExtraction; notes: string[] }): Promise<PublishOutcome>;
   interpretClarification(a: { runId: string; intakeId: string }): Promise<ExtractOutcome>;
+  /** Apply a tapped answer to the current receipt's question; no model involved. */
+  applyAnswer(a: { runId: string; receiptId: string; field: string; values: string[] }): Promise<ExtractOutcome>;
   confirmApproval(a: { runId: string; approvalId: string; receiptId: string }): Promise<void>;
   findCommittedApproval(a: { runId: string }): Promise<{ approvalId: string; receiptId: string; scopeHash: string } | null>;
   notify(a: { runId: string; text: string; key: string }): Promise<void>;
@@ -162,8 +164,12 @@ async function proposal(input: ProposalRunInput, rt: RunRuntime): Promise<RunRes
       case "reject":
         await notify(`I can't accept that approval: ${decision.reason}.`);
         break;
-      case "clarify": {
-        const next = await acts.interpretClarification({ runId, intakeId: decision.intakeId });
+      case "clarify":
+      case "answer": {
+        const next =
+          decision.action === "clarify"
+            ? await acts.interpretClarification({ runId, intakeId: decision.intakeId })
+            : await acts.applyAnswer({ runId, receiptId: decision.receiptId, field: decision.field, values: decision.values });
         if (!next.ok) {
           await notify(next.reason);
           break;
