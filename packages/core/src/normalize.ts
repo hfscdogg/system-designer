@@ -8,7 +8,7 @@ import type { ScopeExtraction } from "./scope.ts";
  */
 
 const FUNCTIONAL_SYSTEMS: Array<[canonical: string, patterns: RegExp[]]> = [
-  ["intrusion_security", [/\b((?<!(smoke|fire|co|monoxide) )alarm|alarm panel|security|security panel|intrusion|burglar|door contacts?|window contacts?|glass[- ]?break( sensors?)?|motion (detector|sensor)s?)\b/]],
+  ["intrusion_security", [/\b((?<!(smoke|fire|co|monoxide) )alarm|alarm panel|security|security panel|intrusion|burglar|door contacts?|window contacts?|(?:door\/window|wireless) contacts?|glass[- ]?break( sensors?)?|motion (detector|sensor)s?|(alarm |security )?keypads?(?! for lighting))\b/]],
   ["alarm_monitoring", [/\b(alarm\.com|monitoring|central station|monitored)\b/]],
   ["fire_detection", [/\b(fire|smoke)( detection| detectors?| alarms?| sensors?)?\b/]],
   ["co_detection", [/\b(co|carbon monoxide)( detection| detectors?| alarms?| sensors?)\b/]],
@@ -16,7 +16,8 @@ const FUNCTIONAL_SYSTEMS: Array<[canonical: string, patterns: RegExp[]]> = [
   ["video_doorbell", [/\b(video )?door ?bell\b/]],
   ["video_surveillance", [/\b((?<!door ?bell )cameras?|cctv|surveillance|nvr)\b/]],
   ["audio_video", [/\b(tvs?|television|home theater|theatre|media room|audio[/ -]?video|av|distributed audio|speakers?|soundbar)\b/]],
-  ["networking", [/\b(wi-?fi|network(ing)?|access points?|router|wireless)\b/]],
+  // "wireless" alone names how a device connects (wireless contacts, sensors), not a network.
+  ["networking", [/\b(wi-?fi|network(ing)?|access points?|router|wireless (network|internet|coverage))\b/]],
   ["lighting_control", [/\b(lighting control|lutron|dimmers?|keypads? for lighting|lighting)\b/]],
   ["motorized_shades", [/\b(shades?|blinds|motorized (window )?treatments?)\b/]],
   ["access_control", [/\b(door locks?|smart locks?|access control|gate)\b/]],
@@ -80,6 +81,16 @@ export function normalizeServiceCategories(items: string[]): ServiceNormalizatio
   return { categories: uniqSorted(categories), rejected: uniqSorted(rejected) };
 }
 
+/** Stated counts keyed by item (folded); a repeated item keeps its last count. Sorted for a stable hash. */
+function normalizeQuantities(items: Array<{ item: string; quantity: number }>): Array<{ item: string; quantity: number }> {
+  const byItem = new Map<string, number>();
+  for (const q of items) {
+    const item = clean(q.item).toLowerCase();
+    if (item) byItem.set(item, q.quantity);
+  }
+  return [...byItem.entries()].sort(([a], [b]) => a.localeCompare(b)).map(([item, quantity]) => ({ item, quantity }));
+}
+
 export interface NormalizedExtraction {
   scope: ScopeExtraction;
   notes: string[];
@@ -119,6 +130,7 @@ export function normalizeExtraction(input: ScopeExtraction): NormalizedExtractio
     room_types: list(input.room_types),
     functional_systems: normalizeFunctionalSystems(input.functional_systems),
     requested_changes: list(input.requested_changes),
+    requested_quantities: normalizeQuantities(input.requested_quantities),
     existing_equipment: {
       status: input.existing_equipment.status,
       retained: list(input.existing_equipment.retained),

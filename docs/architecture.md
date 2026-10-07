@@ -85,7 +85,7 @@ Each Hermes failure from PRD §20 maps to a mechanism here:
 ## Open decisions for Henry (configuration, not prompts)
 
 - **Cross-channel rule:** is home-conversation binding plus an explicit "move run here" acceptable?
-- **PDF upload mode:** `GOOGLE_CHAT_UPLOAD_MODE=app` if Google lets the Chat app upload attachments itself; otherwise `delegated`, which acts as an existing Workspace user (for example Henry) through domain-wide delegation limited to Chat message creation. Neither needs a paid seat. A Drive link card is the last resort and is not built.
+- **PDF upload mode:** `GOOGLE_CHAT_UPLOAD_MODE=app` if Google lets the Chat app upload attachments itself; otherwise `delegated` (the pilot setting, because Chat uploads need user authentication), which acts as the requester through domain-wide delegation limited to Chat message creation. Neither needs a paid seat. A Drive link card is the last resort and is not built.
 - **Production model:** which LLM provider and model are approved? `LLM_MODEL` must be set explicitly.
   - Server-side refusal fallbacks are deliberately **not** enabled, because they would silently switch models.
 - **Commercial values:** production margin thresholds and tax rules.

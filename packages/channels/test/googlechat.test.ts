@@ -67,8 +67,10 @@ describe("renderGoogleChat", () => {
   };
 
   it("keeps receipt lines verbatim and binds the button to receipt and hash", () => {
-    const body = renderGoogleChat(receipt) as { text: string; cardsV2: any[] };
-    expect(body.text).toBe(receipt.kind === "receipt" ? receipt.lines.join("\n") : "");
+    const body = renderGoogleChat(receipt) as { text?: string; fallbackText: string; cardsV2: any[] };
+    // The plain-text form is only a fallback: as text it would show the card twice in Chat.
+    expect(body.text).toBeUndefined();
+    expect(body.fallbackText).toBe(receipt.kind === "receipt" ? receipt.lines.join("\n") : "");
     const json = JSON.stringify(body.cardsV2);
     expect(json).toContain("A &amp; B &lt;Co&gt;");
     expect(json).toContain('"function":"approve_scope"');
@@ -174,13 +176,14 @@ describe("GoogleChatAdapter.postFile", () => {
     const bytes = new TextEncoder().encode("%PDF-1.4 test");
     const out = await adapter.postFile(
       { platform: "google_chat", spaceId: "spaces/A", threadId: "spaces/A/threads/T" },
-      { bytes, filename: "proposal.pdf", contentType: "application/pdf", text: "Here it is" },
+      { bytes, filename: "proposal.pdf", contentType: "application/pdf", text: "Here it is", actAs: "zack@getlivewire.com" },
       "run_1:pdf",
     );
     expect(out).toEqual({ messageId: "spaces/A/messages/pdf-1", attachmentRef: "ref-123" });
     expect(appCalls).toHaveLength(0); // the file path never uses the app-only transport
     expect(fileCalls[0].url).toBe("https://chat.googleapis.com/upload/v1/spaces/A/attachments:upload?uploadType=multipart");
     expect(fileCalls[0].headers["Content-Type"]).toMatch(/^multipart\/related; boundary=/);
+    expect(fileCalls.map((c) => c.subject)).toEqual(["zack@getlivewire.com", "zack@getlivewire.com"]); // acts as the requester
     const body = new TextDecoder().decode(fileCalls[0].data);
     expect(body).toContain('{"filename":"proposal.pdf"}');
     expect(body).toContain("%PDF-1.4 test");
@@ -188,10 +191,11 @@ describe("GoogleChatAdapter.postFile", () => {
     expect(fileCalls[1].data).toEqual({ text: "Here it is", attachment: [{ attachmentDataRef: { resourceName: "ref-123", attachmentUploadToken: "tok" } }], thread: { name: "spaces/A/threads/T" } });
   });
 
-  it("requires a user and service account for delegated mode", async () => {
+  it("requires a service account, and a user to act as, for delegated mode", async () => {
     const { googleFileRequest } = await import("../src/index.ts");
-    expect(() => googleFileRequest("delegated")).toThrow(/GOOGLE_CHAT_DELEGATED_USER/);
     expect(() => googleFileRequest("delegated", "henry@example.com")).toThrow(/service account/);
+    const request = googleFileRequest("delegated", undefined, "sd-worker@p.iam.gserviceaccount.com");
+    await expect(request({ url: "https://chat.googleapis.com/v1/spaces/A/messages", method: "POST", data: {} })).rejects.toThrow(/no user to act as/);
   });
 
   it("signs the delegation JWT through IAM (no key file) and caches the token", async () => {
@@ -218,6 +222,12 @@ describe("GoogleChatAdapter.postFile", () => {
     expect(claims).toMatchObject({ iss: "sd-worker-prod@p.iam.gserviceaccount.com", sub: "henry@getlivewire.com", scope: "https://www.googleapis.com/auth/chat.messages.create" });
     expect(calls.filter((c) => c.url.includes(":signJwt"))).toHaveLength(1); // token cached
     expect(calls[2]!.init.headers.Authorization).toBe("Bearer user-token");
+
+    // A per-request subject (the requester) gets its own delegated token.
+    await request({ url: "https://chat.googleapis.com/v1/spaces/B/messages", method: "POST", data: { text: "z" }, subject: "zack@getlivewire.com" });
+    const signs = calls.filter((c) => c.url.includes(":signJwt"));
+    expect(signs).toHaveLength(2);
+    expect(JSON.parse(JSON.parse(signs[1]!.init.body).payload).sub).toBe("zack@getlivewire.com");
   });
 });
 

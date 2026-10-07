@@ -26,7 +26,7 @@ Everything runs in the Google Cloud project you created, in **us-east4**. You ru
 2. **Add the GitHub repository variables** the script prints, plus:
    - `TEMPORAL_ADDRESS` and `TEMPORAL_NAMESPACE`, from Temporal Cloud.
    - `LLM_MODEL`: the model you approve.
-   - `GOOGLE_CHAT_UPLOAD_MODE`: start with `app`.
+   - `GOOGLE_CHAT_UPLOAD_MODE`: `delegated` (see [PDF upload](#pdf-upload)).
    - The Anthropic federation IDs from the next section.
 3. **Store the three secrets** with the commands the script prints:
    - Temporal API key
@@ -84,11 +84,11 @@ The worker proves its Google identity to Anthropic and receives a short-lived to
 
 If a run fails with an authentication error, **Settings → Workload identity → authentication history** shows the reason. It is usually an `email`, `sub` or audience mismatch.
 
-## If the app can't upload the PDF itself
+## PDF upload
 
-Switch to delegated upload. It costs nothing, and the PDF is posted under an existing account's name.
-1. In the Workspace Admin console → Security → API controls → Domain-wide delegation, add the worker's client ID (printed by the bootstrap script) with only `https://www.googleapis.com/auth/chat.messages.create`.
-2. Set the GitHub variables `GOOGLE_CHAT_UPLOAD_MODE=delegated` and `GOOGLE_CHAT_DELEGATED_USER=<that person's email>`, then redeploy.
+Google Chat accepts file uploads only from a user, not from the app, so the PDF uses delegated upload. It costs nothing. The PDF is posted in the requester's own conversation with the app, under the requester's name.
+1. In the Workspace Admin console → Security → Access and data control → API controls → Manage domain-wide delegation, add each worker's client ID (its unique ID, printed by the bootstrap script) with only `https://www.googleapis.com/auth/chat.messages.create`.
+2. Set the GitHub variable `GOOGLE_CHAT_UPLOAD_MODE=delegated`, then redeploy. `GOOGLE_CHAT_DELEGATED_USER` is optional: it's used only when a request has no sender email.
 
 ## Rollback
 

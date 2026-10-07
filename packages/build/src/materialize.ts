@@ -38,6 +38,13 @@ function mentioned(scope: ScopeDraftV1, terms: string[]): boolean {
   return terms.some((t) => text.includes(fold(t)));
 }
 
+/** The requester's stated count for a role, matched on the role's own terms (e.g. "keypad" in "keypads"). */
+function statedQuantity(scope: ScopeDraftV1, role: RoleSpec): number | null {
+  const terms = [...(role.retained_match ?? []), role.label].map(fold);
+  const hit = scope.requested_quantities.find((q) => terms.some((t) => fold(q.item).includes(t)));
+  return hit ? hit.quantity : null;
+}
+
 export function materialize(scope: ScopeDraftV1, pattern: PatternSpec): Selection {
   const lines: SelectionLine[] = [];
   const allowances: Selection["allowances"] = [];
@@ -65,13 +72,15 @@ export function materialize(scope: ScopeDraftV1, pattern: PatternSpec): Selectio
       blockedRoles.add(role.role);
       continue;
     }
-    const minimum = role.quantity.kind === "minimum";
+    // A count the requester stated is used as written; otherwise the pattern's quantity (a minimum is verified on site).
+    const stated = statedQuantity(scope, role);
+    const minimum = stated === null && role.quantity.kind === "minimum";
     lines.push({
       role: role.role,
       record_id: role.product_id,
-      quantity: role.quantity.qty,
+      quantity: stated ?? role.quantity.qty,
       quantity_basis: minimum ? "minimum_to_verify" : "fixed",
-      verify: role.quantity.kind === "minimum" ? role.quantity.verify : null,
+      verify: minimum && role.quantity.kind === "minimum" ? role.quantity.verify : null,
       // A single-room scope places devices in that room; otherwise use the pattern's location.
       location: scope.room_types.length === 1 ? scope.room_types[0]! : role.location,
       precedent: role.precedent,

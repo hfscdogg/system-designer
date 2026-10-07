@@ -377,13 +377,24 @@ describe("Google Chat → scope approval vertical slice", () => {
 });
 
 describe("runs whose workflow stopped", () => {
-  it("closes a request whose workflow died instead of swallowing the next message", async () => {
+  it("reports a step that keeps failing instead of going silent", async () => {
     const t = await setup([new Error("Chat rejected the post")]);
     await t.send(chatMessage("Smith family wants their old alarm modernized…"));
     const [run] = await t.store.listRunsForPerson("zack");
-    await expect(t.workflows.result(run!.id)).rejects.toThrow("Chat rejected the post");
+    expect(await t.workflows.result(run!.id)).toEqual({ state: "BLOCKED", reason: "an internal step failed (Chat rejected the post)" });
+    expect((await t.store.getRun(run!.id)).state).toBe("BLOCKED");
+    expect(t.texts().some((x) => x.includes("an internal step failed (Chat rejected the post)"))).toBe(true);
+  });
 
-    const res = await t.send(chatMessage("Hi"));
+  it("closes a request whose workflow ended without closing it, instead of swallowing the next message", async () => {
+    const t = await setup([completeExtraction({ budget: { status: "not_provided", amount_usd: null } })]);
+    await t.send(chatMessage("Smith family wants their old alarm modernized…"));
+    const [run] = await t.store.listRunsForPerson("zack");
+    // The workflow ends while the database still lists the run as open (e.g. it failed outright).
+    await t.workflows.signal(run!.id, { type: "invalidate", reason: "test" });
+    await t.workflows.settled(run!.id);
+
+    const res = await t.send(chatMessage("Budget unknown"));
     expect(res.body).toEqual({ text: "Your previous request in this conversation stopped with an error, so I've closed it. Please send your request again as a new message." });
     expect((await t.store.getRun(run!.id)).state).toBe("FAILED");
     expect(await t.store.findOpenRun({ platform: "google_chat", spaceId: SPACE, threadId: THREAD })).toBeNull();

@@ -36,6 +36,7 @@ Rules:
 - existing_detectors: for existing hard-wired smoke/CO detectors, "keep_and_monitor" if they stay and should be monitored, "replace" if new detectors replace them, "none" if there are none, "not_provided" if not mentioned.
 - service_categories are labor/services only (design, prewire, installation, programming, testing, commissioning, training, removal, project management). Equipment goes in functional_systems or requested_changes, never in service_categories.
 - functional_systems: the systems involved, in the salesperson's words.
+- requested_quantities: only counts the message states as numbers ("2 keypads" → {"item": "keypads", "quantity": 2}). Never estimate or infer a count from words like "all", "each" or "several".
 - target_installation_date: YYYY-MM-DD only if a specific date is given.
 - proposal.number / proposal.name: only if the salesperson references an existing proposal or quote.
 - unresolved_questions: material technical uncertainties worth flagging that are not simple missing fields.
@@ -49,6 +50,7 @@ Rules:
 - For property, fill only the address components the answer states; leave the others null.
 - "unknown", "TBD", "not sure" are valid explicit answers: budget.status "unknown", target_installation_date "unknown", existing_equipment.status "unknown". If the size is said to be unknown set size_is_unknown true.
 - market: "residential" or "commercial" when the answer says which.
+- requested_quantities: the complete list of stated counts, only when the answer states numbers; never estimate.
 - existing_detectors: "keep_and_monitor", "replace" or "none" when the answer says what happens to existing smoke/CO detectors.
 - Never infer values the answer does not state.
 - If the answer cannot be mapped to these fields, set unmapped true and leave the fields null.

@@ -72,6 +72,8 @@ export interface OutboundFile {
   contentType: string;
   /** Message text that accompanies the file. */
   text: string;
+  /** Workspace email of the person a delegated upload acts as (the requester). */
+  actAs?: string;
 }
 
 /** Synchronous reply to a provider webhook. */
