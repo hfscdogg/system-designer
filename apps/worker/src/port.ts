@@ -11,4 +11,6 @@ export interface WorkflowPort {
   start(runId: string): Promise<void>;
   /** Throws WorkflowClosedError when the run's workflow is no longer running. */
   signal(runId: string, signal: RunSignal): Promise<void>;
+  /** Whether the run's workflow is still running (false when it finished, failed or never started). */
+  isRunning(runId: string): Promise<boolean>;
 }

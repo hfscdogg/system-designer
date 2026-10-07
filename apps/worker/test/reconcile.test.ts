@@ -11,6 +11,9 @@ class RecordingPort implements WorkflowPort {
     this.started.push(runId);
   }
   async signal(_runId: string, _s: RunSignal) {}
+  async isRunning(_runId: string) {
+    return false;
+  }
 }
 
 async function runIn(store: Awaited<ReturnType<typeof testStore>>["store"], id: string, thread: string) {

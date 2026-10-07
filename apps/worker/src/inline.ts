@@ -57,6 +57,11 @@ export class InlineWorkflows implements WorkflowPort {
     run.wake = null;
   }
 
+  async isRunning(runId: string): Promise<boolean> {
+    const run = this.runs.get(runId);
+    return !!run && !run.closed;
+  }
+
   /** Resolves when the run is waiting for a signal or has finished. */
   async settled(runId: string): Promise<void> {
     await this.runs.get(runId)?.idle;
