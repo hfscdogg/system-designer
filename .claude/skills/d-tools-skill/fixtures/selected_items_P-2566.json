@@ -1,0 +1,31 @@
+{
+  "items": [
+    {
+      "name": "Alarm.com ADC-V516",
+      "description": "Indoor 1080p Wi-Fi camera with dual-band Wi-Fi, configured for live view only at the gaming room entrance",
+      "group": "Video Surveillance",
+      "quantity": 1,
+      "unitPrice": 163.98,
+      "type": "Product"
+    },
+    {
+      "name": "Alfred DB2S-KEY-BL",
+      "description": "Smart deadbolt with keypad access for a wood door, one shared code, auto-relock enabled",
+      "group": "Access Control",
+      "quantity": 1,
+      "unitPrice": 448.5,
+      "type": "Product"
+    },
+    {
+      "name": "Installation & Configuration",
+      "description": "Mounting, network setup, app onboarding, and live test of camera and smart lock",
+      "group": "Professional Services",
+      "quantity": 2,
+      "unitPrice": 95,
+      "type": "Labor"
+    }
+  ],
+  "taxRate": 0.0825,
+  "validDays": 30,
+  "notes": "Labor is estimated at two hours; final tax is calculated at invoicing based on the installation address."
+}

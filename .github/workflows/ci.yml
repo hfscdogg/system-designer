@@ -1,0 +1,47 @@
+name: CI
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+
+jobs:
+  test:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: pnpm/action-setup@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: pnpm
+      - run: pnpm install --frozen-lockfile
+      # Chromium for PDF rendering, matching the pinned playwright-core version.
+      - run: pnpm --filter @sd/render exec playwright-core install --with-deps chromium
+      - run: pnpm typecheck
+      - run: pnpm test
+      # Runs the real workflow on a Temporal test server (downloaded here; blocked in some sandboxes).
+      - run: pnpm test:temporal
+
+  infra:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: hashicorp/setup-terraform@v3
+      - run: terraform -chdir=infra/terraform fmt -check
+      - run: terraform -chdir=infra/terraform init -backend=false
+      - run: terraform -chdir=infra/terraform validate
+      - name: shellcheck
+        run: shellcheck infra/bootstrap.sh scripts/*.sh
+      - name: actionlint
+        run: |
+          bash <(curl -sSf https://raw.githubusercontent.com/rhysd/actionlint/main/scripts/download-actionlint.bash)
+          ./actionlint -color
+
+  image:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - run: docker build -t system-designer:ci .
+      # Chromium, fonts and the Temporal workflow bundle must work inside the production image.
+      - run: docker run --rm system-designer:ci node apps/worker/src/image-smoke.ts

@@ -1,0 +1,117 @@
+name: Deploy
+
+# One image per commit, deployed by digest: staging automatically, production after approval.
+on:
+  workflow_run:
+    workflows: [CI]
+    types: [completed]
+    branches: [main]
+  workflow_dispatch:
+    inputs:
+      rollback_image:
+        description: "Redeploy an earlier release: full image reference with @sha256:… (leave empty to build HEAD)"
+        required: false
+        type: string
+
+permissions:
+  contents: read
+  id-token: write
+
+concurrency:
+  group: deploy
+  cancel-in-progress: false
+
+env:
+  GCP_PROJECT_ID: ${{ vars.GCP_PROJECT_ID }}
+  GCP_PROJECT_NUMBER: ${{ vars.GCP_PROJECT_NUMBER }}
+  GCP_REGION: ${{ vars.GCP_REGION }}
+  GCP_SQL_INSTANCE: ${{ vars.GCP_SQL_INSTANCE }}
+  TEMPORAL_ADDRESS: ${{ vars.TEMPORAL_ADDRESS }}
+  TEMPORAL_NAMESPACE: ${{ vars.TEMPORAL_NAMESPACE }}
+  LLM_MODEL: ${{ vars.LLM_MODEL }}
+  GOOGLE_CHAT_UPLOAD_MODE: ${{ vars.GOOGLE_CHAT_UPLOAD_MODE }}
+  GOOGLE_CHAT_DELEGATED_USER: ${{ vars.GOOGLE_CHAT_DELEGATED_USER }}
+  ANTHROPIC_ORGANIZATION_ID: ${{ vars.ANTHROPIC_ORGANIZATION_ID }}
+  ANTHROPIC_WORKSPACE_ID: ${{ vars.ANTHROPIC_WORKSPACE_ID }}
+
+jobs:
+  build:
+    # Skips cleanly until infra/bootstrap.sh has run and the repository variables exist.
+    if: vars.GCP_PROJECT_ID != '' && (github.event_name == 'workflow_dispatch' || github.event.workflow_run.conclusion == 'success')
+    runs-on: ubuntu-latest
+    outputs:
+      image: ${{ steps.image.outputs.image }}
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: ${{ github.event.workflow_run.head_sha || github.sha }}
+      - uses: google-github-actions/auth@v2
+        with:
+          workload_identity_provider: ${{ vars.GCP_WIF_PROVIDER }}
+          service_account: ${{ vars.GCP_DEPLOYER_SA }}
+      - uses: google-github-actions/setup-gcloud@v2
+      - id: image
+        env:
+          ROLLBACK_IMAGE: ${{ inputs.rollback_image }}
+          REPO: ${{ vars.GCP_IMAGE_REPO }}
+          SHA: ${{ github.event.workflow_run.head_sha || github.sha }}
+        run: |
+          set -euo pipefail
+          if [[ -n "${ROLLBACK_IMAGE}" ]]; then
+            [[ "${ROLLBACK_IMAGE}" == *@sha256:* ]] || { echo "rollback needs an image digest"; exit 1; }
+            echo "image=${ROLLBACK_IMAGE}" >> "$GITHUB_OUTPUT"
+            exit 0
+          fi
+          gcloud auth configure-docker "${GCP_REGION}-docker.pkg.dev" --quiet
+          docker build -t "${REPO}/system-designer:${SHA}" .
+          docker push "${REPO}/system-designer:${SHA}"
+          DIGEST="$(gcloud artifacts docker images describe "${REPO}/system-designer:${SHA}" --format 'value(image_summary.digest)')"
+          echo "image=${REPO}/system-designer@${DIGEST}" >> "$GITHUB_OUTPUT"
+
+  staging:
+    needs: build
+    runs-on: ubuntu-latest
+    environment: staging
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: ${{ github.event.workflow_run.head_sha || github.sha }}
+      - uses: google-github-actions/auth@v2
+        with:
+          workload_identity_provider: ${{ vars.GCP_WIF_PROVIDER }}
+          service_account: ${{ vars.GCP_DEPLOYER_SA }}
+      - uses: google-github-actions/setup-gcloud@v2
+      - name: Install Temporal CLI
+        run: curl -sSf https://temporal.download/cli.sh | sh && echo "$HOME/.temporalio/bin" >> "$GITHUB_PATH"
+      - run: scripts/deploy-env.sh staging "${{ needs.build.outputs.image }}"
+        env:
+          ANTHROPIC_FEDERATION_RULE_ID: ${{ vars.ANTHROPIC_FEDERATION_RULE_ID_STAGING }}
+          ANTHROPIC_SERVICE_ACCOUNT_ID: ${{ vars.ANTHROPIC_SERVICE_ACCOUNT_ID_STAGING }}
+      - uses: actions/upload-artifact@v4
+        with:
+          name: release-staging
+          path: release-staging.txt
+
+  production:
+    needs: [build, staging]
+    runs-on: ubuntu-latest
+    environment: production
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: ${{ github.event.workflow_run.head_sha || github.sha }}
+      - uses: google-github-actions/auth@v2
+        with:
+          workload_identity_provider: ${{ vars.GCP_WIF_PROVIDER }}
+          service_account: ${{ vars.GCP_DEPLOYER_SA }}
+      - uses: google-github-actions/setup-gcloud@v2
+      - name: Install Temporal CLI
+        run: curl -sSf https://temporal.download/cli.sh | sh && echo "$HOME/.temporalio/bin" >> "$GITHUB_PATH"
+      - run: scripts/deploy-env.sh prod "${{ needs.build.outputs.image }}"
+        env:
+          ANTHROPIC_FEDERATION_RULE_ID: ${{ vars.ANTHROPIC_FEDERATION_RULE_ID_PROD }}
+          ANTHROPIC_SERVICE_ACCOUNT_ID: ${{ vars.ANTHROPIC_SERVICE_ACCOUNT_ID_PROD }}
+      - uses: actions/upload-artifact@v4
+        with:
+          name: release-prod
+          path: release-prod.txt

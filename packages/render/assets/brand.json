@@ -1,0 +1,21 @@
+{
+  "companyName": "Livewire",
+  "tagline": "High-end home lighting and control",
+  "colors": {
+    "primary": "#12120F",
+    "primaryDark": "#0B0B09",
+    "accent": "#F08223",
+    "accentHover": "#D46C13",
+    "textAccent": "#A85200",
+    "ink": "#12120F",
+    "muted": "#5B5B52",
+    "line": "#D8D6CC",
+    "soft": "#FAFAF9",
+    "cream": "#F5EFE6",
+    "pageBackground": "#F4F0E8"
+  },
+  "contact": {
+    "email": "hello@getlivewire.com",
+    "website": "getlivewire.com"
+  }
+}

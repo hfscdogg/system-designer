@@ -1,0 +1,18 @@
+{
+  "compilerOptions": {
+    "target": "ES2022",
+    "module": "NodeNext",
+    "moduleResolution": "NodeNext",
+    "strict": true,
+    "noUncheckedIndexedAccess": true,
+    "exactOptionalPropertyTypes": false,
+    "esModuleInterop": true,
+    "skipLibCheck": true,
+    "resolveJsonModule": true,
+    "allowImportingTsExtensions": true,
+    "noEmit": true,
+    "erasableSyntaxOnly": true,
+    "types": ["node"]
+  },
+  "include": ["packages/*/src/**/*.ts", "apps/*/src/**/*.ts", "packages/*/test/**/*.ts", "apps/*/test/**/*.ts"]
+}

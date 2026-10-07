@@ -1,0 +1,225 @@
+import { describe, expect, it } from "vitest";
+import { recordedDToolsReader } from "@sd/dtools";
+import {
+  admitProduct,
+  bind,
+  compile,
+  customerView,
+  forbiddenCustomerKeys,
+  loadPatterns,
+  materialize,
+  patternRecordIds,
+  selectPattern,
+  validateProposal,
+  type AdmittedProduct,
+  type PatternSpec,
+  type PolicyRecord,
+} from "../src/index.ts";
+import { approvedScope, CATALOG, IDS, POLICY, product, testPattern } from "./fixtures.ts";
+
+async function admitAll(pattern: PatternSpec, catalog = CATALOG) {
+  const reader = recordedDToolsReader(catalog);
+  const admitted = new Map<string, AdmittedProduct>();
+  const rejected: string[] = [];
+  for (const id of patternRecordIds(pattern)) {
+    try {
+      const a = admitProduct(id, await reader.getProduct(id), `runs/r/catalog/${id}.json`);
+      if (a.ok) admitted.set(id, a.product);
+      else rejected.push(`${id}: ${a.reason}`);
+    } catch (err) {
+      rejected.push(`${id}: ${(err as Error).message}`);
+    }
+  }
+  return { admitted, rejected, reader };
+}
+
+async function pipeline(scopeOverrides = {}, pattern = testPattern(), policy: PolicyRecord | null = POLICY) {
+  const { scope, scopeHash, receiptId } = approvedScope(scopeOverrides);
+  const { admitted } = await admitAll(pattern);
+  const selection = materialize(scope, pattern);
+  const compiled = compile(selection, admitted, pattern);
+  if (!compiled.ok) throw new Error(compiled.errors.join("\n"));
+  const proposal = bind(compiled.draft, { runId: "run_test", receiptId, approvalId: "ap_1", scopeHash, scope, policy, releaseId: "rel" });
+  return { scope, scopeHash, selection, proposal, admitted, validation: validateProposal(proposal, scope, scopeHash, admitted, policy) };
+}
+
+describe("catalog admission", () => {
+  const read = async (body: unknown) => (await recordedDToolsReader({ [IDS.panel]: body }).getProduct(IDS.panel));
+
+  it("admits an active priced product and keeps its evidence hash", async () => {
+    const r = await read(CATALOG[IDS.panel]);
+    const a = admitProduct(IDS.panel, r, "k");
+    expect(a.ok && a.product).toMatchObject({ brand: "TestCo", model: "PANEL-1", unit_price_cents: 60000, unit_cost_cents: 36000, evidence: { sha256: r.sha256 } });
+  });
+
+  it("refuses inactive, discontinued, unpriced, unbranded or mismatched records", async () => {
+    const cases = [
+      [{ ...product(IDS.panel, "T", "M", 1, 1), isActive: false }, "inactive"],
+      [{ ...product(IDS.panel, "T", "M", 1, 1), isDiscontinued: true }, "discontinued"],
+      [{ ...product(IDS.panel, "T", "M", 1, 1), unitPrice: null }, "sell price"],
+      [{ ...product(IDS.panel, "T", "M", 1, 1), brand: null }, "manufacturer"],
+      [product(IDS.keypad, "T", "M", 1, 1), "not the requested record"],
+    ] as const;
+    for (const [body, reason] of cases) {
+      const a = admitProduct(IDS.panel, await read(body), "k");
+      expect(a.ok ? "admitted" : a.reason).toContain(reason);
+    }
+  });
+
+  it("treats a missing record as an error, not an empty result", async () => {
+    await expect(recordedDToolsReader({}).getProduct(IDS.panel)).rejects.toThrow(/404/);
+  });
+});
+
+describe("patterns", () => {
+  it("ships a valid draft pattern with no invented product ids", async () => {
+    const [p] = await loadPatterns();
+    expect(p!.pattern).toBe("security_modernization");
+    expect(patternRecordIds(p!)).toEqual([]);
+  });
+
+  it("selects exactly one applicable pattern or none", () => {
+    const p = testPattern();
+    expect(selectPattern(["intrusion_security", "fire_detection"], [p])?.pattern).toBe("security_modernization");
+    expect(selectPattern(["audio_video"], [p])).toBeNull();
+    expect(selectPattern(["intrusion_security"], [p, { ...p, pattern: "other" }])).toBeNull();
+  });
+});
+
+describe("materialize → compile → bind → validate", () => {
+  it("produces a reconciled, watermarked conceptual budget from the approved scope", async () => {
+    const { proposal, validation, selection } = await pipeline();
+    expect(validation).toEqual({ ok: true, findings: [] });
+    expect(proposal.watermark).toBe("CONCEPTUAL BUDGET • NOT FOR APPROVAL");
+    // Requested: panel+keypads, glass-break, smoke, CO, thermostat, doorbell, Alarm.com monitoring. Door contacts are retained.
+    expect(selection.lines.map((l) => l.role).sort()).toEqual(
+      ["co_detector", "communicator", "glass_break", "keypad", "security_panel", "smoke_heat_detector", "thermostat", "video_doorbell"].sort(),
+    );
+    expect(selection.unresolved).toEqual([
+      { item: "Door/window contact (retained: Door contacts)", role: "door_window_contact", reason: "existing equipment must be field-tested before it can be reused", escalate: false },
+    ]);
+    // Testing and commissioning have no priced service record: allowances, outside totals.
+    expect(selection.allowances.map((a) => a.label)).toEqual(["Commissioning", "Testing"]);
+    expect(proposal.commercial).toMatchObject({ complete: false, label: "Priced scope to date", total_cents: null, tax: { status: "tbd" } });
+    // 600+150+80+120+110+200+250+230 equipment, 8 × $25 labor, $500 install + $300 programming.
+    expect(proposal.commercial.equipment_cents).toBe(174000);
+    expect(proposal.commercial.labor_cents).toBe(20000);
+    expect(proposal.commercial.services_cents).toBe(80000);
+    expect(proposal.commercial.subtotal_cents).toBe(274000);
+    expect(proposal.remaining_verification).toEqual(expect.arrayContaining(["Keypad: number of keypads (one per primary entry)"]));
+  });
+
+  it("keeps internal financials out of the customer view and marks missing images", async () => {
+    const { proposal } = await pipeline();
+    const customer = customerView(proposal);
+    expect(forbiddenCustomerKeys(customer)).toEqual([]);
+    const json = JSON.stringify(customer);
+    expect(json).not.toContain("36000"); // panel cost
+    const comm = customer.sections.flatMap((s) => s.items).find((i) => i.model === "COMM-1");
+    expect(comm?.image).toEqual({ pending: true });
+    expect(proposal.internal.gross_margin_pct).toBeGreaterThan(30);
+  });
+
+  it("marks an unconfigured role unresolved and escalates life-safety gaps", async () => {
+    const { selection, validation, proposal } = await pipeline({}, testPattern({ smoke: null }));
+    expect(selection.requirements.find((r) => r.system === "fire_detection")).toMatchObject({ classification: "unresolved" });
+    expect(validation.ok).toBe(true);
+    expect(validation.findings).toEqual([{ code: "escalation", severity: "escalate", message: "Smoke/heat detector: no Livewire standard product is configured for this role" }]);
+    expect(proposal.sections.flatMap((s) => s.lines).some((l) => l.role === "smoke_heat_detector")).toBe(false);
+  });
+
+  it("flags requested systems that no pattern role covers", async () => {
+    const { selection } = await pipeline({ functional_systems: ["alarm panel", "pool automation"] });
+    expect(selection.unresolved).toEqual(expect.arrayContaining([expect.objectContaining({ item: "pool automation", escalate: true })]));
+  });
+
+  it("blocks without a commercial policy and below the minimum margin", async () => {
+    expect((await pipeline({}, testPattern(), null)).validation.findings.map((f) => f.code)).toContain("policy");
+    const strict = { ...POLICY, policy: { ...POLICY.policy, margin: { minimum_gross_margin_pct: 60 } } };
+    const r = await pipeline({}, testPattern(), strict);
+    expect(r.validation.ok).toBe(false);
+    expect(r.validation.findings.map((f) => f.code)).toContain("margin_exception");
+  });
+
+  it("calculates tax and a total only when the commercial scope is complete", async () => {
+    const taxed: PolicyRecord = { ...POLICY, policy: { ...POLICY.policy, tax: { mode: "rate", rate_pct: 8.25, applies_to: "taxable_equipment" } } };
+    const partial = await pipeline({}, testPattern(), taxed);
+    expect(partial.proposal.commercial.total_cents).toBeNull();
+    expect(partial.proposal.commercial.tax).toMatchObject({ status: "calculated", rate_pct: 8.25 });
+    const complete = await pipeline(
+      {
+        functional_systems: ["alarm panel", "Alarm.com monitoring"],
+        requested_changes: ["Replace panel"],
+        existing_equipment: { status: "none", retained: [], removed_or_replaced: [] },
+        service_categories: ["installation", "programming"],
+      },
+      // Fixed quantities only, so nothing is left to verify.
+      (() => {
+        const p = testPattern();
+        p.roles = p.roles.filter((r) => ["security_panel", "communicator"].includes(r.role));
+        return p;
+      })(),
+      taxed,
+    );
+    expect(complete.proposal.commercial).toMatchObject({ complete: true, label: "Total" });
+    expect(complete.proposal.commercial.total_cents).toBe(complete.proposal.commercial.subtotal_cents + Math.round(80000 * 0.0825));
+    expect(complete.validation.ok).toBe(true);
+  });
+});
+
+describe("compiler rejections", () => {
+  async function setup() {
+    const pattern = testPattern();
+    const { scope } = approvedScope();
+    const { admitted } = await admitAll(pattern);
+    return { pattern, admitted, selection: materialize(scope, pattern) };
+  }
+
+  it("rejects products without evidence, swapped records, duplicates and authority fields", async () => {
+    const { pattern, admitted, selection } = await setup();
+    const noEvidence = new Map(admitted);
+    noEvidence.delete(IDS.panel);
+    expect(compile(selection, noEvidence, pattern)).toMatchObject({ ok: false, errors: [expect.stringContaining("no admitted D-Tools evidence")] });
+
+    const swapped = structuredClone(selection);
+    swapped.lines[0]!.record_id = IDS.keypad;
+    expect(compile(swapped, admitted, pattern).ok).toBe(false);
+
+    const dup = structuredClone(selection);
+    dup.lines.push(dup.lines[0]!);
+    expect(compile(dup, admitted, pattern)).toMatchObject({ ok: false, errors: expect.arrayContaining([expect.stringContaining("appears twice")]) });
+
+    expect(compile({ ...selection, approved_by: "zack" }, admitted, pattern)).toMatchObject({ ok: false });
+    expect(compile({ ...selection, lines: [{ ...selection.lines[0], price: 1 }] }, admitted, pattern).ok).toBe(false);
+  });
+
+  it("rejects a critical role that silently disappears", async () => {
+    const { pattern, admitted, selection } = await setup();
+    const missing = structuredClone(selection);
+    missing.lines = missing.lines.filter((l) => l.role !== "security_panel");
+    expect(compile(missing, admitted, pattern)).toMatchObject({ ok: false, errors: expect.arrayContaining([expect.stringContaining("Security panel")]) });
+  });
+
+  it("validator catches tampered prices after binding", async () => {
+    const { proposal, scope, scopeHash, admitted } = await pipeline();
+    const tampered = structuredClone(proposal);
+    tampered.sections[0]!.lines[0]!.unit_price_cents += 1;
+    const v = validateProposal(tampered, scope, scopeHash, admitted, POLICY);
+    expect(v.ok).toBe(false);
+    expect(v.findings.map((f) => f.code)).toEqual(expect.arrayContaining(["provenance", "arithmetic"]));
+  });
+});
+
+describe("empty proposals", () => {
+  it("blocks when no role has a configured product (the shipped draft pattern)", async () => {
+    const [shipped] = await loadPatterns();
+    const { scope, scopeHash, receiptId } = approvedScope();
+    const selection = materialize(scope, shipped!);
+    const compiled = compile(selection, new Map(), shipped!);
+    if (!compiled.ok) throw new Error(compiled.errors.join());
+    const proposal = bind(compiled.draft, { runId: "r", receiptId, approvalId: "a", scopeHash, scope, policy: POLICY, releaseId: "rel" });
+    const v = validateProposal(proposal, scope, scopeHash, new Map(), POLICY);
+    expect(v.ok).toBe(false);
+    expect(v.findings.map((f) => f.code)).toContain("empty_bom");
+  });
+});

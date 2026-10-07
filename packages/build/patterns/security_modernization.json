@@ -1,0 +1,38 @@
+{
+  "schema": "architecture_pattern_v1",
+  "pattern": "security_modernization",
+  "version": "2026-10-05.draft",
+  "title": "Security modernization",
+  "applies_when_any": ["intrusion_security"],
+  "roles": [
+    { "role": "security_panel", "label": "Security panel", "critical": true, "systems": ["intrusion_security", "alarm_monitoring"], "retained_match": ["panel"], "product_id": null, "precedent": "livewire_standard", "quantity": { "kind": "fixed", "qty": 1 }, "location": "Equipment location", "capability": "Panel arms, disarms and reports all zones", "escalate_if_unresolved": false },
+    { "role": "keypad", "label": "Keypad", "critical": true, "systems": ["intrusion_security"], "retained_match": ["keypad"], "product_id": null, "precedent": "livewire_standard", "quantity": { "kind": "minimum", "qty": 1, "verify": "number of keypads (one per primary entry)" }, "location": "Primary entry", "capability": "Local arming and disarming", "escalate_if_unresolved": false },
+    { "role": "door_window_contact", "label": "Door/window contact", "critical": true, "systems": ["intrusion_security"], "retained_match": ["contact"], "product_id": null, "precedent": "livewire_standard", "quantity": { "kind": "minimum", "qty": 1, "verify": "count of protected doors and windows" }, "location": "Perimeter openings", "capability": "Perimeter intrusion detection", "escalate_if_unresolved": false },
+    { "role": "glass_break", "label": "Glass-break sensor", "critical": false, "systems": ["intrusion_security"], "mentions": ["glass"], "retained_match": ["glass"], "product_id": null, "precedent": "livewire_standard", "quantity": { "kind": "minimum", "qty": 1, "verify": "count of rooms with protected glass" }, "location": "Rooms with glass", "capability": "Glass-break detection", "escalate_if_unresolved": false },
+    { "role": "smoke_heat_detector", "label": "Smoke/heat detector", "critical": true, "systems": ["fire_detection"], "retained_match": ["smoke"], "product_id": null, "precedent": "livewire_standard", "quantity": { "kind": "minimum", "qty": 1, "verify": "detector count per code and floor plan" }, "location": "Per code", "capability": "Monitored fire detection", "escalate_if_unresolved": true },
+    { "role": "co_detector", "label": "Carbon monoxide detector", "critical": true, "systems": ["co_detection"], "retained_match": ["carbon monoxide", "co detector"], "product_id": null, "precedent": "livewire_standard", "quantity": { "kind": "minimum", "qty": 1, "verify": "detector count per code and floor plan" }, "location": "Per code", "capability": "Monitored CO detection", "escalate_if_unresolved": true },
+    { "role": "communicator", "label": "Cellular communicator", "critical": true, "systems": ["alarm_monitoring"], "product_id": null, "precedent": "livewire_standard", "quantity": { "kind": "fixed", "qty": 1 }, "location": "Equipment location", "capability": "Alarm.com connectivity and central-station reporting", "escalate_if_unresolved": false },
+    { "role": "thermostat", "label": "Smart thermostat", "critical": false, "systems": ["climate_control"], "retained_match": ["thermostat"], "product_id": null, "precedent": "livewire_standard", "quantity": { "kind": "minimum", "qty": 1, "verify": "number of HVAC zones" }, "location": "Per HVAC zone", "capability": "Thermostat control in the security app", "escalate_if_unresolved": false },
+    { "role": "video_doorbell", "label": "Video doorbell", "critical": false, "systems": ["video_doorbell"], "retained_match": ["doorbell"], "product_id": null, "precedent": "livewire_standard", "quantity": { "kind": "fixed", "qty": 1 }, "location": "Front entry", "capability": "Doorbell video in the security app", "escalate_if_unresolved": false }
+  ],
+  "services": [
+    { "category": "design", "label": "System design", "product_id": null },
+    { "category": "removal", "label": "Removal of existing equipment", "product_id": null },
+    { "category": "installation", "label": "Installation", "product_id": null },
+    { "category": "programming", "label": "Programming", "product_id": null },
+    { "category": "testing", "label": "Testing", "product_id": null },
+    { "category": "commissioning", "label": "Commissioning", "product_id": null },
+    { "category": "monitoring_activation", "label": "Monitoring activation", "product_id": null },
+    { "category": "training", "label": "Client training", "product_id": null }
+  ],
+  "assumptions": [
+    "Existing wiring paths are usable where devices are replaced.",
+    "Power and a network or cellular signal are available at the equipment location.",
+    "Quantities marked as minimums are confirmed during a site visit."
+  ],
+  "exclusions": [
+    "Monitoring service fees and contracts.",
+    "Permits and inspection fees unless listed.",
+    "Patching and painting."
+  ]
+}

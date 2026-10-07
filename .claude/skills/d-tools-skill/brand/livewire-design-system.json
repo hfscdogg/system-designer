@@ -1,0 +1,332 @@
+{
+  "$schema": "livewire-design-system",
+  "name": "Livewire Design System",
+  "version": "3.0",
+  "date": "2026-04",
+  "maintainer": "Demand Growth Partner",
+  "description": "Brand foundations and Email Marketing Best Practices framework for Livewire, a high-end home lighting and control integrator. Source of truth for Claude Code projects.",
+
+  "typography": {
+    "families": {
+      "display": {
+        "family": "Fraunces",
+        "type": "serif",
+        "source": "Google Fonts",
+        "settings": {
+          "fontVariationSettings": "\"opsz\" 144, \"SOFT\" 50",
+          "letterSpacing": "-0.02em",
+          "lineHeight": 0.98
+        },
+        "notes": "Display and editorial headlines. Use italic + lighter weight for accent words."
+      },
+      "body": {
+        "family": "Montserrat",
+        "type": "sans-serif",
+        "source": "local fonts/ directory (weights 100-900)",
+        "settings": {
+          "letterSpacing": "-0.005em"
+        },
+        "weights": { "body": "400-500", "labelsEyebrows": 600 },
+        "notes": "Body, UI, labels. Never substitute Inter/Roboto/Arial."
+      },
+      "mono": {
+        "family": "JetBrains Mono",
+        "type": "monospace",
+        "optional": true,
+        "notes": "Numeric tokens, hex values, blueprint indices, specs only."
+      }
+    },
+    "styles": {
+      "eyebrow": {
+        "fontFamily": "Montserrat",
+        "fontSize": "10.5px",
+        "letterSpacing": "0.24em",
+        "textTransform": "uppercase",
+        "fontWeight": 600,
+        "color": "copper accent"
+      },
+      "newsletterHeroHeadline": {
+        "fontFamily": "Fraunces",
+        "fontSize": "44px"
+      }
+    }
+  },
+
+  "color": {
+    "ink": {
+      "950": "#0B0B09",
+      "900": "#12120F",
+      "800": "#1C1C18",
+      "700": "#2A2A24",
+      "600": "#3A3A33",
+      "500": "#5B5B52",
+      "400": "#85857A",
+      "300": "#B0B0A4",
+      "200": "#D8D6CC"
+    },
+    "bone": {
+      "50": "#FAF8F2",
+      "100": "#F4F0E8",
+      "200": "#ECE6D9",
+      "300": "#DFD7C5"
+    },
+    "cream": "#F5EFE6",
+    "copper": {
+      "50": { "hex": "#FBEBD8", "use": "Soft tint backgrounds on light" },
+      "100": { "hex": "#F9D5AE", "use": "Tint" },
+      "300": { "hex": "#F6A85F", "use": "Accent text on dark, hover" },
+      "500": { "hex": "#F08223", "use": "Primary CTA (web UI)" },
+      "600": { "hex": "#D46C13", "use": "CTA hover" },
+      "700": { "hex": "#A85200", "use": "text-safe: orange text/links on light backgrounds (WCAG AA safe)" }
+    },
+    "livewireOrange": {
+      "hex": "#F7941D",
+      "use": "Email brand orange: buttons, eyebrows on dark. Passes AAA on dark, FAILS on light."
+    },
+    "accentRule": "#F7941D on light backgrounds fails contrast. Always use #A85200 for orange text/links on white or cream. On dark, use #F7941D freely.",
+    "emailSystem": {
+      "deepBlack": { "hex": "#0D0D0D", "use": "Hero blocks, deepest footer. Highest contrast, display headlines." },
+      "deepCharcoal": { "hex": "#111111", "use": "Final CTA close. Slight lift off deep black for rhythm." },
+      "charcoal": { "hex": "#1A1A1A", "use": "Nav bar, navigator, feature blocks. Main dark." },
+      "warmCream": { "hex": "#F5EFE6", "use": "Newsletter body. Default for Henry-voiced newsletters (April 2026+)." },
+      "warmGrey": { "hex": "#FAFAF9", "use": "Trust strip & FAQ. Light without pure-white glare." },
+      "pureWhite": { "hex": "#FFFFFF", "use": "Specifier body; inline CTA cards inside cream sections." },
+      "creamVsWhite": "Cream = newsletters / consumer / warm editorial. White = specifier / conquest / corporate (and inline CTA cards on cream). Avoid pure white for newsletters unless called for."
+    }
+  },
+
+  "logos": {
+    "files": {
+      "horizontalWhite": { "path": "assets/logo-horizontal-white.png", "use": "Correct for dark nav bars and footers." },
+      "horizontalBlack": { "path": "assets/logo-horizontal-black.png", "use": "Light backgrounds." },
+      "horizontalOrange": { "path": "assets/logo-horizontal-orange.png", "use": "Accent contexts." },
+      "markWhite": { "path": "assets/logo-mark-white.png", "use": "Swoosh mark only." },
+      "markOrange": { "path": "assets/logo-mark-orange.png", "use": "Swoosh mark only." }
+    },
+    "rule": "The swoosh-only mark is never a substitute for the wordmark in email nav bars."
+  },
+
+  "voiceAndAesthetic": {
+    "tone": "Confident, warm, practical, never salesy.",
+    "aesthetic": "Dark editorial surfaces, warm cream for consumer-facing content, copper accent used sparingly.",
+    "always": [
+      "Short paragraphs, max 3 lines.",
+      "Specific over vague ('421 reviews at 4.9 stars', not 'highly rated').",
+      "Bold one key phrase per section for scanners.",
+      "End the letter with a direct invitation, not a soft close.",
+      "Use 'we' throughout: a team, not a company.",
+      "Frame offers as client benefits ('A note for your next client conversation')."
+    ],
+    "never": [
+      "Em dashes (use commas/semicolons/shorter sentences).",
+      "Exclamation points in body copy (social only).",
+      "Vague superlatives: innovative, cutting-edge, world-class, best-in-class.",
+      "Fear-based language ('don't get left behind', 'before it's too late').",
+      "Standalone corporate nouns: solutions, synergy, seamless (without specifics).",
+      "Countdown/urgency for professional audiences.",
+      "Emojis in subject lines or body (social only).",
+      "Gradients-as-decoration and generic SaaS tropes."
+    ]
+  },
+
+  "email": {
+    "version": "3.0",
+    "bindingFor": [
+      "Henry-voiced newsletters",
+      "Specifier/partner emails",
+      "Johnson Controls conquest sends",
+      "Promotional launches"
+    ],
+    "subjectLines": {
+      "length": "30-40 characters (6-8 words); over 50 clipped on mobile (60%+ of list opens on mobile)",
+      "framework": "Every subject must satisfy at least 3 of 5 criteria",
+      "criteria": [
+        "Opens a question/loop the reader wants to close.",
+        "Speaks to a specific felt experience, not a feature.",
+        "Under 40 characters.",
+        "Could plausibly be from a trusted neighbor/peer, not a brand.",
+        "Pairs with a preheader that extends, not repeats."
+      ],
+      "approvedPatterns": {
+        "skepticismHook": "They came in skeptical. Watch what happened.",
+        "problemFirst": "Your home looks finished. Why doesn't it feel finished?",
+        "outcomeFirst": "What great lighting actually changes",
+        "curiosityGap": "The one thing most finished homes are missing",
+        "seasonalInvitation": "Spring is here. Come outside with us.",
+        "twoWordPunch": "First impressions. Unfiltered."
+      },
+      "hardRules": [
+        "No emojis.",
+        "No em dashes.",
+        "40 characters max.",
+        "The subject never carries both the what and the why; use the preheader to extend."
+      ],
+      "spamTriggers": ["free", "guaranteed", "act now", "limited time", "exclusive offer"],
+      "preheader": "The second subject line: extend, never repeat. 85-100 characters ideal.",
+      "personalization": "Personalization tokens lift opens 5-10% with clean list data."
+    },
+    "aboveTheFold": {
+      "window": "First 300-400px; readers decide in ~9 seconds.",
+      "rules": [
+        "Specifier promos: hero image with baked-in text. Newsletters: display-first typographic hero.",
+        "Lead with content, never a logo banner + white space.",
+        "Specifier trust signal = product experience. Newsletter trust signal = Henry's name/face."
+      ]
+    },
+    "navigatorBlocks": {
+      "introduced": "April 2026",
+      "when": "Newsletters with 2+ stories",
+      "rules": [
+        "Short card-based table of contents right after the hero; cards link to anchors below.",
+        "2-3 cards max.",
+        "Each card: numbered index (01, 02), short eyebrow label, serif headline, one-sentence description. Tappable."
+      ]
+    },
+    "videoThumbnails": {
+      "rules": [
+        "Play button baked into the JPG via Python/Pillow; CSS position:absolute overlays break in Outlook/Gmail.",
+        "Place immediately after hero, same dark background, before first CTA.",
+        "Never reference the same video in both the baked image and the copy.",
+        "Two videos: Video 1 is the primary thumbnail; Video 2 is a text link or dropped.",
+        "90 seconds or less converts better."
+      ],
+      "youtubeAutoThumb": "https://img.youtube.com/vi/VIDEO_ID/maxresdefault.jpg"
+    },
+    "ctas": {
+      "rules": [
+        "Single-primary-CTA emails outperform multi-CTA by up to 371% CTR.",
+        "Primary CTA appears 3+ times: top/early, mid, bottom.",
+        "Copy = action + outcome ('Reserve Your Visit' over 'Book Now'/'Learn More').",
+        "Microcopy below CTA reduces anxiety ('Free. No signup. Takes about a minute.').",
+        "Inline CTA cards for secondary/within-story CTAs; full-width reserved for the top conversion action.",
+        "Offers/credits go just before booking options, not at the end."
+      ]
+    },
+    "faq": "FAQ accordions do NOT work in email; clients strip the JS. Always show answers inline as plain Q/A. No fake + icons.",
+    "offers": "Frame as client benefits, not hooks. Plain declarative language. No countdown/urgency/exclamation for professional audiences. Place offer inside the dark booking section, between heading and Option A.",
+    "socialProof": {
+      "trustStrip": "20+ years · 4.9 stars / 421 reviews · 80% referrals · Lutron Certified",
+      "placement": "Early, right after the first CTA block.",
+      "notes": "Review counts + ratings lift click-to-consult 15-25% in home services. Named technicians are unusually powerful for Livewire."
+    },
+    "blueprints": {
+      "standardNewsletter": {
+        "use": "Default for monthly Henry-voiced sends (updated April 2026)",
+        "blocks": [
+          { "index": "01", "block": "Nav Bar", "background": "#1A1A1A", "purpose": "Logo left, issue badge right. 16px padding." },
+          { "index": "02", "block": "Hero", "background": "#0D0D0D", "purpose": "Eyebrow + 'From Henry Clifford', display serif 44px. Text only, no photo." },
+          { "index": "03", "block": "Navigator", "background": "#1A1A1A", "purpose": "2-3 tappable cards linking to stories below." },
+          { "index": "04", "block": "Body + Visual", "background": "#F5EFE6", "purpose": "Henry's letter, short paragraphs. Primary visual here." },
+          { "index": "05", "block": "Inline CTA", "background": "#F5EFE6", "purpose": "White rounded card, headline + button + microcopy." },
+          { "index": "06", "block": "Feature / Event", "background": "#1A1A1A", "purpose": "Second story with its own image and primary CTA." },
+          { "index": "07", "block": "Trust Strip", "background": "#FAFAF9", "purpose": "Same three stats every time." },
+          { "index": "08", "block": "FAQ", "background": "#FAFAF9", "purpose": "4-6 plain Q/A. No fake accordion icons." },
+          { "index": "09", "block": "Footer", "background": "#0D0D0D", "purpose": "Logo + social only. Zoho auto-appends compliance block." }
+        ]
+      },
+      "specifierPartner": {
+        "use": "Specifier / Partner sends (Ketra Experience Center build, April 2026)",
+        "blocks": [
+          { "index": "01", "block": "Nav Bar", "background": "#1A1A1A", "purpose": "Logo left, campaign badge right." },
+          { "index": "02", "block": "Hero Image", "background": "#0D0D0D", "purpose": "Flat JPG: room photo + gradient + headline + CTA baked via Pillow." },
+          { "index": "03", "block": "Transition Bar", "background": "#0D0D0D", "purpose": "Bridge copy. Never repeat hero text." },
+          { "index": "04", "block": "Video Thumbnail", "background": "#0D0D0D", "purpose": "Flat JPG, baked play button, links to YouTube." },
+          { "index": "05", "block": "Primary CTA", "background": "#0D0D0D", "purpose": "Reserve Your Visit + microcopy after video." },
+          { "index": "06", "block": "Trust Strip", "background": "#FAFAF9", "purpose": "20+ years, 4.9 stars, 80% referrals, Lutron Certified." },
+          { "index": "07", "block": "What Is [Product]", "background": "#FFFFFF", "purpose": "Plain-language, 2 short paragraphs." },
+          { "index": "08", "block": "Room Image", "background": "full-bleed", "purpose": "Crop to show architecture and light." },
+          { "index": "09", "block": "What to Expect", "background": "#FAFAF9", "purpose": "Numbered 01-04 steps." },
+          { "index": "10", "block": "Lifestyle Image 2", "background": "full-bleed", "purpose": "Dusk/warm scene. Italic caption below." },
+          { "index": "11", "block": "Booking Options", "background": "#1A1A1A", "purpose": "Heading + offer/credit + Option A (orange) + Option B (ghost)." },
+          { "index": "12", "block": "Aspirational Image", "background": "full-bleed", "purpose": "Premium room/project photo." },
+          { "index": "13", "block": "Who This Is For", "background": "#FFFFFF", "purpose": "Specifier types with orange dot markers." },
+          { "index": "14", "block": "Final CTA", "background": "#111111", "purpose": "Closing statement + Reserve button + phone number." },
+          { "index": "15", "block": "Footer", "background": "#0D0D0D", "purpose": "Logo, social only." }
+        ]
+      }
+    },
+    "technical": {
+      "htmlStructure": [
+        "Table-based layouts only. No flexbox/grid.",
+        "600px max-width container, centered, background color on body.",
+        "Single column only.",
+        "All inline styles. No external stylesheets.",
+        "line-height:0 and font-size:0 on image container cells to kill ghost spacing."
+      ],
+      "verticalSpacing": {
+        "navBar": "16px vertical (was 20px)",
+        "hero": "40px top/bottom (was 52px)",
+        "bodySection": "40-48px by content weight (was 48px)",
+        "footer": "36px top, 32px bottom (was 44px)",
+        "stackedSameBackground": "Reduce gaps 8-12px between stacked same-background sections"
+      },
+      "buttons": {
+        "structure": "Wrap in table > tr > td, not a div.",
+        "linkStates": "Declare color on all 5 link pseudo-classes with !important.",
+        "minHeight": "44px (mobile tap target)",
+        "pillRadius": "30px",
+        "primary": { "background": "#F7941D", "border": "2px solid #F7941D", "color": "#FFFFFF" },
+        "ghostOnDark": { "background": "transparent", "border": "2px solid rgba(255,255,255,.35)", "color": "#FFFFFF" }
+      },
+      "inlineCtaCard": {
+        "style": "White card, border-radius:10px, inside cream/light section",
+        "headline": "Serif ~20px",
+        "button": "Centered orange pill",
+        "microcopy": "~12px grey",
+        "padding": "~28px",
+        "benefit": "Saves 60-80px vs. full-width block"
+      },
+      "images": [
+        "All hosted at stratus.campaign-image.com (no exceptions).",
+        "Descriptive alt on every tag.",
+        "width:100%; explicit heights for crop (object-fit/object-position unsupported in Outlook).",
+        "Baked play buttons via Pillow.",
+        "White-bordered images on white/cream sections only (dark exposes the border)."
+      ],
+      "pillowHeroMethod": [
+        "Download source from stratus.campaign-image.com.",
+        "Resize/crop to 600px wide using Image.LANCZOS.",
+        "Directional dark gradient overlay (stronger left, lighter right) via RGBA compositing.",
+        "Render eyebrow/headline/subline/pill button with ImageDraw (DejaVu or Liberation fonts).",
+        "Save JPG at quality 92-93, upload to Zoho Campaigns image library.",
+        "Use the resulting stratus URL as a single linked <img>; the whole image is the clickable CTA."
+      ],
+      "zohoCampaigns": [
+        "Zoho auto-appends compliance footer (sender info, address, unsubscribe, preferences, privacy, terms). Do not duplicate in HTML footer.",
+        "Custom HTML footer: Livewire logo + social links only.",
+        "CRM sync: Contacts > Sync Services > New Sync -> Leads module.",
+        "Email Opt-out toggle needs an Email Opt-out field on CRM Leads module; flag for Solomon if missing.",
+        "Test-send to self before deploying. Confirm images load and links active.",
+        "Public stratus URLs only generate when an image renders in a live campaign or preview send."
+      ]
+    },
+    "benchmarks": {
+      "openRate": { "industryAvg": "19-23%", "livewireTarget": ">= 25%" },
+      "clickThroughRate": { "industryAvg": "2.0-3.5%", "livewireTarget": ">= 4.0%" },
+      "clickToOpenRate": { "industryAvg": "10-15%", "livewireTarget": ">= 18%" },
+      "unsubscribeRate": { "industryAvg": "< 0.5%", "livewireTarget": "< 0.3%" },
+      "bookingConversion": { "industryAvg": null, "livewireTarget": "Track monthly" }
+    },
+    "preSendChecklist": {
+      "subjectAndPreheader": ["<40 chars", "no emojis", "opens question/hook/felt experience", "preheader extends not repeats", "no spam triggers"],
+      "aboveTheFold": ["first content is hero image/headline (no spacer rows)", "specifier hero has Pillow-baked text", "newsletter uses display-first hero", "primary CTA before 2 screens", "white wordmark on dark nav", "navigator block present for 2+ story newsletters"],
+      "video": ["play button baked in (not CSS)", "thumbnail links to correct YouTube URL", "no duplicate video references", "transition bar doesn't repeat hero"],
+      "content": ["no paragraph >3 lines", "scannable structure", "primary CTA 3+ times", "phone number 1+", "offer before booking options", "FAQ plain Q/A"],
+      "images": ["all src on stratus.campaign-image.com", "white wordmark on dark nav/footer", "heights adjusted for crop", "descriptive alt text", "white-bordered images on white/cream"],
+      "technical": ["test-send to self", "all images load", "all booking links active", "Zoho tracking on phone if CallRail active", "HTML footer = logo + social only"]
+    }
+  },
+
+  "webUi": {
+    "aesthetic": "Ink/bone/copper tokens, dark editorial aesthetic.",
+    "headlines": "Fraunces display with font-variation-settings: \"opsz\" 144, \"SOFT\" 50; Montserrat body.",
+    "primaryCta": { "background": "#F08223", "hover": "#D46C13" },
+    "accentUsage": "Keep copper usage restrained."
+  },
+
+  "changelog": [
+    { "version": "3.0", "date": "2026-04", "changes": "Navigator block, cream body #F5EFE6, inline CTA cards, tightened vertical spacing, FAQ plain Q/A rule, no-emoji subject rule, Zoho footer clarification." },
+    { "version": "2.0", "date": "2026-04", "changes": "Technical production rules from Ketra build. Newsletter + Specifier blueprints. Pillow hero method, table-based structure." },
+    { "version": "1.0", "date": "2026-03", "changes": "Original research framework: subject lines, above the fold, CTAs, voice, benchmarks." }
+  ]
+}

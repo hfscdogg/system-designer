@@ -1,0 +1,38 @@
+{
+  "fileType": "dtools_opportunity_extra_info",
+  "savedAt": "2026-07-12T11:07:29.310Z",
+  "opportunityId": "2975076c-dec3-42ad-8ee5-773c50c4820a",
+  "data": {
+    "customerIntent": "Client wants to create an extra safe gaming room with security features.",
+    "featureIdeas": [
+      "secure access control for the room",
+      "camera coverage for entry points",
+      "alarm and safety monitoring",
+      "safe/private environment for gaming setup"
+    ],
+    "securityPriorities": [
+      "camera coverage",
+      "alarm and monitoring"
+    ],
+    "systemType": "fresh install",
+    "cameraScope": "gaming room entrance only",
+    "alarmPreference": "local audible alarm only",
+    "doorStatus": "still flexible, best security-ready option can be chosen",
+    "entranceHardwarePreference": "smart lock only",
+    "doorMaterial": "wood",
+    "powerAtDoor": true,
+    "smartLockStyle": "keypad-based",
+    "keypadCodeModel": "one shared code",
+    "autoRelock": true,
+    "accessUsers": "just me",
+    "cameraPreference": "stay discreet",
+    "entranceEnvironment": "indoors",
+    "doorType": "single door",
+    "cameraViewMode": "live view only",
+    "solutionPreference": "very basic stuff",
+    "budgetPreference": "most minimal reliable setup",
+    "wifiAvailable": true,
+    "installStyle": "straightforward and visible near the door frame",
+    "source": "user provided extra info"
+  }
+}
