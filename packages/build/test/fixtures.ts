@@ -17,6 +17,7 @@ export const IDS = {
   doorbell: "99999999-9999-4999-8999-999999999999",
   install: "aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa",
   programming: "bbbbbbbb-bbbb-4bbb-8bbb-bbbbbbbbbbbb",
+  parts: "eeeeeeee-eeee-4eee-8eee-eeeeeeeeeeee",
 };
 
 export function product(id: string, brand: string, model: string, price: number, cost: number | null, extra: Record<string, unknown> = {}) {
@@ -51,6 +52,8 @@ export const CATALOG: Record<string, unknown> = {
   [IDS.doorbell]: product(IDS.doorbell, "TestCo", "BELL-1", 230, 140, { images: [] }),
   [IDS.install]: product(IDS.install, "Livewire", "LAB-INSTALL", 500, 250, { laborItems: [], images: [] }),
   [IDS.programming]: product(IDS.programming, "Livewire", "LAB-PROG", 300, 120, { laborItems: [], images: [] }),
+  // Mirrors the real parts record: $1 per unit with a placeholder cost.
+  [IDS.parts]: product(IDS.parts, "Livewire", "PARTS", 1, 0.01, { laborItems: [], images: [] }),
 };
 
 export function testPattern(overrides: Partial<Record<keyof typeof IDS, string | null>> = {}): PatternSpec {
@@ -63,6 +66,10 @@ export function testPattern(overrides: Partial<Record<keyof typeof IDS, string |
   };
   for (const r of base.roles) r.product_id = id(map[r.role]!);
   for (const s of base.services) s.product_id = s.category === "installation" ? id("install") : s.category === "programming" ? id("programming") : null;
+  if (base.parts) {
+    if (id("parts")) base.parts.product_id = id("parts");
+    else delete base.parts;
+  }
   return PatternSpecSchema.parse(base);
 }
 
@@ -81,5 +88,11 @@ export function approvedScope(overrides = {}) {
 
 export const POLICY: PolicyRecord = {
   version: 3,
-  policy: { schema: "commercial_policy_v1", margin: { minimum_gross_margin_pct: 30 }, tax: { mode: "tbd" } },
+  policy: {
+    schema: "commercial_policy_v2",
+    margin: { residential_min_gross_margin_pct: 30, commercial_min_gross_margin_pct: 30 },
+    mix_targets: { equipment: { share_pct: 60, margin_pct: 35 }, labor: { share_pct: 30, margin_pct: 50 }, parts: { share_pct: 10, margin_pct: 60 } },
+    labor_rates: [{ labor_type: "07LABOR1MAN", price_per_hour: 179, cost_per_hour: 89.5 }],
+    tax: { mode: "tbd" },
+  },
 };

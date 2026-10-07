@@ -38,6 +38,7 @@ export function computeBlockers(s: ScopeExtraction): Blocker[] {
     b.push({ field: "functional_systems", question: "Which systems are involved (for example security, AV, networking)?" });
   }
   if (!s.project_type) b.push({ field: "project_type", question: "What kind of project is this (new build, renovation, upgrade)?" });
+  if (s.market === "not_provided") b.push({ field: "market", question: "Is this a residential or a commercial project?" });
   if (s.existing_equipment.status === "not_provided") {
     b.push({
       field: "existing_equipment",

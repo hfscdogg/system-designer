@@ -44,6 +44,22 @@ export const ServiceSpecSchema = z
   })
   .strict();
 
+/**
+ * Project labor estimated from Livewire history: hours = base + per device,
+ * priced at the policy's hourly rate for the D-Tools labor type.
+ */
+export const LaborSpecSchema = z
+  .object({
+    labor_type: z.string().min(1),
+    base_hours: z.number().min(0),
+    hours_per_device: z.number().min(0),
+    /** Service categories this estimate includes; they are not priced separately. */
+    covers: z.array(z.string()).min(1),
+    /** Where the numbers come from, kept with the pattern for review. */
+    basis: z.string().min(1),
+  })
+  .strict();
+
 export const PatternSpecSchema = z
   .object({
     schema: z.literal("architecture_pattern_v1"),
@@ -54,6 +70,9 @@ export const PatternSpecSchema = z
     applies_when_any: z.array(z.string()).min(1),
     roles: z.array(RoleSpecSchema).min(1),
     services: z.array(ServiceSpecSchema),
+    labor: LaborSpecSchema.optional(),
+    /** D-Tools parts-and-materials record, sized from the policy's parts mix target. */
+    parts: z.object({ product_id: z.string().uuid(), label: z.string().min(1) }).strict().optional(),
     assumptions: z.array(z.string()),
     exclusions: z.array(z.string()),
   })
@@ -68,7 +87,13 @@ export const PatternSpecSchema = z
 
 export type RoleSpec = z.infer<typeof RoleSpecSchema>;
 export type ServiceSpec = z.infer<typeof ServiceSpecSchema>;
+export type LaborSpec = z.infer<typeof LaborSpecSchema>;
 export type PatternSpec = z.infer<typeof PatternSpecSchema>;
+
+/** Labor hours for a device count, rounded up to the half hour. */
+export function laborHours(spec: LaborSpec, devices: number): number {
+  return Math.ceil((spec.base_hours + spec.hours_per_device * devices) * 2) / 2;
+}
 
 export function selectPattern(systems: string[], patterns: PatternSpec[]): PatternSpec | null {
   const matches = patterns.filter((p) => p.applies_when_any.some((s) => systems.includes(s)));
@@ -78,7 +103,9 @@ export function selectPattern(systems: string[], patterns: PatternSpec[]): Patte
 
 /** Every product record a pattern may need, for exact-record reads. */
 export function patternRecordIds(p: PatternSpec): string[] {
-  return [...new Set([...p.roles, ...p.services].map((x) => x.product_id).filter((x): x is string => x !== null))].sort();
+  const ids = [...p.roles, ...p.services].map((x) => x.product_id).filter((x): x is string => x !== null);
+  if (p.parts) ids.push(p.parts.product_id);
+  return [...new Set(ids)].sort();
 }
 
 /**

@@ -31,7 +31,7 @@ The flow is Google Chat message → captured intake → scope extraction → cla
   - Each approved scope gets exactly one build, and every stage output is published once with its hash.
 
 **Before M2 can run live:**
-- The security pattern (`packages/build/patterns/security_modernization.json`) carries Livewire's standard D-Tools records. They were chosen from how often each product appears on Livewire's own projects since 2023. Service categories stay TBD allowances until labor pricing lands.
+- The security pattern (`packages/build/patterns/security_modernization.json`) carries Livewire's standard D-Tools records. They were chosen from how often each product appears on Livewire's own projects since 2023. Labor is estimated from Livewire history (2.5 hours plus 0.5 per device, at the 07LABOR1MAN rate in the policy). A Livewire PARTS line is sized to the policy's parts share.
 - An admin must publish a commercial policy (see below).
 
 - **PDF (M3).**
@@ -82,15 +82,22 @@ Access is an allowlist in the database, managed by `apps/gateway/src/admin.ts`. 
 
 ### Commercial policy (admin only)
 
-Margin and tax rules are versioned configuration, never prompt text. The database refuses a policy from anyone who isn't an active admin. Each run freezes the policy version it was built with.
+Margin, labor-rate and tax rules are versioned configuration, never prompt text. The database refuses a policy from anyone who isn't an active admin. Each run freezes the policy version it was built with.
 
-```json
-{ "schema": "commercial_policy_v1",
-  "margin": { "minimum_gross_margin_pct": <Henry's number> },
-  "tax": { "mode": "tbd" } }
+[`config/commercial-policy-2026.json`](config/commercial-policy-2026.json) encodes the 2026 sales compensation policy:
+- gross-profit floors of 40% residential and 37.5% commercial;
+- mix targets of equipment 60% at 35%, labor 30% at 50% and parts 10% at 60%;
+- the 07LABOR1MAN rate of $179 per hour, costing $89.50;
+- tax "tbd".
+
+A build below its market's floor is blocked as a margin exception. Parts are sized to the parts share at the parts margin. `tax` can also be `{ "mode": "rate", "rate_pct": <n>, "applies_to": "taxable_equipment" }`.
+
+The file ships in the image. Publish it with the admin job (see `docs/deploy.md`):
+
+```bash
+gcloud run jobs execute sd-migrate-staging --region us-east4 --wait \
+  --args="^|^apps/gateway/src/admin.ts|set-policy|henry|config/commercial-policy-2026.json|2026 sales comp policy"
 ```
-
-`tax` can also be `{ "mode": "rate", "rate_pct": <n>, "applies_to": "taxable_equipment" }`. Publish with `node apps/gateway/src/admin.ts set-policy henry policy.json "reason"`.
 
 Anyone with an active identity can DM the app. Each person's runs are their own: only the requester can answer questions on a run or approve its scope. Different people, and different threads in a shared space, run in parallel.
 

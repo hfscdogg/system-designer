@@ -1,7 +1,7 @@
 import { hashCanonical, type ScopeDraftV1 } from "@sd/core";
 import { PILOT_WATERMARK, type Proposal } from "./bind.ts";
 import type { AdmittedProduct } from "./catalog.ts";
-import type { PolicyRecord } from "./policy.ts";
+import { minimumMarginPct, type PolicyRecord } from "./policy.ts";
 import { customerView, forbiddenCustomerKeys } from "./customer.ts";
 import { sum } from "./money.ts";
 
@@ -69,6 +69,19 @@ export function validateProposal(
     }
   }
 
+  if (p.parts) {
+    const product = catalog.get(p.parts.record_id);
+    if (!product || product.evidence.sha256 !== p.parts.evidence_sha256 || product.unit_price_cents !== p.parts.unit_price_cents) {
+      block("provenance", `${p.parts.label} is not backed by admitted catalog evidence`);
+    }
+    if (p.parts.price_cents !== p.parts.quantity * p.parts.unit_price_cents) block("arithmetic", `${p.parts.label} total does not reconcile`);
+  }
+  if (p.labor) {
+    const rate = policy?.policy.labor_rates.find((r) => r.labor_type === p.labor!.labor_type);
+    if (!rate || Math.round(rate.price_per_hour * 100) !== p.labor.price_per_hour_cents) block("provenance", `labor rate for ${p.labor.labor_type} is not the policy rate`);
+    if (p.labor.price_cents !== Math.round(p.labor.price_per_hour_cents * p.labor.hours)) block("arithmetic", "labor total does not reconcile");
+  }
+
   // Arithmetic reconciliation.
   for (const s of p.sections) {
     const eq = sum(s.lines.map((l) => l.unit_price_cents * l.quantity));
@@ -77,10 +90,16 @@ export function validateProposal(
   }
   const c = p.commercial;
   const servicesTotal = sum(p.services.map((s) => s.unit_price_cents));
-  if (c.equipment_cents !== sum(p.sections.map((s) => s.equipment_cents)) || c.labor_cents !== sum(p.sections.map((s) => s.labor_cents)) || c.services_cents !== servicesTotal) {
+  const laborTotal = sum(p.sections.map((s) => s.labor_cents)) + (p.labor?.price_cents ?? 0);
+  if (
+    c.equipment_cents !== sum(p.sections.map((s) => s.equipment_cents)) ||
+    c.labor_cents !== laborTotal ||
+    c.services_cents !== servicesTotal ||
+    c.parts_cents !== (p.parts?.price_cents ?? 0)
+  ) {
     block("arithmetic", "commercial totals do not reconcile with sections");
   }
-  if (c.subtotal_cents !== c.equipment_cents + c.labor_cents + c.services_cents) block("arithmetic", "subtotal does not reconcile");
+  if (c.subtotal_cents !== c.equipment_cents + c.labor_cents + c.services_cents + c.parts_cents) block("arithmetic", "subtotal does not reconcile");
 
   // Commercial completeness: incomplete scope never presents a total (PRD §14.3).
   if (!c.complete && (c.total_cents !== null || c.label !== "Priced scope to date")) block("commercial", "incomplete commercial scope is presented as complete");
@@ -90,7 +109,12 @@ export function validateProposal(
   if (!policy || p.internal.policy_version !== policy.version) {
     block("policy", "no commercial policy is configured; an admin must publish margin and tax rules");
   } else {
-    f.push(...marginFindings(p, policy.policy.margin.minimum_gross_margin_pct));
+    f.push(...marginFindings(p, minimumMarginPct(policy.policy, scope.market), scope.market));
+    for (const k of ["equipment", "labor", "parts"] as const) {
+      const actual = p.internal.mix[k].margin_pct;
+      const target = policy.policy.mix_targets[k].margin_pct;
+      if (actual !== null && actual < target) f.push({ code: "mix_margin", severity: "warn", message: `${k} margin ${actual}% is below the ${target}% target` });
+    }
   }
   if (p.internal.lines_without_cost.length) {
     f.push({ code: "margin_unknown", severity: "warn", message: `no D-Tools cost for: ${p.internal.lines_without_cost.join(", ")}` });
@@ -107,10 +131,10 @@ export function validateProposal(
 }
 
 /** Margin check needs the policy itself; kept separate so the policy version is explicit. */
-export function marginFindings(p: Proposal, minimumPct: number): Finding[] {
+export function marginFindings(p: Proposal, minimumPct: number, market: string): Finding[] {
   if (p.internal.gross_margin_pct === null) return [{ code: "margin_unknown", severity: "warn", message: "no costed lines; margin unknown" }];
   if (p.internal.gross_margin_pct < minimumPct) {
-    return [{ code: "margin_exception", severity: "block", message: `gross margin ${p.internal.gross_margin_pct}% is below the ${minimumPct}% minimum; needs an approved exception` }];
+    return [{ code: "margin_exception", severity: "block", message: `gross margin ${p.internal.gross_margin_pct}% is below the ${minimumPct}% ${market} minimum; needs an approved exception` }];
   }
   return [];
 }
