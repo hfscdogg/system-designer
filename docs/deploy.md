@@ -35,7 +35,7 @@ Everything runs in the Google Cloud project you created, in **us-east4**. You ru
 
    There is no Anthropic key; see the next section.
 4. **In GitHub → Settings → Environments**, create `staging` and `production`. Add yourself as a required reviewer on `production`.
-5. **Merge the PR.** The **Deploy** workflow then:
+5. **Merge the PR.** On `main`, the **CI** workflow runs its checks, then:
    1. builds one image;
    2. migrates the staging database;
    3. starts the worker and checks its health;
@@ -44,7 +44,7 @@ Everything runs in the Google Cloud project you created, in **us-east4**. You ru
    6. checks that the gateway serves the new release and rejects unauthenticated calls.
 
    It then waits for your approval to do the same in production.
-6. **Point the Chat app at the gateway.** The Deploy log, and the `release-staging` artifact, show `chat_endpoint`. Paste it into Google Chat API → Configuration → HTTP endpoint URL.
+6. **Point the Chat app at the gateway.** The CI run's staging job log, and the `release-staging` artifact, show `chat_endpoint`. Paste it into Google Chat API → Configuration → HTTP endpoint URL.
 7. **Onboard yourself.**
    1. DM the app. It replies "not set up yet", which proves the whole path works.
    2. Run the admin tool as a one-off job:
@@ -86,7 +86,7 @@ Switch to delegated upload. It costs nothing, and the PDF is posted under an exi
 
 ## Rollback
 
-Run **Deploy** manually (Actions → Deploy → Run workflow) with `rollback_image` set to an earlier `…@sha256:…` reference, from a previous run's `release-*.txt`. It goes through the same staging → approval → production path. Runs already in flight stay pinned to the release they started on.
+Run **CI** manually on `main` (Actions → CI → Run workflow) with `rollback_image` set to an earlier `…@sha256:…` reference, from a previous run's `release-*.txt`. It goes through the same staging → approval → production path. Runs already in flight stay pinned to the release they started on.
 
 ## Cost (rough, check GCP pricing)
 
