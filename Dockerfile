@@ -10,6 +10,7 @@ RUN corepack enable
 COPY package.json pnpm-lock.yaml pnpm-workspace.yaml ./
 COPY packages ./packages
 COPY apps ./apps
+COPY config ./config
 RUN pnpm install --frozen-lockfile --prod
 ENV NODE_ENV=production
 USER pwuser

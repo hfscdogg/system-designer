@@ -77,7 +77,8 @@ describe("patterns", () => {
     expect(p!.pattern).toBe("security_modernization");
     expect(p!.roles.every((r) => r.product_id !== null)).toBe(true);
     expect(p!.services.every((s) => s.product_id === null)).toBe(true);
-    expect(patternRecordIds(p!)).toHaveLength(p!.roles.length);
+    expect(p!.labor).toMatchObject({ labor_type: "07LABOR1MAN", base_hours: 2.5, hours_per_device: 0.5 });
+    expect(patternRecordIds(p!)).toHaveLength(p!.roles.length + 1); // + the parts record
   });
 
   it("selects exactly one applicable pattern or none", () => {
@@ -100,14 +101,22 @@ describe("materialize → compile → bind → validate", () => {
     expect(selection.unresolved).toEqual([
       { item: "Door/window contact (retained: Door contacts)", role: "door_window_contact", reason: "existing equipment must be field-tested before it can be reused", escalate: false },
     ]);
-    // Testing and commissioning have no priced service record: allowances, outside totals.
-    expect(selection.allowances.map((a) => a.label)).toEqual(["Commissioning", "Testing"]);
+    // Labor covers every requested service, so nothing is left as an allowance.
+    expect(selection.allowances).toEqual([]);
+    expect(selection.services).toEqual([]);
     expect(proposal.commercial).toMatchObject({ complete: false, label: "Priced scope to date", total_cents: null, tax: { status: "tbd" } });
-    // 600+150+80+120+110+250+230 equipment, 7 × $25 labor, $500 install + $300 programming.
+    // 600+150+80+120+110+250+230 equipment; 7 × $25 product labor + (2.5 + 7 × 0.5 = 6 hours) × $179.
     expect(proposal.commercial.equipment_cents).toBe(154000);
-    expect(proposal.commercial.labor_cents).toBe(17500);
-    expect(proposal.commercial.services_cents).toBe(80000);
-    expect(proposal.commercial.subtotal_cents).toBe(251500);
+    expect(proposal.labor).toMatchObject({ labor_type: "07LABOR1MAN", hours: 6, devices: 7, price_cents: 107400, cost_cents: 53700 });
+    expect(proposal.labor!.included).toEqual(["installation", "programming", "testing", "commissioning"]);
+    expect(proposal.commercial.labor_cents).toBe(17500 + 107400);
+    expect(proposal.commercial.services_cents).toBe(0);
+    // Parts are 10% of the subtotal: ceil(278,900 × 10/90) cents in $1 units = 310 units.
+    expect(proposal.parts).toMatchObject({ quantity: 310, price_cents: 31000, cost_cents: 310 * 40, cost_basis: "policy_parts_margin" });
+    expect(proposal.commercial.parts_cents).toBe(31000);
+    expect(proposal.commercial.subtotal_cents).toBe(154000 + 124900 + 31000);
+    expect(proposal.internal.mix.parts.share_pct).toBe(10);
+    expect(proposal.internal.minimum_gross_margin_pct).toBe(30);
     expect(proposal.remaining_verification).toEqual(expect.arrayContaining(["Keypad: number of keypads (one per primary entry)"]));
   });
 
@@ -146,6 +155,27 @@ describe("materialize → compile → bind → validate", () => {
     expect(withMotion.selection.lines.map((l) => l.role)).toContain("motion_detector");
   });
 
+  it("applies the market's margin floor and leaves labor as an allowance without a policy rate", async () => {
+    const floors: PolicyRecord = { ...POLICY, policy: { ...POLICY.policy, margin: { residential_min_gross_margin_pct: 30, commercial_min_gross_margin_pct: 90 } } };
+    expect((await pipeline({}, testPattern(), floors)).validation.ok).toBe(true);
+    const commercial = await pipeline({ market: "commercial" }, testPattern(), floors);
+    expect(commercial.validation.findings).toEqual(expect.arrayContaining([expect.objectContaining({ code: "margin_exception", message: expect.stringContaining("90% commercial minimum") })]));
+
+    const noRate: PolicyRecord = { ...POLICY, policy: { ...POLICY.policy, labor_rates: [{ labor_type: "OTHER", price_per_hour: 100, cost_per_hour: 50 }] } };
+    const r = await pipeline({}, testPattern(), noRate);
+    expect(r.proposal.labor).toBeNull();
+    expect(r.proposal.allowances.map((a) => a.label)).toEqual(["Labor (6 hours)"]);
+  });
+
+  it("rejects labor hours that are not the pattern's estimate", async () => {
+    const pattern = testPattern();
+    const { scope } = approvedScope();
+    const { admitted } = await admitAll(pattern);
+    const selection = materialize(scope, pattern);
+    selection.labor!.hours = 1;
+    expect(compile(selection, admitted, pattern)).toMatchObject({ ok: false, errors: [expect.stringContaining("labor hours")] });
+  });
+
   it("flags requested systems that no pattern role covers", async () => {
     const { selection } = await pipeline({ functional_systems: ["alarm panel", "pool automation"] });
     expect(selection.unresolved).toEqual(expect.arrayContaining([expect.objectContaining({ item: "pool automation", escalate: true })]));
@@ -153,7 +183,7 @@ describe("materialize → compile → bind → validate", () => {
 
   it("blocks without a commercial policy and below the minimum margin", async () => {
     expect((await pipeline({}, testPattern(), null)).validation.findings.map((f) => f.code)).toContain("policy");
-    const strict = { ...POLICY, policy: { ...POLICY.policy, margin: { minimum_gross_margin_pct: 60 } } };
+    const strict = { ...POLICY, policy: { ...POLICY.policy, margin: { residential_min_gross_margin_pct: 60, commercial_min_gross_margin_pct: 60 } } };
     const r = await pipeline({}, testPattern(), strict);
     expect(r.validation.ok).toBe(false);
     expect(r.validation.findings.map((f) => f.code)).toContain("margin_exception");
@@ -197,7 +227,7 @@ describe("compiler rejections", () => {
     const { pattern, admitted, selection } = await setup();
     const noEvidence = new Map(admitted);
     noEvidence.delete(IDS.panel);
-    expect(compile(selection, noEvidence, pattern)).toMatchObject({ ok: false, errors: [expect.stringContaining("no admitted D-Tools evidence")] });
+    expect(compile(selection, noEvidence, pattern)).toMatchObject({ ok: false, errors: expect.arrayContaining([expect.stringContaining("no admitted D-Tools evidence")]) });
 
     const swapped = structuredClone(selection);
     swapped.lines[0]!.record_id = IDS.keypad;

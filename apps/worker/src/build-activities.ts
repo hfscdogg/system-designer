@@ -187,6 +187,11 @@ export function createBuildStage(deps: BuildDeps) {
         priced_cents_with_cost: proposal.internal.priced_cents_with_cost,
         gross_margin_pct: proposal.internal.gross_margin_pct,
         lines_without_cost: proposal.internal.lines_without_cost,
+        market: proposal.market,
+        minimum_gross_margin_pct: proposal.internal.minimum_gross_margin_pct,
+        mix: proposal.internal.mix,
+        labor: proposal.labor,
+        parts: proposal.parts,
         lines: proposal.sections.flatMap((sec) =>
           sec.lines.map((l) => ({ role: l.role, record_id: l.record_id, quantity: l.quantity, unit_price_cents: l.unit_price_cents, unit_cost_cents: l.unit_cost_cents })),
         ),

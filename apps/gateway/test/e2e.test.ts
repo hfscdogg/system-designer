@@ -120,7 +120,7 @@ describe("Google Chat → scope approval vertical slice", () => {
     expect(t.statusCard()?.note).toBe("Held for internal review — not sent to the customer.");
     const summary = t.texts().find((x) => x.startsWith("Proposal validated"));
     expect(summary).toContain("Proposal validated for Smith Family.");
-    expect(summary).toContain("Priced scope to date: $2,515.00");
+    expect(summary).toContain("Priced scope to date: $3,099.00");
 
     const events = (await t.store.listEvents(runs[0]!.id)).map((e) => e.type);
     expect(events).toEqual(

@@ -1,7 +1,7 @@
 {
   "schema": "architecture_pattern_v1",
   "pattern": "security_modernization",
-  "version": "2026-10-07",
+  "version": "2026-10-07.2",
   "title": "Security modernization",
   "applies_when_any": ["intrusion_security"],
   "roles": [
@@ -27,6 +27,8 @@
     { "category": "monitoring_activation", "label": "Monitoring activation", "product_id": null },
     { "category": "training", "label": "Client training", "product_id": null }
   ],
+  "labor": { "labor_type": "07LABOR1MAN", "base_hours": 2.5, "hours_per_device": 0.5, "covers": ["design", "removal", "installation", "programming", "testing", "commissioning", "monitoring_activation", "training", "project_management"], "basis": "77 Livewire IQ security projects since 2024 averaged 2.4 hours plus 0.43 hours per device; rounded up to 2.5 plus 0.5" },
+  "parts": { "product_id": "141236a5-8780-493e-a20d-106b7f71c5b4", "label": "Installation parts and materials" },
   "assumptions": [
     "Existing wiring paths are usable where devices are replaced.",
     "Power and a network or cellular signal are available at the equipment location.",

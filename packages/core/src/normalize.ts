@@ -115,6 +115,7 @@ export function normalizeExtraction(input: ScopeExtraction): NormalizedExtractio
       postal_code: nullableClean(input.property.postal_code),
     },
     project_type: nullableClean(input.project_type),
+    market: input.market,
     room_types: list(input.room_types),
     functional_systems: normalizeFunctionalSystems(input.functional_systems),
     requested_changes: list(input.requested_changes),

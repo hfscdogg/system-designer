@@ -1,5 +1,5 @@
 import type { ScopeDraftV1 } from "@sd/core";
-import type { PatternSpec, RoleSpec } from "./pattern.ts";
+import { laborHours, type PatternSpec, type RoleSpec } from "./pattern.ts";
 
 /**
  * Deterministic materializer (PRD §13.2): approved scope + approved pattern →
@@ -23,6 +23,9 @@ export interface Selection {
   pattern_version: string;
   lines: SelectionLine[];
   services: Array<{ category: string; record_id: string; quantity: 1 }>;
+  /** Project labor estimate; null when the pattern has no labor model. */
+  labor: { labor_type: string; hours: number; devices: number; covers: string[] } | null;
+  parts: { record_id: string } | null;
   requirements: Array<{ system: string; classification: Classification; roles: string[]; note: string }>;
   allowances: Array<{ label: string; reason: string }>;
   unresolved: Array<{ item: string; role: string | null; reason: string; escalate: boolean }>;
@@ -75,8 +78,15 @@ export function materialize(scope: ScopeDraftV1, pattern: PatternSpec): Selectio
     });
   }
 
+  const devices = lines.reduce((n, l) => n + l.quantity, 0);
+  const labor: Selection["labor"] =
+    pattern.labor && devices > 0
+      ? { labor_type: pattern.labor.labor_type, hours: laborHours(pattern.labor, devices), devices, covers: pattern.labor.covers }
+      : null;
+
   const services: Selection["services"] = [];
   for (const category of scope.service_categories) {
+    if (labor?.covers.includes(category)) continue;
     const spec = pattern.services.find((s) => s.category === category);
     if (spec?.product_id) services.push({ category, record_id: spec.product_id, quantity: 1 });
     else allowances.push({ label: spec?.label ?? category, reason: "no authenticated price; shown as a TBD allowance outside committed totals" });
@@ -102,6 +112,8 @@ export function materialize(scope: ScopeDraftV1, pattern: PatternSpec): Selectio
     pattern_version: pattern.version,
     lines,
     services,
+    labor,
+    parts: pattern.parts && lines.length ? { record_id: pattern.parts.product_id } : null,
     requirements,
     allowances,
     unresolved,

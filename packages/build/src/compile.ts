@@ -2,7 +2,7 @@ import { z } from "zod";
 import { findAuthorityFields } from "@sd/core";
 import type { AdmittedProduct } from "./catalog.ts";
 import type { Selection } from "./materialize.ts";
-import type { PatternSpec } from "./pattern.ts";
+import { laborHours, type PatternSpec } from "./pattern.ts";
 
 /**
  * Compiler (PRD §13.3): validate a selection against the admitted catalog and
@@ -27,6 +27,11 @@ const SelectionSchema = z
         .strict(),
     ),
     services: z.array(z.object({ category: z.string(), record_id: z.string(), quantity: z.literal(1) }).strict()),
+    labor: z
+      .object({ labor_type: z.string(), hours: z.number().positive(), devices: z.number().int().positive(), covers: z.array(z.string()) })
+      .strict()
+      .nullable(),
+    parts: z.object({ record_id: z.string() }).strict().nullable(),
     requirements: z.array(
       z.object({ system: z.string(), classification: z.enum(["supported", "allowance", "unresolved"]), roles: z.array(z.string()), note: z.string() }).strict(),
     ),
@@ -64,12 +69,31 @@ export interface DraftService {
   evidence_sha256: string;
 }
 
+export interface DraftLabor {
+  labor_type: string;
+  hours: number;
+  devices: number;
+  covers: string[];
+  basis: string;
+}
+
+export interface DraftParts {
+  record_id: string;
+  label: string;
+  brand: string;
+  model: string;
+  unit_price_cents: number;
+  evidence_sha256: string;
+}
+
 export interface ProposalDraft {
   schema: "proposal_draft_v1";
   pattern: string;
   pattern_version: string;
   lines: DraftLine[];
   services: DraftService[];
+  labor: DraftLabor | null;
+  parts: DraftParts | null;
   requirements: Selection["requirements"];
   allowances: Selection["allowances"];
   unresolved: Selection["unresolved"];
@@ -151,6 +175,35 @@ export function compile(raw: unknown, catalog: Map<string, AdmittedProduct>, pat
     });
   }
 
+  // Labor must be the pattern's own estimate for the priced devices: never a free number.
+  let labor: DraftLabor | null = null;
+  if (sel.labor) {
+    const spec = pattern.labor;
+    const devices = lines.reduce((n, l) => n + l.quantity, 0);
+    if (!spec || spec.labor_type !== sel.labor.labor_type) errors.push("labor does not use the pattern's labor type");
+    else if (sel.labor.devices !== devices || sel.labor.hours !== laborHours(spec, devices)) errors.push("labor hours do not match the pattern estimate for the priced devices");
+    else if (sel.labor.covers.join() !== spec.covers.join()) errors.push("labor covers different services than the pattern");
+    else labor = { ...sel.labor, basis: spec.basis };
+  }
+
+  let parts: DraftParts | null = null;
+  if (sel.parts) {
+    const product = catalog.get(sel.parts.record_id);
+    if (!pattern.parts || pattern.parts.product_id !== sel.parts.record_id) errors.push("parts do not use the pattern's parts record");
+    else if (!product) errors.push(`parts record ${sel.parts.record_id} has no admitted D-Tools evidence in this run`);
+    else if (product.unit_price_cents <= 0) errors.push("parts record has no positive unit price");
+    else {
+      parts = {
+        record_id: product.record_id,
+        label: pattern.parts.label,
+        brand: product.brand,
+        model: product.model,
+        unit_price_cents: product.unit_price_cents,
+        evidence_sha256: product.evidence.sha256,
+      };
+    }
+  }
+
   // Critical role coverage: every critical role the selection implies is priced or explicitly unresolved.
   for (const req of sel.requirements) {
     for (const roleName of req.roles) {
@@ -176,6 +229,8 @@ export function compile(raw: unknown, catalog: Map<string, AdmittedProduct>, pat
       pattern_version: sel.pattern_version,
       lines,
       services,
+      labor,
+      parts,
       requirements: sel.requirements,
       allowances: sel.allowances,
       unresolved: sel.unresolved,

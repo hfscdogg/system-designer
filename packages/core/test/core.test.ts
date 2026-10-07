@@ -86,6 +86,13 @@ describe("blockers and receipts", () => {
     expect(computeBlockers(completeExtraction())).toEqual([]);
   });
 
+  it("asks whether the job is residential or commercial only when the request does not say", () => {
+    expect(computeBlockers(normalizeExtraction(completeExtraction({ market: "not_provided" })).scope).map((b) => b.field)).toEqual(["market"]);
+    const r = receiptFor(completeExtraction({ market: "commercial" }));
+    expect(r.lines).toContain("Market: commercial");
+    expect(r.scope?.market).toBe("commercial");
+  });
+
   it("asks about existing smoke/CO detectors only when fire or CO detection is in scope", () => {
     const fire = normalizeExtraction(completeExtraction({ existing_detectors: "not_provided" })).scope;
     expect(computeBlockers(fire).map((b) => b.field)).toEqual(["existing_detectors"]);

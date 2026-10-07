@@ -34,6 +34,9 @@ export const ExistingEquipmentSchema = z
  */
 export const EXISTING_DETECTORS = ["none", "keep_and_monitor", "replace"] as const;
 
+/** Residential or commercial; sets which margin target applies. */
+export const MARKETS = ["residential", "commercial"] as const;
+
 export const BudgetSchema = z
   .object({
     status: z.enum(["not_provided", "unknown", "known"]),
@@ -53,6 +56,7 @@ export const ScopeExtractionSchema = z
     client: z.string().nullable(),
     property: PropertySchema,
     project_type: z.string().nullable(),
+    market: z.enum(["not_provided", ...MARKETS]),
     room_types: z.array(z.string()),
     functional_systems: z.array(z.string()),
     requested_changes: z.array(z.string()),
@@ -80,6 +84,7 @@ export const ClarificationPatchSchema = z
     client: z.string().nullable(),
     property: PropertySchema.nullable(),
     project_type: z.string().nullable(),
+    market: z.enum(MARKETS).nullable(),
     room_types: z.array(z.string()).nullable(),
     functional_systems: z.array(z.string()).nullable(),
     requested_changes: z.array(z.string()).nullable(),
@@ -105,6 +110,7 @@ export const ScopeDraftV1Schema = z
     client: z.string().min(1),
     property: z.string().min(1),
     project_type: z.string().min(1),
+    market: z.enum(MARKETS),
     room_types: z.array(z.string()).min(1),
     functional_systems: z.array(z.string()).min(1),
     requested_changes: z.array(z.string()).min(1),
@@ -245,6 +251,7 @@ export function applyClarification(base: ScopeExtraction, patch: ClarificationPa
     }
   }
   if (patch.project_type !== null) next.project_type = patch.project_type;
+  if (patch.market !== null) next.market = patch.market;
   if (patch.room_types !== null) next.room_types = patch.room_types;
   if (patch.functional_systems !== null) next.functional_systems = patch.functional_systems;
   if (patch.requested_changes !== null) next.requested_changes = patch.requested_changes;

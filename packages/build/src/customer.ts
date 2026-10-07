@@ -47,7 +47,11 @@ export function customerView(p: Proposal): CustomerProposal {
       })),
       subtotal_cents: s.subtotal_cents,
     })),
-    services: p.services.map((s) => s.label),
+    services: [
+      ...p.services.map((s) => s.label),
+      ...(p.labor ? [`${labelFor(p.labor.included)} (estimated ${p.labor.hours} hours)`] : []),
+      ...(p.parts ? [p.parts.label] : []),
+    ],
     allowances: p.allowances.map((a) => ({ label: a.label, note: "Allowance — TBD, not included in totals" })),
     assumptions: p.assumptions,
     exclusions: p.exclusions,
@@ -59,6 +63,24 @@ export function customerView(p: Proposal): CustomerProposal {
       total_cents: p.commercial.total_cents,
     },
   };
+}
+
+const SERVICE_NAMES: Record<string, string> = {
+  design: "design",
+  removal: "removal",
+  installation: "installation",
+  programming: "programming",
+  testing: "testing",
+  commissioning: "commissioning",
+  monitoring_activation: "monitoring activation",
+  training: "client training",
+  project_management: "project management",
+};
+
+function labelFor(covers: string[]): string {
+  const names = covers.map((c) => SERVICE_NAMES[c] ?? c.replace(/_/g, " "));
+  const text = names.length > 1 ? `${names.slice(0, -1).join(", ")} and ${names.at(-1)}` : names[0]!;
+  return `Labor: ${text}`;
 }
 
 const FORBIDDEN_KEY = /(cost|margin|markup|commission|unit_price|extended|internal|discount|record_id|evidence|approval)/i;

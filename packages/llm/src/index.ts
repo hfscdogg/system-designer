@@ -32,6 +32,7 @@ Rules:
   budget.status "unknown", target_installation_date "unknown", existing_equipment.status "unknown".
 - budget.status "not_provided" with amount_usd null when the budget is not mentioned.
 - existing_equipment.status: "none" if there is none, "described" if they say what to keep/replace/remove, "not_provided" if not mentioned.
+- market: "residential" for homes, condos and other residences; "commercial" for offices, stores, restaurants, schools and other businesses; "not_provided" only when the message gives no clear sign of either.
 - existing_detectors: for existing hard-wired smoke/CO detectors, "keep_and_monitor" if they stay and should be monitored, "replace" if new detectors replace them, "none" if there are none, "not_provided" if not mentioned.
 - service_categories are labor/services only (design, prewire, installation, programming, testing, commissioning, training, removal, project management). Equipment goes in functional_systems or requested_changes, never in service_categories.
 - functional_systems: the systems involved, in the salesperson's words.
@@ -47,6 +48,7 @@ Rules:
 - For list fields, return the complete updated list (existing items plus changes).
 - For property, fill only the address components the answer states; leave the others null.
 - "unknown", "TBD", "not sure" are valid explicit answers: budget.status "unknown", target_installation_date "unknown", existing_equipment.status "unknown". If the size is said to be unknown set size_is_unknown true.
+- market: "residential" or "commercial" when the answer says which.
 - existing_detectors: "keep_and_monitor", "replace" or "none" when the answer says what happens to existing smoke/CO detectors.
 - Never infer values the answer does not state.
 - If the answer cannot be mapped to these fields, set unmapped true and leave the fields null.
