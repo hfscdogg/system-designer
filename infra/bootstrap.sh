@@ -12,6 +12,12 @@ REGION="${REGION:-us-east4}"
 STATE_BUCKET="${PROJECT_ID}-sd-tfstate"
 HERE="$(cd "$(dirname "$0")" && pwd)"
 
+# Cloud Shell's "command not found" handler exits 0, so check up front instead of relying on set -e.
+if ! type -P terraform >/dev/null; then
+  echo "Terraform is not installed. Install it (https://developer.hashicorp.com/terraform/install), then re-run." >&2
+  exit 1
+fi
+
 echo "==> Project ${PROJECT_ID}, region ${REGION}"
 gcloud config set project "${PROJECT_ID}" >/dev/null
 
