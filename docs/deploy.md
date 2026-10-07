@@ -47,14 +47,20 @@ Everything runs in the Google Cloud project you created, in **us-east4**. You ru
 6. **Point the Chat app at the gateway.** The CI run's staging job log, and the `release-staging` artifact, show `chat_endpoint`. Paste it into Google Chat API → Configuration → HTTP endpoint URL.
 7. **Onboard yourself.**
    1. DM the app. It replies "not set up yet", which proves the whole path works.
-   2. Run the admin tool as a one-off job:
+   2. Run the admin tool as a one-off job, then read its output from the job's logs:
       ```bash
       gcloud run jobs execute sd-migrate-staging --region us-east4 --wait \
         --args apps/gateway/src/admin.ts,pending
-      gcloud run jobs execute sd-migrate-staging --region us-east4 --wait \
-        --args apps/gateway/src/admin.ts,add-person,henry,"Henry Clifford",requester,admin,users/<id>,henry@getlivewire.com
+      gcloud logging read 'resource.type="cloud_run_job" AND resource.labels.job_name="sd-migrate-staging"' \
+        --freshness 10m --limit 10 --format 'value(textPayload)'
       ```
-   3. Read the output in the job's logs.
+   3. Add each person with the `users/…` ID from that list. `^|^` makes gcloud split arguments on `|`, so `requester,admin` stays one value:
+      ```bash
+      gcloud run jobs execute sd-migrate-staging --region us-east4 --wait \
+        --args="^|^apps/gateway/src/admin.ts|add-person|henry|Henry Clifford|requester,admin|users/<id>|henry@getlivewire.com"
+      ```
+      To add someone before they message the app, get their numeric ID from the Admin SDK `users.get` method
+      (API Explorer, `userKey` = their email, `fields` = `id`). The ID in the Admin console URL is a different value.
 
 ## Claude API access without a key (Workload Identity Federation)
 
