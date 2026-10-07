@@ -2,6 +2,7 @@ name: Deploy
 
 # One image per commit, deployed by digest: staging automatically, production after approval.
 on:
+  # Runs after CI succeeds on main; can also be started by hand (Actions → Deploy → Run workflow).
   workflow_run:
     workflows: [CI]
     types: [completed]
