@@ -11,6 +11,22 @@ import {
 import type { BlobStore } from "./blobs.ts";
 import type { Db } from "./db.ts";
 
+export interface MarginException {
+  id: string;
+  run_id: string;
+  proposal_sha256: string;
+  market: string;
+  gross_margin_pct: number;
+  minimum_pct: number;
+  decision: "approved" | "declined" | null;
+  decided_by: string | null;
+  decided_by_name: string | null;
+}
+
+export function marginExceptionIdFor(runId: string): string {
+  return `MX-${runId.replace(/[^a-zA-Z0-9]/g, "").slice(0, 10).toUpperCase()}`;
+}
+
 export interface Person {
   id: string;
   display_name: string;
@@ -136,6 +152,11 @@ export class Store {
        WHERE ci.platform = $1 AND ci.provider_user_id = $2 AND p.active`,
       [platform, providerUserId],
     );
+    return res.rows[0] ?? null;
+  }
+
+  async resolvePersonById(personId: string): Promise<Person | null> {
+    const res = await this.db.query<Person>(`SELECT id, display_name, roles, active FROM persons WHERE id = $1`, [personId]);
     return res.rows[0] ?? null;
   }
 
@@ -614,6 +635,91 @@ export class Store {
     );
     await this.event(this.db, null, "commercial_policy_published", setBy, { version: res.rows[0]!.version, reason });
     return res.rows[0]!.version;
+  }
+
+  // ---------- direct conversations ----------
+
+  /** Remember a person's 1:1 conversation with the app, so admins can be reached for decisions. */
+  async rememberDirectSpace(platform: string, providerUserId: string, spaceId: string): Promise<void> {
+    await this.db.query(
+      `UPDATE channel_identities SET dm_space_id = $3 WHERE platform = $1 AND provider_user_id = $2 AND dm_space_id IS DISTINCT FROM $3`,
+      [platform, providerUserId, spaceId],
+    );
+  }
+
+  /** Active admins the app can reach directly on a platform. */
+  async adminDirectSpaces(platform: string): Promise<Array<{ person_id: string; display_name: string; dm_space_id: string }>> {
+    const res = await this.db.query<{ person_id: string; display_name: string; dm_space_id: string }>(
+      `SELECT p.id AS person_id, p.display_name, ci.dm_space_id FROM channel_identities ci
+       JOIN persons p ON p.id = ci.person_id
+       WHERE ci.platform = $1 AND ci.dm_space_id IS NOT NULL AND p.active AND 'admin' = ANY(p.roles)
+       ORDER BY p.id`,
+      [platform],
+    );
+    return res.rows;
+  }
+
+  // ---------- margin exceptions ----------
+
+  /** Record that a run's bound proposal is below its margin floor. Idempotent per run. */
+  async requestMarginException(input: { runId: string; proposalSha256: string; market: string; grossMarginPct: number; minimumPct: number }): Promise<MarginException> {
+    const id = marginExceptionIdFor(input.runId);
+    await this.db.query(
+      `INSERT INTO margin_exceptions (id, run_id, proposal_sha256, market, gross_margin_pct, minimum_pct)
+       VALUES ($1, $2, $3, $4, $5, $6) ON CONFLICT (run_id) DO NOTHING`,
+      [id, input.runId, input.proposalSha256, input.market, input.grossMarginPct, input.minimumPct],
+    );
+    const ex = (await this.getMarginException(input.runId))!;
+    if (ex.proposal_sha256 !== input.proposalSha256) throw new IntegrityError(`margin exception for ${input.runId} is for a different proposal`);
+    await this.event(this.db, input.runId, "margin_exception_requested", "system", { exceptionId: ex.id, grossMarginPct: input.grossMarginPct, minimumPct: input.minimumPct, market: input.market });
+    return ex;
+  }
+
+  async getMarginException(runId: string): Promise<MarginException | null> {
+    const res = await this.db.query<MarginException>(
+      `SELECT e.id, e.run_id, e.proposal_sha256, e.market, e.gross_margin_pct::float8 AS gross_margin_pct, e.minimum_pct::float8 AS minimum_pct,
+              d.decision, d.decided_by, p.display_name AS decided_by_name
+       FROM margin_exceptions e
+       LEFT JOIN margin_exception_decisions d ON d.exception_id = e.id
+       LEFT JOIN persons p ON p.id = d.decided_by
+       WHERE e.run_id = $1`,
+      [runId],
+    );
+    return res.rows[0] ?? null;
+  }
+
+  /** An admin's decision, made once and atomically. The database also refuses non-admins. */
+  async decideMarginException(input: {
+    exceptionId: string;
+    deciderPersonId: string;
+    decision: "approved" | "declined";
+    providerEventId: string;
+    method: "button" | "text";
+  }): Promise<{ ok: true; runId: string; decision: "approved" | "declined"; duplicate: boolean } | { ok: false; reason: string; runId: string | null }> {
+    const result = await this.db.transaction(async (tx) => {
+      const ex = (await tx.query<{ id: string; run_id: string }>(`SELECT id, run_id FROM margin_exceptions WHERE id = $1 FOR UPDATE`, [input.exceptionId])).rows[0];
+      if (!ex) return { ok: false as const, reason: "unknown margin exception", runId: null };
+      const decider = (await tx.query<{ roles: string[] }>(`SELECT roles FROM persons WHERE id = $1 AND active`, [input.deciderPersonId])).rows[0];
+      if (!decider?.roles.includes("admin")) return { ok: false as const, reason: "only an admin can decide a margin exception", runId: ex.run_id };
+      const prior = (await tx.query<{ decision: "approved" | "declined" }>(`SELECT decision FROM margin_exception_decisions WHERE exception_id = $1`, [ex.id])).rows[0];
+      if (prior) {
+        return prior.decision === input.decision
+          ? { ok: true as const, runId: ex.run_id, decision: prior.decision, duplicate: true }
+          : { ok: false as const, reason: `already ${prior.decision}`, runId: ex.run_id };
+      }
+      const run = (await tx.query<RunRecord>(`SELECT * FROM runs WHERE id = $1 FOR UPDATE`, [ex.run_id])).rows[0]!;
+      if (run.state !== "AWAITING_MARGIN_APPROVAL") return { ok: false as const, reason: `run is ${run.state}`, runId: ex.run_id };
+      await tx.query(
+        `INSERT INTO margin_exception_decisions (exception_id, decision, decided_by, provider_event_id, method) VALUES ($1, $2, $3, $4, $5)`,
+        [ex.id, input.decision, input.deciderPersonId, input.providerEventId, input.method],
+      );
+      await this.event(tx, ex.run_id, `margin_exception_${input.decision}`, input.deciderPersonId, { exceptionId: ex.id, method: input.method });
+      return { ok: true as const, runId: ex.run_id, decision: input.decision, duplicate: false };
+    });
+    if (!result.ok) {
+      await this.event(this.db, result.runId, "margin_decision_rejected", input.deciderPersonId, { exceptionId: input.exceptionId, reason: result.reason });
+    }
+    return result;
   }
 
   // ---------- audit ----------

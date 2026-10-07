@@ -11,7 +11,7 @@ import {
 } from "@sd/core";
 import type { ChannelAdapter } from "@sd/channels";
 import type { ClarificationInterpreter, ScopeExtractor } from "@sd/llm";
-import type { PatternSpec } from "@sd/build";
+import { formatUsd, type PatternSpec, type Proposal } from "@sd/build";
 import type { DToolsReader } from "@sd/dtools";
 import { IntegrityError, threadOf, type RunRecord, type Store } from "@sd/store";
 import { createBuildStage } from "./build-activities.ts";
@@ -170,6 +170,42 @@ export function createActivities(deps: ActivityDeps): RunActivities {
     async notify({ runId, text, key }) {
       const run = await store.getRun(runId);
       await adapterFor(run).post(threadOf(run), { kind: "text", text }, key);
+    },
+
+    async requestMarginApproval({ runId, exceptionId, reason }) {
+      const run = await store.getRun(runId);
+      const exception = await store.getMarginException(runId);
+      if (exception?.id !== exceptionId) throw new IntegrityError(`margin exception ${exceptionId} does not belong to ${runId}`);
+      const proposal = await store.readArtifact<Proposal>(runId, "bind", "proposal");
+      if (!proposal) throw new IntegrityError(`missing bind/proposal for ${runId}`);
+      const requester = await store.resolvePersonById(run.person_id);
+      const mix = proposal.internal.mix;
+      const share = (k: keyof typeof mix) => `${k} ${mix[k].share_pct ?? "–"}% of total at ${mix[k].margin_pct ?? "–"}% margin`;
+      const lines = [
+        `Requested by ${requester?.display_name ?? run.person_id} for ${proposal.client}, ${proposal.property}.`,
+        `${proposal.commercial.label}: ${formatUsd(proposal.commercial.subtotal_cents)} (${proposal.market}).`,
+        `Gross margin ${exception.gross_margin_pct}% vs the ${exception.minimum_pct}% ${exception.market} floor.`,
+        `Mix: ${share("equipment")}; ${share("labor")}; ${share("parts")}.`,
+        "Approving is the written exception the 2026 sales comp policy requires; the PDF is then posted to the requester.",
+      ];
+      const admins = await store.adminDirectSpaces(run.platform);
+      for (const admin of admins) {
+        await adapterFor(run).post(
+          { platform: run.platform, spaceId: admin.dm_space_id, threadId: admin.dm_space_id },
+          { kind: "margin_exception", exceptionId, title: `Margin exception ${exceptionId}`, lines },
+          `${exceptionId}:admin:${admin.person_id}`,
+        );
+      }
+      const who = admins.map((x) => x.display_name).join(" or ");
+      const text = admins.length
+        ? `${reason}. I've asked ${who} to approve the exception; the PDF follows if it's approved. Nothing was sent to a customer.`
+        : `${reason}. No admin can be reached yet: an admin needs to send System Designer a direct message once. The run is held; nothing was sent to a customer.`;
+      await adapterFor(run).post(threadOf(run), { kind: "text", text }, `${exceptionId}:requester`);
+    },
+
+    async findMarginDecision({ runId }) {
+      const exception = await store.getMarginException(runId);
+      return exception?.decision ? { exceptionId: exception.id, decision: exception.decision, decidedBy: exception.decided_by_name ?? exception.decided_by! } : null;
     },
 
     async markOutcome({ runId, state, reason }) {

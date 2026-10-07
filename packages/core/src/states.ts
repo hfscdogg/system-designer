@@ -13,6 +13,7 @@ export const RUN_STATES = [
   "SELECTION_READY",
   "COMPILED",
   "BOUND",
+  "AWAITING_MARGIN_APPROVAL",
   "VALIDATED",
   "RENDERED",
   "PREFLIGHT_PASSED",
@@ -46,7 +47,9 @@ const FORWARD: Partial<Record<RunState, RunState[]>> = {
   CATALOG_EVIDENCE_ADMITTED: ["SELECTION_READY"],
   SELECTION_READY: ["COMPILED"],
   COMPILED: ["BOUND"],
-  BOUND: ["VALIDATED"],
+  BOUND: ["VALIDATED", "AWAITING_MARGIN_APPROVAL"],
+  // Below the margin floor: held until an admin approves the exception (2026 sales comp policy).
+  AWAITING_MARGIN_APPROVAL: ["VALIDATED"],
   VALIDATED: ["RENDERED"],
   RENDERED: ["PREFLIGHT_PASSED"],
   PREFLIGHT_PASSED: ["READY_HELD"],

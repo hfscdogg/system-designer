@@ -14,13 +14,15 @@ export interface CurrentReceipt {
 export type RunSignal =
   | { type: "clarification"; intakeId: string }
   | { type: "approved"; receiptId: string; scopeHash: string; approvalId: string }
-  | { type: "invalidate"; reason: string };
+  | { type: "invalidate"; reason: string }
+  | { type: "margin_decision"; exceptionId: string; decision: "approved" | "declined" };
 
 export type SignalDecision =
   | { action: "clarify"; intakeId: string }
   | { action: "approve"; approvalId: string }
   | { action: "reject"; reason: string }
-  | { action: "stop"; reason: string };
+  | { action: "stop"; reason: string }
+  | { action: "ignore" };
 
 export function decideSignal(current: CurrentReceipt, signal: RunSignal): SignalDecision {
   switch (signal.type) {
@@ -28,6 +30,9 @@ export function decideSignal(current: CurrentReceipt, signal: RunSignal): Signal
       return { action: "stop", reason: signal.reason };
     case "clarification":
       return { action: "clarify", intakeId: signal.intakeId };
+    case "margin_decision":
+      // Only meaningful while a build is held for a margin exception.
+      return { action: "ignore" };
     case "approved":
       if (current.status !== "AWAITING_APPROVAL") {
         return { action: "reject", reason: "receipt has blocking questions and cannot be approved" };

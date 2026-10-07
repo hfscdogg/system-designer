@@ -17,7 +17,7 @@ import {
   type ProposalDraft,
   type ValidationResult,
 } from "@sd/build";
-import { RUN_STATES, sha256Hex, type RunState, type ScopeDraftV1 } from "@sd/core";
+import { hashCanonical, RUN_STATES, sha256Hex, type RunState, type ScopeDraftV1 } from "@sd/core";
 import type { OutboundFile } from "@sd/channels";
 import { loadBrand, preflightPdf, renderProposalHtml, type PreflightResult } from "@sd/render";
 import type { CustomerProposal } from "@sd/build";
@@ -168,7 +168,29 @@ export function createBuildStage(deps: BuildDeps) {
       const a = await approved(runId);
       const proposal = await artifact<Proposal>(runId, "bind", "proposal");
       const policy = await artifact<PolicyRecord | { none: true }>(runId, "bind", "policy");
-      const result: ValidationResult = validateProposal(proposal, a.scope, a.scopeHash, await admittedCatalog(runId), "none" in policy ? null : policy);
+      let result: ValidationResult = validateProposal(proposal, a.scope, a.scopeHash, await admittedCatalog(runId), "none" in policy ? null : policy);
+
+      // Below the market's margin floor, and nothing else blocking: an admin decides (2026 sales comp policy).
+      const margin = result.findings.find((f) => f.code === "margin_exception");
+      if (margin && !result.findings.some((f) => f.severity === "block" && f.code !== "margin_exception")) {
+        const proposalSha256 = hashCanonical(proposal);
+        const exception = await store.getMarginException(runId);
+        if (exception?.decision === "declined") return { ok: false, reason: `margin exception declined by ${exception.decided_by_name}` };
+        if (exception?.decision === "approved" && exception.proposal_sha256 === proposalSha256) {
+          const note = `${margin.message.replace(/; needs an approved exception$/, "")}; exception ${exception.id} approved by ${exception.decided_by_name}`;
+          result = { ok: true, findings: result.findings.map((f) => (f === margin ? { code: "margin_exception_approved", severity: "warn", message: note } : f)) };
+        } else {
+          const requested = await store.requestMarginException({
+            runId,
+            proposalSha256,
+            market: proposal.market,
+            grossMarginPct: proposal.internal.gross_margin_pct!,
+            minimumPct: proposal.internal.minimum_gross_margin_pct!,
+          });
+          await advance(runId, "AWAITING_MARGIN_APPROVAL", { exceptionId: requested.id });
+          return { ok: false, outcome: "MARGIN_EXCEPTION", exceptionId: requested.id, reason: margin.message };
+        }
+      }
       await store.publishArtifact(runId, "validate", "result", result);
       const run = await store.getRun(runId);
       for (const [i, finding] of result.findings.filter((f) => f.severity === "escalate").entries()) {

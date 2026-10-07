@@ -50,12 +50,12 @@ interface BuildOptions {
   catalog?: Record<string, unknown>;
   dtools?: DToolsReader & { calls: string[] };
   patterns?: PatternSpec[];
-  policy?: boolean;
+  policy?: boolean | Record<string, unknown>;
 }
 
 async function setup(extractions: unknown[] = [], patches: unknown[] = [], build: BuildOptions = {}) {
   const { store, db } = await testStore();
-  if (build.policy !== false) await store.publishPolicy(TEST_POLICY, "henry", "test policy");
+  if (build.policy !== false) await store.publishPolicy(typeof build.policy === "object" ? build.policy : TEST_POLICY, "henry", "test policy");
   const chat = new FakeChannelAdapter();
   const extractor: ScopeExtractor = { extract: async () => ({ raw: extractions.shift(), model: "fake-model" }) };
   const interpreter: ClarificationInterpreter = { interpret: async () => ({ raw: patches.shift(), model: "fake-model" }) };
@@ -367,5 +367,82 @@ describe("Google Chat → scope approval vertical slice", () => {
     });
     expect(JSON.stringify(res.body)).toContain("approved by Zack Reichert");
     expect((await t.store.listRunsForPerson("zack"))[0]!.state).toBe("READY_HELD");
+  });
+});
+
+describe("margin exceptions (2026 sales comp policy)", () => {
+  const STRICT = { ...TEST_POLICY, margin: { residential_min_gross_margin_pct: 90, commercial_min_gross_margin_pct: 90 } };
+  const HENRY_DM = "spaces/HENRY-DM";
+
+  function marginClick(exceptionId: string, decision: "approved" | "declined", user = "users/henry") {
+    return {
+      type: "CARD_CLICKED",
+      eventTime: `2026-10-05T13:0${++seq % 10}:00Z`,
+      space: { name: user === "users/henry" ? HENRY_DM : "spaces/ZACK-DM", spaceType: "DIRECT_MESSAGE" },
+      message: { name: `${HENRY_DM}/messages/app-y` },
+      user: { name: user, type: "HUMAN" },
+      common: { invokedFunction: "margin_exception", parameters: { exception_id: exceptionId, decision } },
+    };
+  }
+
+  async function heldRun(t: Awaited<ReturnType<typeof setup>>, adminReachable = true) {
+    if (adminReachable) await t.send(chatMessage("help", { user: "users/henry", space: HENRY_DM, dm: true }));
+    await t.send(chatMessage("Smith family wants their old alarm modernized…"));
+    const r = t.receipts().at(-1)!;
+    await t.send(click(r.approve!.receiptId, r.approve!.scopeHash));
+    const [run] = await t.store.listRunsForPerson("zack");
+    return run!;
+  }
+
+  const exceptionCards = (t: Awaited<ReturnType<typeof setup>>) =>
+    [...t.chat.messages.values()].filter((m) => m.view.kind === "margin_exception") as Array<{ thread: { spaceId: string }; view: Extract<View, { kind: "margin_exception" }> }>;
+
+  it("holds a build below the floor, asks the admin directly, and posts the PDF once approved", async () => {
+    const t = await setup([completeExtraction()], [], { policy: STRICT });
+    const run = await heldRun(t);
+    expect(run.state).toBe("AWAITING_MARGIN_APPROVAL");
+    expect(t.chat.files).toHaveLength(0);
+
+    const cards = exceptionCards(t);
+    expect(cards).toHaveLength(1);
+    expect(cards[0]!.thread.spaceId).toBe(HENRY_DM);
+    const exceptionId = cards[0]!.view.exceptionId;
+    expect(cards[0]!.view.lines.join("\n")).toMatch(/Gross margin [\d.]+% vs the 90% residential floor/);
+    expect(t.texts().some((x) => x.includes("I've asked Henry Clifford to approve the exception"))).toBe(true);
+    expect(t.statusCard()?.note).toContain("below the 90% residential minimum");
+
+    // The requester cannot approve their own exception, and the database agrees.
+    expect((await t.send(marginClick(exceptionId, "approved", "users/zack"))).body).toEqual({ text: "I can't record that decision: only an admin can decide a margin exception." });
+
+    const res = await t.send(marginClick(exceptionId, "approved"));
+    expect(res.body).toEqual({ text: `✅ Margin exception ${exceptionId} approved by Henry Clifford. The PDF is on its way to the requester.` });
+    await t.workflows.settled(run.id);
+    expect((await t.store.getRun(run.id)).state).toBe("READY_HELD");
+    expect(t.chat.files).toHaveLength(1);
+    const validation = await t.store.readArtifact<{ findings: Array<{ code: string; message: string }> }>(run.id, "validate", "result");
+    expect(validation!.findings).toEqual(expect.arrayContaining([expect.objectContaining({ code: "margin_exception_approved", message: expect.stringContaining("approved by Henry Clifford") })]));
+    expect((await t.send(marginClick(exceptionId, "approved"))).body).toEqual({ text: `${exceptionId} is already approved.` });
+  });
+
+  it("stops the run when an admin declines", async () => {
+    const t = await setup([completeExtraction()], [], { policy: STRICT });
+    const run = await heldRun(t);
+    const exceptionId = exceptionCards(t)[0]!.view.exceptionId;
+    await t.send(chatMessage(`decline exception ${exceptionId}`, { user: "users/henry", space: HENRY_DM, dm: true }));
+    await t.workflows.settled(run.id);
+    expect((await t.store.getRun(run.id)).state).toBe("BLOCKED");
+    expect(t.chat.files).toHaveLength(0);
+    expect(t.texts().some((x) => x.includes("margin exception declined by Henry Clifford"))).toBe(true);
+  });
+
+  it("holds even when no admin can be reached, and accepts a typed approval later", async () => {
+    const t = await setup([completeExtraction()], [], { policy: STRICT });
+    const run = await heldRun(t, false);
+    expect(exceptionCards(t)).toHaveLength(0);
+    expect(t.texts().some((x) => x.includes("No admin can be reached yet"))).toBe(true);
+    const exception = await t.store.getMarginException(run.id);
+    await t.send(chatMessage(`approve exception ${exception!.id}`, { user: "users/henry", space: HENRY_DM, dm: true }));
+    await t.workflows.settled(run.id);
+    expect((await t.store.getRun(run.id)).state).toBe("READY_HELD");
   });
 });

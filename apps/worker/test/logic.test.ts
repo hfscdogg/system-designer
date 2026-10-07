@@ -15,6 +15,8 @@ function fakeActs(overrides: Partial<RunActivities> = {}): RunActivities & { cal
     notify: async ({ text, key }) => void calls.push(`notify:${key}:${text}`),
     markOutcome: async ({ state }) => void calls.push(`outcome:${state}`),
     buildStage: async ({ stage }) => (calls.push(`stage:${stage}`), { ok: true, summary: stage }),
+    requestMarginApproval: async ({ exceptionId }) => void calls.push(`margin_request:${exceptionId}`),
+    findMarginDecision: async () => null,
     ...overrides,
   };
   return Object.assign(acts, { calls });
@@ -102,5 +104,33 @@ describe("runProposal", () => {
     const result = await runProposal({ runId: "r" }, { acts: idle, nextSignal: async () => null });
     expect(result).toEqual({ state: "STALE", reason: "no reply for 14 days" });
     expect(idle.calls).toContain("outcome:STALE");
+  });
+
+  it("holds a margin exception and repeats the stage once a lost decision is reconciled", async () => {
+    let validations = 0;
+    const acts = fakeActs({
+      findCommittedApproval: async () => ({ approvalId: "a1", receiptId: "R-X-1", scopeHash: "h1" }),
+      buildStage: async ({ stage }) => {
+        acts.calls.push(`stage:${stage}`);
+        if (stage === "validate" && ++validations === 1) return { ok: false, outcome: "MARGIN_EXCEPTION", exceptionId: "MX-1", reason: "below floor" };
+        return { ok: true, summary: stage };
+      },
+      findMarginDecision: async () => ({ exceptionId: "MX-1", decision: "approved", decidedBy: "Henry" }),
+    });
+    const result = await runProposal({ runId: "run_1" }, { acts, nextSignal: scripted([null, null]) });
+    expect(result).toMatchObject({ state: "READY_HELD" });
+    expect(acts.calls.filter((c) => c === "stage:validate")).toHaveLength(2);
+    expect(acts.calls).toContain("margin_request:MX-1");
+  });
+
+  it("blocks when the margin exception is declined", async () => {
+    const acts = fakeActs({
+      findCommittedApproval: async () => ({ approvalId: "a1", receiptId: "R-X-1", scopeHash: "h1" }),
+      buildStage: async ({ stage }) =>
+        stage === "validate" ? { ok: false, outcome: "MARGIN_EXCEPTION", exceptionId: "MX-1", reason: "below floor" } : { ok: true, summary: stage },
+      findMarginDecision: async () => ({ exceptionId: "MX-1", decision: "declined", decidedBy: "Henry" }),
+    });
+    const result = await runProposal({ runId: "run_1" }, { acts, nextSignal: scripted([null, { type: "margin_decision", exceptionId: "MX-1", decision: "declined" }]) });
+    expect(result).toEqual({ state: "BLOCKED", reason: "margin exception declined by Henry" });
   });
 });
