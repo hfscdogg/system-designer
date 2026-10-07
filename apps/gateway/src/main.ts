@@ -17,7 +17,7 @@ async function main() {
 
   const server = createServer(async (req, res) => {
     try {
-      if (req.method === "GET" && req.url === "/healthz") {
+      if (req.method === "GET" && req.url === "/health") {
         res.writeHead(200, { "content-type": "application/json" }).end(JSON.stringify({ ok: true, release: store.releaseId }));
         return;
       }
