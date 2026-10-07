@@ -7,15 +7,15 @@
     ".": "./src/index.ts"
   },
   "dependencies": {
-    "@fontsource/fraunces": "^5.3.0",
-    "@fontsource/montserrat": "^5.3.0",
+    "@fontsource/outfit": "^5.3.0",
+    "@fontsource/tinos": "^5.3.0",
     "@sd/build": "workspace:*",
     "@sd/core": "workspace:*",
     "pdfjs-dist": "^6.4.299",
     "playwright-core": "^1.56.1"
   },
   "devDependencies": {
-    "pdf-lib": "^1.17.1",
-    "@sd/dtools": "workspace:*"
+    "@sd/dtools": "workspace:*",
+    "pdf-lib": "^1.17.1"
   }
 }

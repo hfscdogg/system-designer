@@ -76,6 +76,7 @@ export async function preflightPdf(bytes: Uint8Array, expected: PreflightExpecta
     failures.push("an incomplete budget shows a total");
   }
   if (c.tax === "TBD" && !/Tax TBD/.test(all)) failures.push("tax is not shown as TBD");
+  if (!all.includes(`Design Retainer (${c.retainer.pct}%) ${formatUsd(c.retainer.cents)}`)) failures.push(`design retainer ${formatUsd(c.retainer.cents)} not found`);
 
   // Images: exact-model image or a visible pending notice for each item.
   const pendingExpected = expected.customer.sections.flatMap((s) => s.items).filter((i) => "pending" in i.image).length;

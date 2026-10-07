@@ -1,21 +1,29 @@
 {
-  "companyName": "Livewire",
-  "tagline": "High-end home lighting and control",
+  "companyName": "Livewire LLC",
+  "tagline": "technology made simple",
+  "address": ["4900 W Clay St.", "Richmond, VA 23230", "United States"],
+  "website": "www.getlivewire.com",
   "colors": {
-    "primary": "#12120F",
-    "primaryDark": "#0B0B09",
-    "accent": "#F08223",
-    "accentHover": "#D46C13",
-    "textAccent": "#A85200",
-    "ink": "#12120F",
-    "muted": "#5B5B52",
-    "line": "#D8D6CC",
-    "soft": "#FAFAF9",
-    "cream": "#F5EFE6",
-    "pageBackground": "#F4F0E8"
+    "navy": "#01162F",
+    "green": "#0DBB7D",
+    "gray": "#5F6874",
+    "label": "#9AA0A7",
+    "rule": "#E3E6EA",
+    "watermark": "#A85200"
   },
-  "contact": {
-    "email": "hello@getlivewire.com",
-    "website": "getlivewire.com"
+  "copy": {
+    "why": [
+      "At Livewire, we provide a wide range of state-of-the-art technology integration services and prides itself on quality products, quality installation, and excellent customer service. We’ve been making technology simple for our clients for over 20 years.",
+      "Through hard work, honesty, and quality craftsmanship, Livewire has become the premier technology integrator in Central Virginia. Livewire’s installation and service techs have years of experience and a wide range of technological, construction, and electronic certifications. The quality of their craftsmanship is the reason 80% of Livewire’s business comes through customer referrals."
+    ],
+    "warranty": [
+      "Livewire offers a 90 day warranty on all installation and Livewire supplied parts from the date of completed work (client supplied equipment is NOT covered). In addition, Livewire will honor the manufacturer’s warranty on all product and associated labor purchased through our written estimate (parts and labor during 90 day period; parts only beyond 90 days). In the event a service call should be necessary with no defect in workmanship, parts, or product according to the terms above, a minimum fee of $220.00 may be charged upon arrival.",
+      "Note: After initial deposit has been received, any change orders or return requests may be subject to a discretionary restocking fee."
+    ],
+    "terms": [
+      "All labor, parts and materials will be accurately accounted upon completion of the project and the invoice updated prior to final billing. The most frequent instances that may increase the price of a project can be found in Livewire's \"No Surprises Policy\": www.getlivewire.com/nosurprises. Below is our best estimate for the scope of work.",
+      "*** Disclaimer: As a result of ongoing price increases from our suppliers/vendors, this estimate is subject to change until 90% of the total has been paid. ***"
+    ],
+    "budget": "This is a conceptual budget prepared from an initial conversation, so it is roughly right rather than final. The design retainer starts detailed design, after which a final proposal sets exact products, quantities, price and payment terms."
   }
 }

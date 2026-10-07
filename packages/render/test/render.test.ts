@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest";
 import { PDFDocument } from "pdf-lib";
-import { customerView, type CustomerProposal } from "@sd/build";
+import { customerView, formatUsd, type CustomerProposal } from "@sd/build";
 import { sha256Hex } from "@sd/core";
 import { recordedDToolsReader } from "@sd/dtools";
 import { admitProduct, bind, compile, materialize, patternRecordIds, type AdmittedProduct } from "@sd/build";
@@ -53,6 +53,26 @@ describe("PDF + preflight", () => {
     expect(r.failures).toEqual([]);
     expect(r.ok).toBe(true);
     expect(r.pages).toBeGreaterThanOrEqual(1);
+  }, 60_000);
+
+  it("looks like a D-Tools proposal: presenter, priced lines, summary and a 4% design retainer", async () => {
+    const c = await customer();
+    // 4% of the total, or of the priced scope while the total is incomplete (tax TBD here).
+    expect(c.commercial.total_cents).toBeNull();
+    expect(c.commercial.retainer).toEqual({ pct: 4, cents: Math.round(c.commercial.subtotal_cents * 0.04) });
+    const html = renderProposalHtml(c, await loadBrand(), {}, { ...meta, presenter: { name: "Henry Clifford", email: "henry@getlivewire.com" } });
+    const pdf = await htmlToPdf(html);
+    const pdfjs = await import("pdfjs-dist/legacy/build/pdf.mjs");
+    const doc = await pdfjs.getDocument({ data: new Uint8Array(pdf), disableFontFace: true, verbosity: 0 }).promise;
+    let text = "";
+    for (let n = 1; n <= doc.numPages; n++) text += " " + (await (await doc.getPage(n)).getTextContent()).items.map((i) => ("str" in i ? i.str : "")).join(" ");
+    text = text.replace(/\s+/g, " ");
+    for (const s of ["Henry Clifford", "henry@getlivewire.com", "Why Livewire?", "Your Custom Quote:", "UNIT PRICE", "Installation Labor", "Warranty", "Summary", "Product + Labor", "Payment Terms", "Terms & Conditions"]) {
+      expect(text, s).toContain(s);
+    }
+    expect(text).toContain(`Design Retainer (4%) ${formatUsd(c.commercial.retainer.cents)}`);
+    expect(text).toMatch(/10\/05\/2026 .*V1 Page 1 of \d/);
+    expect(text).not.toMatch(/Signature/i);
   }, 60_000);
 
   it("fails when the watermark is missing or duplicated", async () => {

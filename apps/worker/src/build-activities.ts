@@ -275,7 +275,11 @@ export function createBuildStage(deps: BuildDeps) {
           manifest.push({ url: item.image.url, sha256: got ? sha256Hex(got.bytes) : null });
           if (got) images[item.image.url] = `data:${got.contentType};base64,${Buffer.from(got.bytes).toString("base64")}`;
         }
-        const markup = renderProposalHtml(customer, await loadBrand(), images, { runId, preparedOn: new Date().toISOString().slice(0, 10) });
+        // The requester presents the budget, as the salesperson does on a D-Tools proposal.
+        const run = await store.getRun(runId);
+        const person = await store.resolvePersonById(run.person_id);
+        const presenter = person ? { name: person.display_name, email: await store.requesterEmail(runId) } : undefined;
+        const markup = renderProposalHtml(customer, await loadBrand(), images, { runId, preparedOn: new Date().toISOString().slice(0, 10), presenter });
         await store.publishBinaryArtifact(runId, "render", "html", new TextEncoder().encode(markup), "text/html");
         await store.publishArtifact(runId, "render", "images", manifest);
         html = await store.readBinaryArtifact(runId, "render", "html");
