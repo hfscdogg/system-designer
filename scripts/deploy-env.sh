@@ -7,6 +7,8 @@
 #              GOOGLE_CHAT_UPLOAD_MODE [GOOGLE_CHAT_DELEGATED_USER]
 #              ANTHROPIC_ORGANIZATION_ID ANTHROPIC_FEDERATION_RULE_ID ANTHROPIC_SERVICE_ACCOUNT_ID [ANTHROPIC_WORKSPACE_ID]
 #              (Claude API access is keyless: Workload Identity Federation from the worker's Google identity.)
+#              WORKER_ID_TOKEN: Google ID token with audience sd-worker-<env>, for the worker health check
+#              (CI mints it in the auth step; gcloud can't mint audience-bound tokens from federated credentials).
 # Needs: gcloud (authenticated as the deployer), curl, jq, temporal CLI.
 set -euo pipefail
 
@@ -66,11 +68,12 @@ gcloud run deploy "${WORKER_SERVICE}" --region "${REGION}" --image "${IMAGE}" \
   --service-account "${WORKER_SA}" --set-cloudsql-instances "${GCP_SQL_INSTANCE}" \
   --set-env-vars "${WORKER_ENV}" --set-secrets "${WORKER_SECRETS}" \
   --labels "sd-env=${ENV_NAME},sd-role=worker,sd-build=${BUILD_ID}" \
-  --no-allow-unauthenticated --min-instances 1 --max-instances 2 --no-cpu-throttling \
+  --no-allow-unauthenticated --add-custom-audiences "sd-worker-${ENV_NAME}" \
+  --min-instances 1 --max-instances 2 --no-cpu-throttling \
   --cpu 1 --memory 2Gi --quiet
 
 WORKER_URL="$(gcloud run services describe "${WORKER_SERVICE}" --region "${REGION}" --format 'value(status.url)')"
-TOKEN="$(gcloud auth print-identity-token --audiences "${WORKER_URL}")"
+TOKEN="${WORKER_ID_TOKEN:?WORKER_ID_TOKEN (audience sd-worker-${ENV_NAME}) is required for the health check}"
 for i in $(seq 1 30); do
   if HEALTH="$(curl -fsS -H "Authorization: Bearer ${TOKEN}" "${WORKER_URL}/healthz")"; then break; fi
   [[ $i == 30 ]] && { echo "worker never became healthy" >&2; exit 1; }
