@@ -59,7 +59,7 @@ echo
 echo "4) In GitHub → Settings → Environments, create 'staging' and 'production';"
 echo "   on 'production' add yourself as a required reviewer."
 echo
-echo "5) Merge to main. The Deploy workflow builds one image, deploys staging, then waits for your"
+echo "5) Merge to main. After its checks pass, the CI workflow builds one image, deploys staging, then waits for your"
 echo "   approval to deploy production. Its log prints the gateway URLs to paste into the Chat app's"
 echo "   HTTP endpoint (Google Chat API → Configuration)."
 echo
