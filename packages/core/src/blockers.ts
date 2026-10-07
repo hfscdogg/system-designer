@@ -11,6 +11,13 @@ export interface Blocker {
 
 export const MAX_QUESTIONS_PER_TURN = 3;
 
+/** Systems whose design depends on whether existing smoke/CO detectors stay. */
+export const LIFE_SAFETY_SYSTEMS = ["fire_detection", "co_detection"];
+
+export function needsDetectorAnswer(s: Pick<ScopeExtraction, "functional_systems">): boolean {
+  return s.functional_systems.some((x) => LIFE_SAFETY_SYSTEMS.includes(x));
+}
+
 export function computeBlockers(s: ScopeExtraction): Blocker[] {
   const b: Blocker[] = [];
   if (!s.client) b.push({ field: "client", question: "Who is the client (person or company)?" });
@@ -35,6 +42,12 @@ export function computeBlockers(s: ScopeExtraction): Blocker[] {
     b.push({
       field: "existing_equipment",
       question: "What happens to existing equipment: keep, replace, remove, or none? \"Unknown\" is fine.",
+    });
+  }
+  if (needsDetectorAnswer(s) && s.existing_detectors === "not_provided") {
+    b.push({
+      field: "existing_detectors",
+      question: "Are there existing hard-wired smoke/CO detectors? Keep and monitor them, replace them with new wireless detectors, or there are none?",
     });
   }
   if (s.service_categories.length === 0) {

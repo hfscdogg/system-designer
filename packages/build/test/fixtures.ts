@@ -10,7 +10,9 @@ export const IDS = {
   glass: "44444444-4444-4444-8444-444444444444",
   smoke: "55555555-5555-4555-8555-555555555555",
   co: "66666666-6666-4666-8666-666666666666",
-  comm: "77777777-7777-4777-8777-777777777777",
+  motion: "77777777-7777-4777-8777-777777777777",
+  radio: "cccccccc-cccc-4ccc-8ccc-cccccccccccc",
+  listener: "dddddddd-dddd-4ddd-8ddd-dddddddddddd",
   thermostat: "88888888-8888-4888-8888-888888888888",
   doorbell: "99999999-9999-4999-8999-999999999999",
   install: "aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa",
@@ -42,9 +44,11 @@ export const CATALOG: Record<string, unknown> = {
   [IDS.glass]: product(IDS.glass, "TestCo", "GLASS-1", 80, 45),
   [IDS.smoke]: product(IDS.smoke, "TestCo", "SMOKE-1", 120, 70),
   [IDS.co]: product(IDS.co, "TestCo", "CO-1", 110, 65),
-  [IDS.comm]: product(IDS.comm, "TestCo", "COMM-1", 200, 120, { images: [] }),
+  [IDS.motion]: product(IDS.motion, "TestCo", "MOTION-1", 90, 50),
+  [IDS.radio]: product(IDS.radio, "TestCo", "RADIO-1", 80, 40),
+  [IDS.listener]: product(IDS.listener, "TestCo", "LISTEN-1", 70, 40),
   [IDS.thermostat]: product(IDS.thermostat, "TestCo", "THERMO-1", 250, 150),
-  [IDS.doorbell]: product(IDS.doorbell, "TestCo", "BELL-1", 230, 140),
+  [IDS.doorbell]: product(IDS.doorbell, "TestCo", "BELL-1", 230, 140, { images: [] }),
   [IDS.install]: product(IDS.install, "Livewire", "LAB-INSTALL", 500, 250, { laborItems: [], images: [] }),
   [IDS.programming]: product(IDS.programming, "Livewire", "LAB-PROG", 300, 120, { laborItems: [], images: [] }),
 };
@@ -53,8 +57,9 @@ export function testPattern(overrides: Partial<Record<keyof typeof IDS, string |
   const base = JSON.parse(JSON.stringify(PATTERN_JSON));
   const id = (k: keyof typeof IDS) => (k in overrides ? overrides[k]! : IDS[k]);
   const map: Record<string, keyof typeof IDS> = {
-    security_panel: "panel", keypad: "keypad", door_window_contact: "contact", glass_break: "glass",
-    smoke_heat_detector: "smoke", co_detector: "co", communicator: "comm", thermostat: "thermostat", video_doorbell: "doorbell",
+    security_panel: "panel", keypad: "keypad", door_window_contact: "contact", motion_detector: "motion", glass_break: "glass",
+    smoke_heat_detector: "smoke", co_detector: "co", panel_345_radio: "radio", detector_listener: "listener",
+    thermostat: "thermostat", video_doorbell: "doorbell",
   };
   for (const r of base.roles) r.product_id = id(map[r.role]!);
   for (const s of base.services) s.product_id = s.category === "installation" ? id("install") : s.category === "programming" ? id("programming") : null;

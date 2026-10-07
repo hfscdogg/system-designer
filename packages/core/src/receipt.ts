@@ -1,4 +1,4 @@
-import { computeBlockers, questionsForTurn, type Blocker } from "./blockers.ts";
+import { computeBlockers, needsDetectorAnswer, questionsForTurn, type Blocker } from "./blockers.ts";
 import { hashCanonical } from "./canonical.ts";
 import { ScopeDraftV1Schema, type ScopeDraftV1, type ScopeExtraction } from "./scope.ts";
 import type { ReceiptStatus } from "./signals.ts";
@@ -58,6 +58,7 @@ export function toScopeDraft(s: ScopeExtraction): ScopeDraftV1 {
     requested_changes: s.requested_changes,
     existing_equipment_disposition: status === "not_provided" ? "unknown" : status,
     retained_equipment: s.existing_equipment.retained,
+    existing_detectors: needsDetectorAnswer(s) && s.existing_detectors !== "not_provided" ? s.existing_detectors : "not_applicable",
     excluded_scope: s.excluded_scope,
     service_categories: s.service_categories,
     unresolved_questions: s.unresolved_questions,
@@ -100,6 +101,9 @@ function scopeLines(s: ScopeExtraction): string[] {
     `Systems: ${s.functional_systems.length ? s.functional_systems.join("; ") : missing}`,
     `Requested outcomes: ${s.requested_changes.length ? s.requested_changes.join("; ") : missing}`,
     `Existing equipment: ${equipment}`,
+    ...(needsDetectorAnswer(s)
+      ? [`Existing smoke/CO detectors: ${{ not_provided: missing, none: "none", keep_and_monitor: "keep and monitor", replace: "replace with new" }[s.existing_detectors]}`]
+      : []),
     `Excluded: ${none(s.excluded_scope)}`,
     `Services: ${s.service_categories.length ? s.service_categories.join("; ") : missing}`,
     `Size: ${s.size ? `${s.size.value.toLocaleString("en-US")} ${s.size.unit}` : "unknown"}`,

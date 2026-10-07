@@ -48,7 +48,7 @@ Each Hermes failure from PRD §20 maps to a mechanism here:
 | §9.2–9.4 | Deterministic receipt, atomic approval, button bound to receipt + hash | `receipt.ts`, `Store.commitApproval`, Chat card | ✅ |
 | §10 | LLM vs deterministic boundary | `packages/llm` returns untrusted data only | ✅ |
 | §11 | Read-only D-Tools, exact records, no fabrication, refresh before finalizing | `packages/dtools` (GET only), `admitProduct`, `catalog_evidence`, `refreshCatalog` stage | ✅ |
-| §12 | Architecture patterns, BOM roles, supported / allowance / unresolved, precedent | `packages/build/src/pattern.ts`, `materialize.ts`, `patterns/*.json` | ✅ (standard product IDs pending from Livewire) |
+| §12 | Architecture patterns, BOM roles, supported / allowance / unresolved, precedent | `packages/build/src/pattern.ts`, `materialize.ts`, `patterns/*.json` | ✅ (Livewire standards from D-Tools project history; labor pricing pending) |
 | §13.1–13.5 | Prebuild, materializer, compiler, binder, validator | `apps/worker/src/build-activities.ts`, `packages/build` | ✅ |
 | §13.6–13.7 | Renderer, preflight | `packages/render` (HTML from customer view → Chromium PDF → pdfjs preflight) | ✅ |
 | §13.8 | Coordinator ends at `READY_HELD`, one hand-off | `handoff` stage, `held_handoffs` | ✅ |
@@ -89,4 +89,4 @@ Each Hermes failure from PRD §20 maps to a mechanism here:
 - **Production model:** which LLM provider and model are approved? `LLM_MODEL` must be set explicitly.
   - Server-side refusal fallbacks are deliberately **not** enabled, because they would silently switch models.
 - **Commercial values:** production margin thresholds and tax rules.
-- **Standard products:** the D-Tools record ID for each role in the security-modernization pattern, and which service categories have a priced labor record.
+- **Labor pricing:** Livewire prices labor as project-level hourly lines (07LABOR1MAN), which the D-Tools v1 API cannot read. Service categories stay TBD allowances until labor is modeled.

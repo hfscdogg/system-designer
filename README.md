@@ -30,9 +30,9 @@ The flow is Google Chat message → captured intake → scope extraction → cla
   - The proposal is compiled, bound and validated: coverage, provenance, arithmetic in cents, "priced scope to date" when incomplete, margin and tax policy, and a customer view with no cost or margin fields.
   - Each approved scope gets exactly one build, and every stage output is published once with its hash.
 
-**Before M2 can run live, Livewire must supply:**
-- the D-Tools product IDs of its standard products for each role in `packages/build/patterns/security_modernization.json` (they are `null` today, so the validator blocks with "no products could be priced");
-- a commercial policy published by an admin (see below).
+**Before M2 can run live:**
+- The security pattern (`packages/build/patterns/security_modernization.json`) carries Livewire's standard D-Tools records. They were chosen from how often each product appears on Livewire's own projects since 2023. Service categories stay TBD allowances until labor pricing lands.
+- An admin must publish a commercial policy (see below).
 
 - **PDF (M3).**
   - The PDF is rendered from the customer-safe view only, fully self-contained: embedded fonts, logo and exact-model images, or **IMAGE PENDING** for any item without one.

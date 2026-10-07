@@ -45,6 +45,7 @@ export function materialize(scope: ScopeDraftV1, pattern: PatternSpec): Selectio
   for (const role of pattern.roles) {
     if (!role.systems.some((s) => scope.functional_systems.includes(s))) continue;
     if (role.mentions && !mentioned(scope, role.mentions)) continue;
+    if (role.existing_detectors && !(role.existing_detectors as string[]).includes(scope.existing_detectors)) continue;
     included.push(role);
 
     const retained = role.retained_match?.length

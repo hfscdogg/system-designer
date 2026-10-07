@@ -72,10 +72,12 @@ describe("catalog admission", () => {
 });
 
 describe("patterns", () => {
-  it("ships a valid draft pattern with no invented product ids", async () => {
+  it("ships Livewire's standard D-Tools records for every role, and no invented service records", async () => {
     const [p] = await loadPatterns();
     expect(p!.pattern).toBe("security_modernization");
-    expect(patternRecordIds(p!)).toEqual([]);
+    expect(p!.roles.every((r) => r.product_id !== null)).toBe(true);
+    expect(p!.services.every((s) => s.product_id === null)).toBe(true);
+    expect(patternRecordIds(p!)).toHaveLength(p!.roles.length);
   });
 
   it("selects exactly one applicable pattern or none", () => {
@@ -93,7 +95,7 @@ describe("materialize → compile → bind → validate", () => {
     expect(proposal.watermark).toBe("CONCEPTUAL BUDGET • NOT FOR APPROVAL");
     // Requested: panel+keypads, glass-break, smoke, CO, thermostat, doorbell, Alarm.com monitoring. Door contacts are retained.
     expect(selection.lines.map((l) => l.role).sort()).toEqual(
-      ["co_detector", "communicator", "glass_break", "keypad", "security_panel", "smoke_heat_detector", "thermostat", "video_doorbell"].sort(),
+      ["co_detector", "glass_break", "keypad", "security_panel", "smoke_heat_detector", "thermostat", "video_doorbell"].sort(),
     );
     expect(selection.unresolved).toEqual([
       { item: "Door/window contact (retained: Door contacts)", role: "door_window_contact", reason: "existing equipment must be field-tested before it can be reused", escalate: false },
@@ -101,11 +103,11 @@ describe("materialize → compile → bind → validate", () => {
     // Testing and commissioning have no priced service record: allowances, outside totals.
     expect(selection.allowances.map((a) => a.label)).toEqual(["Commissioning", "Testing"]);
     expect(proposal.commercial).toMatchObject({ complete: false, label: "Priced scope to date", total_cents: null, tax: { status: "tbd" } });
-    // 600+150+80+120+110+200+250+230 equipment, 8 × $25 labor, $500 install + $300 programming.
-    expect(proposal.commercial.equipment_cents).toBe(174000);
-    expect(proposal.commercial.labor_cents).toBe(20000);
+    // 600+150+80+120+110+250+230 equipment, 7 × $25 labor, $500 install + $300 programming.
+    expect(proposal.commercial.equipment_cents).toBe(154000);
+    expect(proposal.commercial.labor_cents).toBe(17500);
     expect(proposal.commercial.services_cents).toBe(80000);
-    expect(proposal.commercial.subtotal_cents).toBe(274000);
+    expect(proposal.commercial.subtotal_cents).toBe(251500);
     expect(proposal.remaining_verification).toEqual(expect.arrayContaining(["Keypad: number of keypads (one per primary entry)"]));
   });
 
@@ -115,8 +117,8 @@ describe("materialize → compile → bind → validate", () => {
     expect(forbiddenCustomerKeys(customer)).toEqual([]);
     const json = JSON.stringify(customer);
     expect(json).not.toContain("36000"); // panel cost
-    const comm = customer.sections.flatMap((s) => s.items).find((i) => i.model === "COMM-1");
-    expect(comm?.image).toEqual({ pending: true });
+    const bell = customer.sections.flatMap((s) => s.items).find((i) => i.model === "BELL-1");
+    expect(bell?.image).toEqual({ pending: true });
     expect(proposal.internal.gross_margin_pct).toBeGreaterThan(30);
   });
 
@@ -126,6 +128,22 @@ describe("materialize → compile → bind → validate", () => {
     expect(validation.ok).toBe(true);
     expect(validation.findings).toEqual([{ code: "escalation", severity: "escalate", message: "Smoke/heat detector: no Livewire standard product is configured for this role" }]);
     expect(proposal.sections.flatMap((s) => s.lines).some((l) => l.role === "smoke_heat_detector")).toBe(false);
+  });
+
+  it("monitors existing smoke/CO detectors with a listener and radio card instead of new detectors", async () => {
+    const { selection, validation } = await pipeline({ existing_detectors: "keep_and_monitor" });
+    const roles = selection.lines.map((l) => l.role);
+    expect(roles).toEqual(expect.arrayContaining(["panel_345_radio", "detector_listener"]));
+    expect(roles).not.toContain("smoke_heat_detector");
+    expect(roles).not.toContain("co_detector");
+    expect(selection.requirements.filter((r) => ["fire_detection", "co_detection"].includes(r.system)).map((r) => r.classification)).toEqual(["supported", "supported"]);
+    expect(validation.ok).toBe(true);
+  });
+
+  it("adds motion detectors only when the request mentions them", async () => {
+    expect((await pipeline()).selection.lines.map((l) => l.role)).not.toContain("motion_detector");
+    const withMotion = await pipeline({ requested_changes: ["Replace legacy panel and keypads", "Add motion detectors in the hallways"] });
+    expect(withMotion.selection.lines.map((l) => l.role)).toContain("motion_detector");
   });
 
   it("flags requested systems that no pattern role covers", async () => {
@@ -156,13 +174,13 @@ describe("materialize → compile → bind → validate", () => {
       // Fixed quantities only, so nothing is left to verify.
       (() => {
         const p = testPattern();
-        p.roles = p.roles.filter((r) => ["security_panel", "communicator"].includes(r.role));
+        p.roles = p.roles.filter((r) => r.role === "security_panel");
         return p;
       })(),
       taxed,
     );
     expect(complete.proposal.commercial).toMatchObject({ complete: true, label: "Total" });
-    expect(complete.proposal.commercial.total_cents).toBe(complete.proposal.commercial.subtotal_cents + Math.round(80000 * 0.0825));
+    expect(complete.proposal.commercial.total_cents).toBe(complete.proposal.commercial.subtotal_cents + Math.round(60000 * 0.0825));
     expect(complete.validation.ok).toBe(true);
   });
 });
@@ -211,11 +229,11 @@ describe("compiler rejections", () => {
 });
 
 describe("empty proposals", () => {
-  it("blocks when no role has a configured product (the shipped draft pattern)", async () => {
-    const [shipped] = await loadPatterns();
+  it("blocks when no role has a configured product", async () => {
+    const unconfigured = testPattern(Object.fromEntries(Object.keys(IDS).map((k) => [k, null])));
     const { scope, scopeHash, receiptId } = approvedScope();
-    const selection = materialize(scope, shipped!);
-    const compiled = compile(selection, new Map(), shipped!);
+    const selection = materialize(scope, unconfigured);
+    const compiled = compile(selection, new Map(), unconfigured);
     if (!compiled.ok) throw new Error(compiled.errors.join());
     const proposal = bind(compiled.draft, { runId: "r", receiptId, approvalId: "a", scopeHash, scope, policy: POLICY, releaseId: "rel" });
     const v = validateProposal(proposal, scope, scopeHash, new Map(), POLICY);
