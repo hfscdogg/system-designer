@@ -75,7 +75,7 @@ gcloud run deploy "${WORKER_SERVICE}" --region "${REGION}" --image "${IMAGE}" \
 WORKER_URL="$(gcloud run services describe "${WORKER_SERVICE}" --region "${REGION}" --format 'value(status.url)')"
 TOKEN="${WORKER_ID_TOKEN:?WORKER_ID_TOKEN (audience sd-worker-${ENV_NAME}) is required for the health check}"
 for i in $(seq 1 30); do
-  if HEALTH="$(curl -fsS -H "Authorization: Bearer ${TOKEN}" "${WORKER_URL}/healthz")"; then break; fi
+  if HEALTH="$(curl -fsS -H "Authorization: Bearer ${TOKEN}" "${WORKER_URL}/health")"; then break; fi
   [[ $i == 30 ]] && { echo "worker never became healthy" >&2; exit 1; }
   sleep 5
 done
@@ -102,7 +102,7 @@ gcloud run deploy "${GATEWAY_SERVICE}" --region "${REGION}" --image "${IMAGE}" \
   --allow-unauthenticated --min-instances 0 --max-instances 4 --cpu 1 --memory 512Mi --quiet
 
 log "smoke checks"
-GW_HEALTH="$(curl -fsS "${GATEWAY_URL}/healthz")"
+GW_HEALTH="$(curl -fsS "${GATEWAY_URL}/health")"
 [[ "$(jq -r .release <<<"${GW_HEALTH}")" == "${DIGEST}" ]] || { echo "gateway serves the wrong release: ${GW_HEALTH}" >&2; exit 1; }
 CODE="$(curl -s -o /dev/null -w '%{http_code}' -X POST -H 'content-type: application/json' -d '{}' "${GATEWAY_URL}/chat/google")"
 [[ "${CODE}" == "401" ]] || { echo "unauthenticated Chat request returned ${CODE}, expected 401" >&2; exit 1; }

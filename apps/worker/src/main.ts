@@ -41,12 +41,13 @@ async function main() {
       defaultVersioningBehavior: "PINNED",
     },
   });
-  // Cloud Run needs an HTTP port; /healthz reports what this instance runs and whether it polls.
+  // Cloud Run needs an HTTP port; /health reports what this instance runs and whether it polls.
+  // (Not /healthz: Cloud Run reserves paths ending in "z" and answers them with 404.)
   const health = createServer((req, res) => {
     const state = worker.getState();
-    const ok = req.url === "/healthz" && state === "RUNNING";
+    const ok = req.url === "/health" && state === "RUNNING";
     res
-      .writeHead(req.url === "/healthz" ? (ok ? 200 : 503) : 404, { "content-type": "application/json" })
+      .writeHead(req.url === "/health" ? (ok ? 200 : 503) : 404, { "content-type": "application/json" })
       .end(JSON.stringify({ ok, state, release: releaseId(), buildId: workerBuildId(), taskQueue: taskQueue() }));
   });
   health.listen(Number(process.env.PORT ?? 8080));
