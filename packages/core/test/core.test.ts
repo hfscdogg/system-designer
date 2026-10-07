@@ -86,6 +86,17 @@ describe("blockers and receipts", () => {
     expect(computeBlockers(completeExtraction())).toEqual([]);
   });
 
+  it("asks about existing smoke/CO detectors only when fire or CO detection is in scope", () => {
+    const fire = normalizeExtraction(completeExtraction({ existing_detectors: "not_provided" })).scope;
+    expect(computeBlockers(fire).map((b) => b.field)).toEqual(["existing_detectors"]);
+    const security = normalizeExtraction(completeExtraction({ functional_systems: ["alarm panel"], existing_detectors: "not_provided" })).scope;
+    expect(computeBlockers(security)).toEqual([]);
+    const answered = receiptFor(completeExtraction({ existing_detectors: "keep_and_monitor" }));
+    expect(answered.lines).toContain("Existing smoke/CO detectors: keep and monitor");
+    expect(answered.scope?.existing_detectors).toBe("keep_and_monitor");
+    expect(receiptFor(completeExtraction({ functional_systems: ["alarm panel"] })).scope?.existing_detectors).toBe("not_applicable");
+  });
+
   it("asks at most three questions per turn and never offers approval while blocked", () => {
     const r = receiptFor(emptyExtraction());
     expect(r.status).toBe("NEEDS_CLARIFICATION");

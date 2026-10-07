@@ -28,6 +28,12 @@ export const ExistingEquipmentSchema = z
   })
   .strict();
 
+/**
+ * Existing smoke/CO detectors, asked only when fire or CO detection is in scope.
+ * keep_and_monitor: listen to the existing hard-wired detectors; replace/none: new wireless detectors.
+ */
+export const EXISTING_DETECTORS = ["none", "keep_and_monitor", "replace"] as const;
+
 export const BudgetSchema = z
   .object({
     status: z.enum(["not_provided", "unknown", "known"]),
@@ -51,6 +57,7 @@ export const ScopeExtractionSchema = z
     functional_systems: z.array(z.string()),
     requested_changes: z.array(z.string()),
     existing_equipment: ExistingEquipmentSchema,
+    existing_detectors: z.enum(["not_provided", ...EXISTING_DETECTORS]),
     excluded_scope: z.array(z.string()),
     service_categories: z.array(z.string()),
     size: SizeSchema.nullable(),
@@ -77,6 +84,7 @@ export const ClarificationPatchSchema = z
     functional_systems: z.array(z.string()).nullable(),
     requested_changes: z.array(z.string()).nullable(),
     existing_equipment: ExistingEquipmentSchema.nullable(),
+    existing_detectors: z.enum(EXISTING_DETECTORS).nullable(),
     excluded_scope: z.array(z.string()).nullable(),
     service_categories: z.array(z.string()).nullable(),
     size: SizeSchema.nullable(),
@@ -102,6 +110,7 @@ export const ScopeDraftV1Schema = z
     requested_changes: z.array(z.string()).min(1),
     existing_equipment_disposition: z.enum(["none", "unknown", "described"]),
     retained_equipment: z.array(z.string()),
+    existing_detectors: z.enum(["not_applicable", ...EXISTING_DETECTORS]),
     excluded_scope: z.array(z.string()),
     service_categories: z.array(z.string()).min(1),
     unresolved_questions: z.array(z.string()),
@@ -240,6 +249,7 @@ export function applyClarification(base: ScopeExtraction, patch: ClarificationPa
   if (patch.functional_systems !== null) next.functional_systems = patch.functional_systems;
   if (patch.requested_changes !== null) next.requested_changes = patch.requested_changes;
   if (patch.existing_equipment !== null) next.existing_equipment = patch.existing_equipment;
+  if (patch.existing_detectors !== null) next.existing_detectors = patch.existing_detectors;
   if (patch.excluded_scope !== null) next.excluded_scope = patch.excluded_scope;
   if (patch.service_categories !== null) next.service_categories = patch.service_categories;
   if (patch.size_is_unknown) next.size = null;

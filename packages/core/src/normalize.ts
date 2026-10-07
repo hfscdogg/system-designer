@@ -123,6 +123,7 @@ export function normalizeExtraction(input: ScopeExtraction): NormalizedExtractio
       retained: list(input.existing_equipment.retained),
       removed_or_replaced: list(input.existing_equipment.removed_or_replaced),
     },
+    existing_detectors: input.existing_detectors,
     excluded_scope: list(input.excluded_scope),
     service_categories: services.categories,
     size: input.size,

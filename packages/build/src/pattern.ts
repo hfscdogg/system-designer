@@ -1,3 +1,4 @@
+import { EXISTING_DETECTORS } from "@sd/core";
 import { z } from "zod";
 
 /**
@@ -15,6 +16,8 @@ export const RoleSpecSchema = z
     systems: z.array(z.string()).min(1),
     /** If set, include the role only when the request mentions one of these terms. */
     mentions: z.array(z.string()).optional(),
+    /** If set, include the role only when the answer about existing smoke/CO detectors is one of these. */
+    existing_detectors: z.array(z.enum(EXISTING_DETECTORS)).min(1).optional(),
     /** Terms that identify this role in the retained-equipment list. */
     retained_match: z.array(z.string()).optional(),
     /** D-Tools product record. Null until Livewire chooses a standard product. */
