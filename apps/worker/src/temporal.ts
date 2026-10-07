@@ -46,6 +46,15 @@ export class TemporalWorkflows implements WorkflowPort {
     }
   }
 
+  async isRunning(runId: string): Promise<boolean> {
+    try {
+      return (await this.client.workflow.getHandle(runId).describe()).status.name === "RUNNING";
+    } catch (err) {
+      if (err instanceof WorkflowNotFoundError) return false;
+      throw err;
+    }
+  }
+
   async signal(runId: string, signal: RunSignal): Promise<void> {
     try {
       await this.client.workflow.getHandle(runId).signal("run", signal);

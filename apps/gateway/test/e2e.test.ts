@@ -401,6 +401,26 @@ describe("runs whose workflow stopped", () => {
   });
 });
 
+describe("builds whose workflow stopped", () => {
+  it("closes an approved build whose workflow died, so a new request in the DM is not refused", async () => {
+    const DM = "spaces/ZACK-DM";
+    const t = await setup([completeExtraction(), completeExtraction()]);
+    await t.send(chatMessage("Smith family wants their old alarm modernized…", { space: DM, thread: DM, dm: true }));
+    const [old] = await t.store.listRunsForPerson("zack");
+    // The workflow ends while the database still lists the run as mid-build (as before failures were reported).
+    await t.workflows.signal(old!.id, { type: "invalidate", reason: "test" });
+    await t.workflows.settled(old!.id);
+    await t.db.query(`UPDATE runs SET state = 'VALIDATED' WHERE id = $1`, [old!.id]);
+
+    const res = await t.send(chatMessage("Jones family needs a new alarm…", { space: DM, thread: DM, dm: true }));
+    expect(res.body).toEqual({ text: "The previous build in this conversation stopped with an error, so I've closed it. Working on this new request now." });
+    expect((await t.store.getRun(old!.id)).state).toBe("FAILED");
+    const [fresh] = await t.store.listRunsForPerson("zack");
+    expect(fresh!.id).not.toBe(old!.id);
+    expect(fresh!.state).toBe("AWAITING_SCOPE_APPROVAL");
+  });
+});
+
 describe("margin exceptions (2026 sales comp policy)", () => {
   const STRICT = { ...TEST_POLICY, margin: { residential_min_gross_margin_pct: 90, commercial_min_gross_margin_pct: 90 } };
   const HENRY_DM = "spaces/HENRY-DM";
@@ -433,6 +453,8 @@ describe("margin exceptions (2026 sales comp policy)", () => {
     const run = await heldRun(t);
     expect(run.state).toBe("AWAITING_MARGIN_APPROVAL");
     expect(t.chat.files).toHaveLength(0);
+    // The held build still owns the conversation while its workflow waits.
+    expect((await t.send(chatMessage("Another job"))).body).toEqual({ text: "The scope in this thread is approved and still being built. Start a new thread for a new request or a scope change." });
 
     const cards = exceptionCards(t);
     expect(cards).toHaveLength(1);

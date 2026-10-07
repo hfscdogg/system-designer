@@ -158,9 +158,19 @@ async function message(deps: GatewayDeps, person: Person, event: Extract<Inbound
   }
 
   const building = await store.findBuildingRun(event.thread);
+  let closedBuild = false;
   if (building) {
-    await claim("ignored_building", building.id);
-    return reply("The scope in this conversation is already approved. Start a new thread for a new request or a scope change.");
+    if (await deps.workflows.isRunning(building.id)) {
+      await claim("ignored_building", building.id);
+      return reply(
+        event.isDirectMessage
+          ? "I'm still building the proposal approved in this conversation and will post it here when it's done. Send your next request after that."
+          : "The scope in this thread is approved and still being built. Start a new thread for a new request or a scope change.",
+      );
+    }
+    // The build's workflow died (for example on an error before failures were reported): close it so it no longer holds the conversation.
+    await store.transitionRun(building.id, "FAILED", "system", { error: "workflow is no longer running", intakeId: intake.id });
+    closedBuild = true;
   }
 
   const started = await store.startRun(intake);
@@ -174,7 +184,7 @@ async function message(deps: GatewayDeps, person: Person, event: Extract<Inbound
     await store.appendEvent(started.run.id, "workflow_start_failed", "system", { error: String(err) });
     return reply("I saved your request but couldn't start working on it. It will be picked up automatically; nothing was sent anywhere.");
   }
-  return silent;
+  return closedBuild ? reply("The previous build in this conversation stopped with an error, so I've closed it. Working on this new request now.") : silent;
 }
 
 async function approve(
