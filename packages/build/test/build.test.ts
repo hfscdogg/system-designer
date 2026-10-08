@@ -76,7 +76,7 @@ describe("catalog admission", () => {
 describe("patterns", () => {
   it("ships Livewire's standard D-Tools records for every role, and no invented service records", async () => {
     const patterns = await loadPatterns();
-    expect(patterns.map((p) => p.pattern)).toEqual(["home_network", "security_modernization", "whole_home_audio"]);
+    expect(patterns.map((p) => p.pattern)).toEqual(["home_network", "security_modernization", "tv_media", "whole_home_audio"]);
     for (const p of patterns) {
       expect(p.roles.every((r) => r.product_id !== null), p.pattern).toBe(true);
       expect(p.services.every((s) => s.product_id === null), p.pattern).toBe(true);
@@ -104,6 +104,10 @@ describe("patterns", () => {
     expect(systems).toEqual(["whole_home_audio"]);
     expect(selectPattern(systems, patterns)!.pattern).toBe("whole_home_audio");
     expect(normalizeFunctionalSystems(["85 inch TV", "soundbar"])).toEqual(["audio_video"]);
+    const tv = selectPattern(["audio_video"], patterns)!;
+    expect(tv.pattern).toBe("tv_media");
+    // A mounted, client-supplied TV with a soundbar: 0.5 + 5 + 2 + 0.5 = 8 h.
+    expect(laborHoursFor(tv, [{ role: "tv_mount", quantity: 1 }, { role: "soundbar", quantity: 1 }, { role: "soundbar_mount", quantity: 1 }])).toBe(8);
     const audio = patterns.find((p) => p.pattern === "whole_home_audio")!;
     expect(audio.roles.find((r) => r.role === "zone_amplifier")).toMatchObject({ critical: true, quantity: { kind: "minimum", qty: 2 } });
     expect(audio.roles.find((r) => r.role === "outdoor_speakers")!.mentions).toContain("patio");
