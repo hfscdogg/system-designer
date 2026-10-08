@@ -88,13 +88,16 @@ Margin, labor-rate and tax rules are versioned configuration, never prompt text.
 - gross-profit floors of 40% residential and 37.5% commercial;
 - mix targets of equipment 60% at 35%, labor 30% at 50% and parts 10% at 60%;
 - the 07LABOR1MAN rate of $179 per hour, costing $89.50;
-- tax "tbd".
+- Virginia sales tax of 6% on taxable equipment and parts, with labor untaxed, as on Livewire's D-Tools quotes.
 
-A build below its market's floor is **held** as a margin exception:
+A build below its market's floor, or with any requested discount, is **held** as a margin exception:
 - The requester is told it is waiting.
 - Each admin gets an internal card in their direct conversation with the app, showing the margin, the floor and the mix, with **Approve exception** / **Decline** buttons. They can also reply `approve exception MX-…` or `decline exception MX-…`.
 - Approving is the written exception the comp policy requires. It is recorded once, admin-only (also enforced by the database), and the PDF then posts to the requester. Declining stops the run.
 - An admin must have messaged the app directly at least once to be reachable.
+- A discount the salesperson asks for ("10% off") is recorded as `requested_discount` and shown on the receipt. The budget applies it but is held until an admin approves; the PDF Summary then shows "Discount (10%)". Discounts on monitoring or service plans aren't priced in a budget.
+
+Patterns (`packages/build/patterns/`) cover security modernization and home networking. A scope that needs both gets both, combined into one budget with one visit's labor.
 
 Parts are sized to the parts share at the parts margin. `tax` can also be `{ "mode": "rate", "rate_pct": <n>, "applies_to": "taxable_equipment" }`.
 

@@ -99,7 +99,9 @@ export function validateProposal(
   ) {
     block("arithmetic", "commercial totals do not reconcile with sections");
   }
-  if (c.subtotal_cents !== c.equipment_cents + c.labor_cents + c.services_cents + c.parts_cents) block("arithmetic", "subtotal does not reconcile");
+  const gross = c.equipment_cents + c.labor_cents + c.services_cents + c.parts_cents;
+  if (c.discount && c.discount.cents !== Math.round((gross * c.discount.pct) / 100)) block("arithmetic", "discount does not reconcile");
+  if (c.subtotal_cents !== gross - (c.discount?.cents ?? 0)) block("arithmetic", "subtotal does not reconcile");
 
   // Commercial completeness: incomplete scope never presents a total (PRD §14.3).
   if (!c.complete && (c.total_cents !== null || c.label !== "Priced scope to date")) block("commercial", "incomplete commercial scope is presented as complete");
@@ -132,9 +134,17 @@ export function validateProposal(
 
 /** Margin check needs the policy itself; kept separate so the policy version is explicit. */
 export function marginFindings(p: Proposal, minimumPct: number, market: string): Finding[] {
-  if (p.internal.gross_margin_pct === null) return [{ code: "margin_unknown", severity: "warn", message: "no costed lines; margin unknown" }];
-  if (p.internal.gross_margin_pct < minimumPct) {
-    return [{ code: "margin_exception", severity: "block", message: `gross margin ${p.internal.gross_margin_pct}% is below the ${minimumPct}% ${market} minimum; needs an approved exception` }];
+  const discount = p.commercial.discount;
+  // A discount always needs written approval (2026 sales comp policy), whatever the margin; it uses the same admin approval.
+  const discountNote = discount ? `a ${discount.pct}% discount${discount.note ? ` (${discount.note})` : ""} was requested` : null;
+  if (p.internal.gross_margin_pct === null) {
+    const unknown: Finding = { code: "margin_unknown", severity: "warn", message: "no costed lines; margin unknown" };
+    return discountNote ? [unknown, { code: "margin_exception", severity: "block", message: `${discountNote}; needs an approved exception` }] : [unknown];
+  }
+  const below = p.internal.gross_margin_pct < minimumPct;
+  if (below || discountNote) {
+    const margin = `gross margin ${p.internal.gross_margin_pct}% ${below ? "is below" : "against"} the ${minimumPct}% ${market} minimum`;
+    return [{ code: "margin_exception", severity: "block", message: `${discountNote ? `${discountNote}; ` : ""}${margin}; needs an approved exception` }];
   }
   return [];
 }

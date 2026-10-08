@@ -7,5 +7,5 @@
     "parts": { "share_pct": 10, "margin_pct": 60 }
   },
   "labor_rates": [{ "labor_type": "07LABOR1MAN", "price_per_hour": 179, "cost_per_hour": 89.5 }],
-  "tax": { "mode": "tbd" }
+  "tax": { "mode": "rate", "rate_pct": 6, "applies_to": "taxable_equipment" }
 }

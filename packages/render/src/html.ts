@@ -121,8 +121,9 @@ export function renderProposalHtml(c: CustomerProposal, brand: Brand, images: Im
   const k = c.commercial;
   const complete = k.total_cents !== null;
   const summaryRows = [
-    ["Product + Labor", formatUsd(k.subtotal_cents - k.parts_cents), ""],
+    ["Product + Labor", formatUsd(k.subtotal_cents + (k.reduction?.cents ?? 0) - k.parts_cents), ""],
     ...(k.parts_cents > 0 ? [["Shipping & Handling/Parts", formatUsd(k.parts_cents), ""]] : []),
+    ...(k.reduction ? [[`Discount (${k.reduction.pct}%)`, `(${formatUsd(k.reduction.cents)})`, ""]] : []),
     [complete ? "Subtotal" : k.label, formatUsd(k.subtotal_cents), "strong"],
     ["Tax", k.tax === "TBD" ? "TBD" : formatUsd(k.tax.cents), ""],
     ...(complete ? [["Total Price", formatUsd(k.total_cents!), "grand"]] : []),

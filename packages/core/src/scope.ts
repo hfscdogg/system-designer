@@ -37,6 +37,9 @@ export const EXISTING_DETECTORS = ["none", "keep_and_monitor", "replace"] as con
 /** An explicit count the requester wrote ("2 keypads"). Never estimated. */
 export const RequestedQuantitySchema = z.object({ item: z.string().min(1), quantity: z.number().int().positive() }).strict();
 
+/** A discount off this project's price, as the requester stated it. Always needs an admin's written approval. */
+export const DiscountSchema = z.object({ pct: z.number().gt(0).max(100), note: z.string() }).strict();
+
 /** Residential or commercial; sets which margin target applies. */
 export const MARKETS = ["residential", "commercial"] as const;
 
@@ -64,6 +67,7 @@ export const ScopeExtractionSchema = z
     functional_systems: z.array(z.string()),
     requested_changes: z.array(z.string()),
     requested_quantities: z.array(RequestedQuantitySchema),
+    requested_discount: DiscountSchema.nullable(),
     existing_equipment: ExistingEquipmentSchema,
     existing_detectors: z.enum(["not_provided", ...EXISTING_DETECTORS]),
     excluded_scope: z.array(z.string()),
@@ -93,6 +97,7 @@ export const ClarificationPatchSchema = z
     functional_systems: z.array(z.string()).nullable(),
     requested_changes: z.array(z.string()).nullable(),
     requested_quantities: z.array(RequestedQuantitySchema).nullable(),
+    requested_discount: DiscountSchema.nullable(),
     existing_equipment: ExistingEquipmentSchema.nullable(),
     existing_detectors: z.enum(EXISTING_DETECTORS).nullable(),
     excluded_scope: z.array(z.string()).nullable(),
@@ -120,6 +125,7 @@ export const ScopeDraftV1Schema = z
     functional_systems: z.array(z.string()).min(1),
     requested_changes: z.array(z.string()).min(1),
     requested_quantities: z.array(RequestedQuantitySchema),
+    requested_discount: DiscountSchema.nullable(),
     existing_equipment_disposition: z.enum(["none", "unknown", "described"]),
     retained_equipment: z.array(z.string()),
     existing_detectors: z.enum(["not_applicable", ...EXISTING_DETECTORS]),
@@ -262,6 +268,7 @@ export function applyClarification(base: ScopeExtraction, patch: ClarificationPa
   if (patch.functional_systems !== null) next.functional_systems = patch.functional_systems;
   if (patch.requested_changes !== null) next.requested_changes = patch.requested_changes;
   if (patch.requested_quantities !== null) next.requested_quantities = patch.requested_quantities;
+  if (patch.requested_discount !== null) next.requested_discount = patch.requested_discount;
   if (patch.existing_equipment !== null) next.existing_equipment = patch.existing_equipment;
   if (patch.existing_detectors !== null) next.existing_detectors = patch.existing_detectors;
   if (patch.excluded_scope !== null) next.excluded_scope = patch.excluded_scope;

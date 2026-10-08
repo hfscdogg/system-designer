@@ -83,6 +83,8 @@ export interface DraftParts {
   brand: string;
   model: string;
   unit_price_cents: number;
+  /** D-Tools taxes the parts record like any product (Virginia: 6% on product, labor untaxed). */
+  is_taxable: boolean;
   evidence_sha256: string;
 }
 
@@ -199,6 +201,7 @@ export function compile(raw: unknown, catalog: Map<string, AdmittedProduct>, pat
         brand: product.brand,
         model: product.model,
         unit_price_cents: product.unit_price_cents,
+        is_taxable: product.is_taxable,
         evidence_sha256: product.evidence.sha256,
       };
     }

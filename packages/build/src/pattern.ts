@@ -95,10 +95,52 @@ export function laborHours(spec: LaborSpec, devices: number): number {
   return Math.ceil((spec.base_hours + spec.hours_per_device * devices) * 2) / 2;
 }
 
+/**
+ * The pattern for a scope. When several apply (a security and network job),
+ * they are combined into one, so each system is priced by its own approved
+ * pattern. Patterns that cannot be combined safely (a role in both, different
+ * labor rates or parts records) are not merged by guessing: none applies.
+ */
 export function selectPattern(systems: string[], patterns: PatternSpec[]): PatternSpec | null {
   const matches = patterns.filter((p) => p.applies_when_any.some((s) => systems.includes(s)));
-  // Ambiguity is not resolved by guessing: exactly one pattern must apply.
-  return matches.length === 1 ? matches[0]! : null;
+  if (matches.length <= 1) return matches[0] ?? null;
+  return combinePatterns(matches);
+}
+
+export function combinePatterns(ps: PatternSpec[]): PatternSpec | null {
+  const roles = ps.flatMap((p) => p.roles);
+  if (new Set(roles.map((r) => r.role)).size !== roles.length) return null;
+  const labors = ps.map((p) => p.labor);
+  const parts = ps.map((p) => p.parts);
+  if (labors.some((l) => l === undefined) && labors.some((l) => l !== undefined)) return null;
+  if (new Set(labors.map((l) => l && `${l.labor_type}:${l.hours_per_device}`)).size > 1) return null;
+  if (new Set(parts.map((x) => x?.product_id)).size > 1) return null;
+  const uniq = (xs: string[]) => [...new Set(xs)];
+  const first = labors[0];
+  const services = [...new Map(ps.flatMap((p) => p.services).map((s) => [s.category, s])).values()];
+  return PatternSpecSchema.parse({
+    schema: "architecture_pattern_v1",
+    pattern: ps.map((p) => p.pattern).join("+"),
+    version: ps.map((p) => `${p.pattern}@${p.version}`).join("+"),
+    title: ps.map((p) => p.title).join(" + "),
+    applies_when_any: uniq(ps.flatMap((p) => p.applies_when_any)),
+    roles,
+    services,
+    // One visit covers both systems: the base hours add up, the per-device rate is shared.
+    ...(first
+      ? {
+          labor: {
+            ...first,
+            base_hours: labors.reduce((sum, l) => sum + l!.base_hours, 0),
+            covers: uniq(labors.flatMap((l) => l!.covers)),
+            basis: labors.map((l, i) => `${ps[i]!.title}: ${l!.basis}`).join(" | "),
+          },
+        }
+      : {}),
+    ...(ps[0]!.parts ? { parts: ps[0]!.parts } : {}),
+    assumptions: uniq(ps.flatMap((p) => p.assumptions)),
+    exclusions: uniq(ps.flatMap((p) => p.exclusions)),
+  });
 }
 
 /** Every product record a pattern may need, for exact-record reads. */

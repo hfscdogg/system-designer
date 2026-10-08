@@ -68,6 +68,7 @@ export function toScopeDraft(raw: ScopeExtraction): ScopeDraftV1 {
     functional_systems: s.functional_systems,
     requested_changes: s.requested_changes,
     requested_quantities: s.requested_quantities,
+    requested_discount: s.requested_discount,
     existing_equipment_disposition: status === "not_provided" ? "unknown" : status,
     retained_equipment: s.existing_equipment.retained,
     existing_detectors: needsDetectorAnswer(s) && s.existing_detectors !== "not_provided" ? s.existing_detectors : "not_applicable",
@@ -115,6 +116,7 @@ function scopeLines(s: ScopeExtraction, assumed: string[]): string[] {
     `Systems: ${s.functional_systems.length ? s.functional_systems.join("; ") : missing}`,
     mark("requested_changes", `Requested outcomes: ${s.requested_changes.length ? s.requested_changes.join("; ") : missing}`),
     ...(s.requested_quantities.length ? [`Stated quantities: ${s.requested_quantities.map((q) => `${q.item} × ${q.quantity}`).join("; ")}`] : []),
+    ...(s.requested_discount ? [`Discount: ${s.requested_discount.pct}%${s.requested_discount.note ? ` (${s.requested_discount.note})` : ""}, needs Henry's or Zack's approval`] : []),
     mark("existing_equipment", `Existing equipment: ${equipment}`),
     ...(needsDetectorAnswer(s)
       ? [`Existing smoke/CO detectors: ${{ not_provided: missing, none: "none", keep_and_monitor: "keep and monitor", replace: "replace with new" }[s.existing_detectors]}`]
