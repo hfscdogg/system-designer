@@ -73,12 +73,27 @@ describe("catalog admission", () => {
 
 describe("patterns", () => {
   it("ships Livewire's standard D-Tools records for every role, and no invented service records", async () => {
-    const [p] = await loadPatterns();
-    expect(p!.pattern).toBe("security_modernization");
-    expect(p!.roles.every((r) => r.product_id !== null)).toBe(true);
-    expect(p!.services.every((s) => s.product_id === null)).toBe(true);
-    expect(p!.labor).toMatchObject({ labor_type: "07LABOR1MAN", base_hours: 2.5, hours_per_device: 0.5 });
-    expect(patternRecordIds(p!)).toHaveLength(p!.roles.length + 1); // + the parts record
+    const patterns = await loadPatterns();
+    expect(patterns.map((p) => p.pattern)).toEqual(["home_network", "security_modernization"]);
+    for (const p of patterns) {
+      expect(p.roles.every((r) => r.product_id !== null), p.pattern).toBe(true);
+      expect(p.services.every((s) => s.product_id === null), p.pattern).toBe(true);
+      expect(p.labor, p.pattern).toMatchObject({ labor_type: "07LABOR1MAN", hours_per_device: 0.5 });
+      expect(patternRecordIds(p), p.pattern).toHaveLength(p.roles.length + 1); // + the parts record
+    }
+    const network = patterns[0]!;
+    expect(network.applies_when_any).toEqual(["networking"]);
+    expect(network.roles.find((r) => r.role === "mesh_wifi")).toMatchObject({ critical: true, quantity: { kind: "minimum", qty: 3 } });
+  });
+
+  it("combines a security and a network pattern for a job that needs both", async () => {
+    const patterns = await loadPatterns();
+    const both = selectPattern(["intrusion_security", "networking"], patterns)!;
+    expect(both.pattern).toBe("home_network+security_modernization");
+    expect(both.roles.map((r) => r.role)).toEqual(expect.arrayContaining(["security_panel", "mesh_wifi", "network_switch"]));
+    expect(both.labor!.base_hours).toBe(patterns[0]!.labor!.base_hours + patterns[1]!.labor!.base_hours);
+    expect(new Set(both.services.map((s) => s.category)).size).toBe(both.services.length);
+    expect(selectPattern(["networking"], patterns)!.pattern).toBe("home_network");
   });
 
   it("selects exactly one applicable pattern or none", () => {
@@ -199,7 +214,9 @@ describe("materialize → compile → bind → validate", () => {
 
   it("calculates tax and a total only when the commercial scope is complete", async () => {
     const taxed: PolicyRecord = { ...POLICY, policy: { ...POLICY.policy, tax: { mode: "rate", rate_pct: 8.25, applies_to: "taxable_equipment" } } };
+    // Unresolved roles still withhold the total; quantities to verify alone do not.
     const partial = await pipeline({}, testPattern(), taxed);
+    expect(partial.proposal.unresolved.length).toBeGreaterThan(0);
     expect(partial.proposal.commercial.total_cents).toBeNull();
     expect(partial.proposal.commercial.tax).toMatchObject({ status: "calculated", rate_pct: 8.25 });
     const complete = await pipeline(
@@ -218,8 +235,24 @@ describe("materialize → compile → bind → validate", () => {
       taxed,
     );
     expect(complete.proposal.commercial).toMatchObject({ complete: true, label: "Total" });
-    expect(complete.proposal.commercial.total_cents).toBe(complete.proposal.commercial.subtotal_cents + Math.round(60000 * 0.0825));
+    // Taxed like D-Tools: taxable equipment and the parts record; labor is not taxed.
+    const parts = complete.proposal.parts!;
+    expect(parts.is_taxable).toBe(true);
+    expect(complete.proposal.commercial.total_cents).toBe(complete.proposal.commercial.subtotal_cents + Math.round((60000 + parts.price_cents) * 0.0825));
     expect(complete.validation.ok).toBe(true);
+
+    // A minimum quantity is listed to verify but does not withhold the budget total.
+    const withMinimum = await pipeline(
+      { functional_systems: ["alarm panel", "Alarm.com monitoring"], existing_equipment: { status: "none", retained: [], removed_or_replaced: [] } },
+      (() => {
+        const p = testPattern();
+        p.roles = p.roles.filter((r) => r.role === "security_panel" || r.role === "keypad");
+        return p;
+      })(),
+      taxed,
+    );
+    expect(withMinimum.proposal.remaining_verification.some((v) => v.startsWith("Keypad"))).toBe(true);
+    expect(withMinimum.proposal.commercial).toMatchObject({ complete: true, label: "Total" });
   });
 });
 

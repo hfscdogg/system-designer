@@ -509,6 +509,23 @@ describe("margin exceptions (2026 sales comp policy)", () => {
   const exceptionCards = (t: Awaited<ReturnType<typeof setup>>) =>
     [...t.chat.messages.values()].filter((m) => m.view.kind === "margin_exception") as Array<{ thread: { spaceId: string }; view: Extract<View, { kind: "margin_exception" }> }>;
 
+  it("holds any requested discount for an admin's approval and shows it on the budget once approved", async () => {
+    const t = await setup([completeExtraction({ requested_discount: { pct: 10, note: "friends and family" } })]);
+    const run = await heldRun(t);
+    expect(t.receipts()[0]!.lines).toContain("Discount: 10% (friends and family), needs Henry's or Zack's approval");
+    // The margin clears the floor, but the discount alone needs written approval.
+    expect(run.state).toBe("AWAITING_MARGIN_APPROVAL");
+    const [card] = exceptionCards(t);
+    expect(t.statusCard()?.note).toContain("a 10% discount (friends and family) was requested");
+    await t.send(marginClick(card!.view.exceptionId, "approved"));
+    await t.workflows.settled(run.id);
+    expect((await t.store.getRun(run.id)).state).toBe("READY_HELD");
+    const customer = await t.store.readArtifact<{ commercial: { reduction: { pct: number; cents: number } | null; subtotal_cents: number } }>(run.id, "validate", "customer_view");
+    expect(customer!.commercial.reduction).toMatchObject({ pct: 10 });
+    expect(customer!.commercial.reduction!.cents).toBeGreaterThan(0);
+    expect(t.chat.files).toHaveLength(1);
+  });
+
   it("holds a build below the floor, asks the admin directly, and posts the PDF once approved", async () => {
     const t = await setup([completeExtraction()], [], { policy: STRICT });
     const run = await heldRun(t);

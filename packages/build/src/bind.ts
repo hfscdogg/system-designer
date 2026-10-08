@@ -87,6 +87,8 @@ export interface Proposal {
     labor_cents: number;
     services_cents: number;
     parts_cents: number;
+    /** An approved-only price reduction the requester asked for (equipment + labor + services + parts, then minus this). */
+    discount: { pct: number; note: string; cents: number } | null;
     subtotal_cents: number;
     tax: { status: "tbd" } | { status: "calculated"; rate_pct: number; cents: number };
     /** Omitted (null) whenever the commercial scope is incomplete (PRD §14.3). */
@@ -151,23 +153,31 @@ export function bind(draft: ProposalDraft, ctx: BindContext): Proposal {
   const services = sum(draft.services.map((s) => s.unit_price_cents));
   const parts = draft.parts && policy ? sizeParts(draft.parts, equipment + labor + services, policy) : null;
   const partsCents = parts?.price_cents ?? 0;
-  const subtotal = equipment + labor + services + partsCents;
+  const gross = equipment + labor + services + partsCents;
+  const discount = ctx.scope.requested_discount ? { ...ctx.scope.requested_discount, cents: Math.round((gross * ctx.scope.requested_discount.pct) / 100) } : null;
+  const subtotal = gross - (discount?.cents ?? 0);
+  const keep = 1 - (discount?.pct ?? 0) / 100;
   const tax: Proposal["commercial"]["tax"] =
     policy?.tax.mode === "rate"
       ? {
           status: "calculated",
           rate_pct: policy.tax.rate_pct,
-          cents: Math.round((sum(bound.filter((l) => l.is_taxable).map((l) => l.extended_cents)) * policy.tax.rate_pct) / 100),
+          cents: Math.round(
+            ((sum(bound.filter((l) => l.is_taxable).map((l) => l.extended_cents)) + (parts?.is_taxable ? parts.price_cents : 0)) * keep * policy.tax.rate_pct) / 100,
+          ),
         }
       : { status: "tbd" };
 
   const verifyQuantities = bound.filter((l) => l.quantity_basis === "minimum_to_verify").map((l) => `${l.label}: ${l.verify}`);
-  const complete = allowances.length === 0 && draft.unresolved.length === 0 && verifyQuantities.length === 0 && tax.status === "calculated";
+  // A conceptual budget totals with minimum quantities (they are listed to verify); TBD allowances and unresolved roles still withhold it.
+  const complete = allowances.length === 0 && draft.unresolved.length === 0 && tax.status === "calculated";
 
   const costed = [...bound.map((l) => ({ id: l.label, price: l.extended_cents, cost: l.unit_cost_cents === null ? null : l.unit_cost_cents * l.quantity })),
     ...draft.services.map((s) => ({ id: s.label, price: s.unit_price_cents, cost: s.unit_cost_cents })),
     ...(projectLabor ? [{ id: "Labor", price: projectLabor.price_cents, cost: projectLabor.cost_cents }] : []),
-    ...(parts ? [{ id: parts.label, price: parts.price_cents, cost: parts.cost_cents }] : [])];
+    ...(parts ? [{ id: parts.label, price: parts.price_cents, cost: parts.cost_cents }] : []),
+    // The discount comes straight off the margin.
+    ...(discount ? [{ id: "Discount", price: -discount.cents, cost: 0 }] : [])];
   const withCost = costed.filter((c) => c.cost !== null);
   const pricedWithCost = sum(withCost.map((c) => c.price));
   const cost = sum(withCost.map((c) => c.cost!));
@@ -214,6 +224,7 @@ export function bind(draft: ProposalDraft, ctx: BindContext): Proposal {
       labor_cents: labor,
       services_cents: services,
       parts_cents: partsCents,
+      discount,
       subtotal_cents: subtotal,
       tax,
       total_cents: complete && tax.status === "calculated" ? subtotal + tax.cents : null,

@@ -136,6 +136,7 @@ export function normalizeExtraction(input: ScopeExtraction): NormalizedExtractio
     functional_systems: normalizeFunctionalSystems(input.functional_systems),
     requested_changes: list(input.requested_changes),
     requested_quantities: normalizeQuantities(input.requested_quantities),
+    requested_discount: input.requested_discount ? { pct: input.requested_discount.pct, note: clean(input.requested_discount.note) } : null,
     existing_equipment: {
       status: input.existing_equipment.status,
       retained: list(input.existing_equipment.retained),

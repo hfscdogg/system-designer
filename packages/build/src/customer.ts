@@ -44,6 +44,8 @@ export interface CustomerProposal {
     total_cents: number | null;
     /** Shown in the Summary as "Shipping & Handling/Parts", as Livewire's D-Tools proposals do. */
     parts_cents: number;
+    /** An admin-approved price reduction, shown in the Summary. */
+    reduction: { pct: number; cents: number } | null;
     /** DESIGN_RETAINER_PCT of the total, or of the priced scope while the total is incomplete. */
     retainer: { pct: number; cents: number };
   };
@@ -53,7 +55,7 @@ export function customerView(p: Proposal): CustomerProposal {
   return {
     watermark: p.watermark,
     proposal_number: p.identity.proposal_number,
-    title: p.identity.proposal_name ?? `${titleCase(p.pattern.name)} Budget`,
+    title: p.identity.proposal_name ?? `${patternTitle(p.pattern.name)} Budget`,
     client: p.client,
     property: p.property,
     project_type: p.project_type,
@@ -76,7 +78,7 @@ export function customerView(p: Proposal): CustomerProposal {
         : []),
     ],
     labor_total_cents: p.services.reduce((sum, s) => sum + s.unit_price_cents, 0) + (p.labor?.price_cents ?? 0),
-    intro: { systems: titleCase(p.pattern.name).toLowerCase(), rooms: p.rooms, labor_hours: p.labor?.hours ?? null },
+    intro: { systems: patternTitle(p.pattern.name).toLowerCase(), rooms: p.rooms, labor_hours: p.labor?.hours ?? null },
     services: [
       ...p.services.map((s) => s.label),
       ...(p.labor ? [`${labelFor(p.labor.included)} (estimated ${p.labor.hours} hours)`] : []),
@@ -92,6 +94,7 @@ export function customerView(p: Proposal): CustomerProposal {
       tax: p.commercial.tax.status === "calculated" ? { rate_pct: p.commercial.tax.rate_pct, cents: p.commercial.tax.cents } : "TBD",
       total_cents: p.commercial.total_cents,
       parts_cents: p.commercial.parts_cents,
+      reduction: p.commercial.discount ? { pct: p.commercial.discount.pct, cents: p.commercial.discount.cents } : null,
       retainer: {
         pct: DESIGN_RETAINER_PCT,
         cents: Math.round(((p.commercial.total_cents ?? p.commercial.subtotal_cents) * DESIGN_RETAINER_PCT) / 100),
@@ -102,6 +105,8 @@ export function customerView(p: Proposal): CustomerProposal {
 
 const capitalize = (s: string) => s.charAt(0).toUpperCase() + s.slice(1);
 const titleCase = (s: string) => s.split(/[_\s-]+/).filter(Boolean).map(capitalize).join(" ");
+/** "security_modernization+home_network" → "Security Modernization & Home Network". */
+const patternTitle = (name: string) => name.split("+").map(titleCase).join(" & ");
 
 const SERVICE_NAMES: Record<string, string> = {
   design: "design",
