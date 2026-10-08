@@ -1,0 +1,77 @@
+{
+  "schema": "architecture_pattern_v1",
+  "pattern": "video_doorbell",
+  "version": "2026-10-08.1",
+  "title": "Video doorbell",
+  "applies_when_any": [
+    "video_doorbell"
+  ],
+  "roles": [
+    {
+      "role": "doorbell_camera",
+      "label": "Alarm.com video doorbell",
+      "critical": true,
+      "systems": [
+        "video_doorbell"
+      ],
+      "retained_match": [
+        "doorbell"
+      ],
+      "product_id": "2cffe3cb-89bc-492e-bbab-b7fd6b76e324",
+      "precedent": "livewire_standard",
+      "quantity": {
+        "kind": "minimum",
+        "qty": 1,
+        "verify": "doorbell locations with existing doorbell wiring"
+      },
+      "location": "Front entry",
+      "capability": "HD video doorbell in the Alarm.com app",
+      "hours_each": 1,
+      "escalate_if_unresolved": false
+    }
+  ],
+  "services": [
+    {
+      "category": "installation",
+      "label": "Installation",
+      "product_id": null
+    },
+    {
+      "category": "programming",
+      "label": "App setup",
+      "product_id": null
+    },
+    {
+      "category": "testing",
+      "label": "Testing",
+      "product_id": null
+    }
+  ],
+  "labor": {
+    "labor_type": "07LABOR1MAN",
+    "base_hours": 0.5,
+    "hours_per_device": 0.5,
+    "covers": [
+      "design",
+      "removal",
+      "installation",
+      "programming",
+      "testing",
+      "commissioning",
+      "training",
+      "project_management"
+    ],
+    "basis": "Livewire Video Doorbell Package since 2024: 1 hour per doorbell"
+  },
+  "parts": {
+    "product_id": "141236a5-8780-493e-a20d-106b7f71c5b4",
+    "label": "Installation parts and materials"
+  },
+  "assumptions": [
+    "An existing wired doorbell and working transformer are in place."
+  ],
+  "exclusions": [
+    "Alarm.com video service plan fees.",
+    "Doorbell transformer or chime replacement unless listed."
+  ]
+}

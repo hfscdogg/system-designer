@@ -58,6 +58,8 @@ export const CATALOG: Record<string, unknown> = {
 
 export function testPattern(overrides: Partial<Record<keyof typeof IDS, string | null>> = {}): PatternSpec {
   const base = JSON.parse(JSON.stringify(PATTERN_JSON));
+  // The shipped doorbell is its own pattern now; the pipeline tests keep one in the security fixture so their numbers stay comparable.
+  base.roles.push({ role: "video_doorbell", label: "Video doorbell", critical: false, systems: ["video_doorbell"], retained_match: ["doorbell"], product_id: null, precedent: "livewire_standard", quantity: { kind: "fixed", qty: 1 }, location: "Front entry", capability: "Doorbell video in the security app", escalate_if_unresolved: false });
   const id = (k: keyof typeof IDS) => (k in overrides ? overrides[k]! : IDS[k]);
   const map: Record<string, keyof typeof IDS> = {
     security_panel: "panel", keypad: "keypad", door_window_contact: "contact", motion_detector: "motion", glass_break: "glass",

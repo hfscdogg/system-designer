@@ -1,34 +1,296 @@
 {
   "schema": "architecture_pattern_v1",
   "pattern": "security_modernization",
-  "version": "2026-10-07.2",
+  "version": "2026-10-08.1",
   "title": "Security modernization",
-  "applies_when_any": ["intrusion_security"],
+  "applies_when_any": [
+    "intrusion_security"
+  ],
   "roles": [
-    { "role": "security_panel", "label": "Security panel", "critical": true, "systems": ["intrusion_security", "alarm_monitoring"], "retained_match": ["panel"], "product_id": "a9961718-da0e-4f1e-a94f-ce2a28dcc623", "precedent": "livewire_standard", "quantity": { "kind": "fixed", "qty": 1 }, "location": "Equipment location", "capability": "Qolsys IQ Panel 5 with built-in LTE: arms, disarms and reports all zones to Alarm.com and the central station", "escalate_if_unresolved": false },
-    { "role": "keypad", "label": "Keypad", "critical": true, "systems": ["intrusion_security"], "retained_match": ["keypad"], "product_id": "ce213868-9e44-4044-a06a-08c18f5ac449", "precedent": "livewire_standard", "quantity": { "kind": "minimum", "qty": 1, "verify": "number of keypads (one per primary entry)" }, "location": "Primary entry", "capability": "Local arming and disarming", "escalate_if_unresolved": false },
-    { "role": "door_window_contact", "label": "Door/window contact", "critical": true, "systems": ["intrusion_security"], "retained_match": ["contact"], "product_id": "6e26a38e-67d7-437c-b8db-9e4aa515e3f7", "precedent": "livewire_standard", "quantity": { "kind": "minimum", "qty": 1, "verify": "count of protected doors and windows" }, "location": "Perimeter openings", "capability": "Perimeter intrusion detection", "escalate_if_unresolved": false },
-    { "role": "motion_detector", "label": "Motion detector", "critical": false, "systems": ["intrusion_security"], "mentions": ["motion", "interior"], "retained_match": ["motion"], "product_id": "5838d024-2e2e-4b8e-8a7c-c949e4212558", "precedent": "livewire_standard", "quantity": { "kind": "minimum", "qty": 1, "verify": "count of interior zones to protect" }, "location": "Interior zones", "capability": "Interior motion detection, pet-immune", "escalate_if_unresolved": false },
-    { "role": "glass_break", "label": "Glass-break sensor", "critical": false, "systems": ["intrusion_security"], "mentions": ["glass"], "retained_match": ["glass"], "product_id": "177bac8a-6ef6-4051-9ab1-fcbf74a0b639", "precedent": "livewire_standard", "quantity": { "kind": "minimum", "qty": 1, "verify": "count of rooms with protected glass" }, "location": "Rooms with glass", "capability": "Glass-break detection", "escalate_if_unresolved": false },
-    { "role": "smoke_heat_detector", "label": "Smoke/heat detector", "critical": true, "systems": ["fire_detection"], "existing_detectors": ["none", "replace"], "product_id": "a2767f0b-0e54-4cd0-9ce8-f1162a423925", "precedent": "livewire_standard", "quantity": { "kind": "minimum", "qty": 1, "verify": "detector count per code and floor plan" }, "location": "Per code", "capability": "Monitored wireless smoke and heat detection", "escalate_if_unresolved": true },
-    { "role": "co_detector", "label": "Carbon monoxide detector", "critical": true, "systems": ["co_detection"], "existing_detectors": ["none", "replace"], "product_id": "6c37d915-db4c-4986-b7a3-4eeee6fdf356", "precedent": "livewire_standard", "quantity": { "kind": "minimum", "qty": 1, "verify": "detector count per code and floor plan" }, "location": "Per code", "capability": "Monitored wireless CO detection", "escalate_if_unresolved": true },
-    { "role": "panel_345_radio", "label": "345 MHz radio card", "critical": true, "systems": ["fire_detection", "co_detection"], "existing_detectors": ["keep_and_monitor"], "product_id": "02108890-2345-4dc2-88b3-432edffcd5c9", "precedent": "livewire_standard", "quantity": { "kind": "fixed", "qty": 1 }, "location": "Equipment location", "capability": "Lets the panel receive the detector listener", "escalate_if_unresolved": false },
-    { "role": "detector_listener", "label": "Smoke/CO detector listener", "critical": true, "systems": ["fire_detection", "co_detection"], "existing_detectors": ["keep_and_monitor"], "product_id": "69603177-eb96-4e48-8ac5-3773cdeb148c", "precedent": "livewire_standard", "quantity": { "kind": "minimum", "qty": 1, "verify": "one per existing interconnected smoke/CO detector circuit" }, "location": "Near an existing detector", "capability": "Monitors the existing hard-wired smoke/CO detectors", "escalate_if_unresolved": true },
-    { "role": "thermostat", "label": "Smart thermostat", "critical": false, "systems": ["climate_control"], "retained_match": ["thermostat"], "product_id": "f32135ab-c33f-4da4-afd7-446b157dc3c1", "precedent": "livewire_standard", "quantity": { "kind": "minimum", "qty": 1, "verify": "number of HVAC zones" }, "location": "Per HVAC zone", "capability": "Thermostat control in the security app", "escalate_if_unresolved": false },
-    { "role": "video_doorbell", "label": "Video doorbell", "critical": false, "systems": ["video_doorbell"], "retained_match": ["doorbell"], "product_id": "2cffe3cb-89bc-492e-bbab-b7fd6b76e324", "precedent": "livewire_standard", "quantity": { "kind": "fixed", "qty": 1 }, "location": "Front entry", "capability": "Doorbell video in the security app", "escalate_if_unresolved": false }
+    {
+      "role": "security_panel",
+      "label": "Security panel",
+      "critical": true,
+      "systems": [
+        "intrusion_security",
+        "alarm_monitoring"
+      ],
+      "retained_match": [
+        "panel"
+      ],
+      "product_id": "a9961718-da0e-4f1e-a94f-ce2a28dcc623",
+      "precedent": "livewire_standard",
+      "quantity": {
+        "kind": "fixed",
+        "qty": 1
+      },
+      "location": "Equipment location",
+      "capability": "Qolsys IQ Panel 5 with built-in LTE: arms, disarms and reports all zones to Alarm.com and the central station",
+      "escalate_if_unresolved": false
+    },
+    {
+      "role": "keypad",
+      "label": "Keypad",
+      "critical": true,
+      "systems": [
+        "intrusion_security"
+      ],
+      "retained_match": [
+        "keypad"
+      ],
+      "product_id": "ce213868-9e44-4044-a06a-08c18f5ac449",
+      "precedent": "livewire_standard",
+      "quantity": {
+        "kind": "minimum",
+        "qty": 1,
+        "verify": "number of keypads (one per primary entry)"
+      },
+      "location": "Primary entry",
+      "capability": "Local arming and disarming",
+      "escalate_if_unresolved": false
+    },
+    {
+      "role": "door_window_contact",
+      "label": "Door/window contact",
+      "critical": true,
+      "systems": [
+        "intrusion_security"
+      ],
+      "retained_match": [
+        "contact"
+      ],
+      "product_id": "6e26a38e-67d7-437c-b8db-9e4aa515e3f7",
+      "precedent": "livewire_standard",
+      "quantity": {
+        "kind": "minimum",
+        "qty": 1,
+        "verify": "count of protected doors and windows"
+      },
+      "location": "Perimeter openings",
+      "capability": "Perimeter intrusion detection",
+      "escalate_if_unresolved": false
+    },
+    {
+      "role": "motion_detector",
+      "label": "Motion detector",
+      "critical": false,
+      "systems": [
+        "intrusion_security"
+      ],
+      "mentions": [
+        "motion",
+        "interior"
+      ],
+      "retained_match": [
+        "motion"
+      ],
+      "product_id": "5838d024-2e2e-4b8e-8a7c-c949e4212558",
+      "precedent": "livewire_standard",
+      "quantity": {
+        "kind": "minimum",
+        "qty": 1,
+        "verify": "count of interior zones to protect"
+      },
+      "location": "Interior zones",
+      "capability": "Interior motion detection, pet-immune",
+      "escalate_if_unresolved": false
+    },
+    {
+      "role": "glass_break",
+      "label": "Glass-break sensor",
+      "critical": false,
+      "systems": [
+        "intrusion_security"
+      ],
+      "mentions": [
+        "glass"
+      ],
+      "retained_match": [
+        "glass"
+      ],
+      "product_id": "177bac8a-6ef6-4051-9ab1-fcbf74a0b639",
+      "precedent": "livewire_standard",
+      "quantity": {
+        "kind": "minimum",
+        "qty": 1,
+        "verify": "count of rooms with protected glass"
+      },
+      "location": "Rooms with glass",
+      "capability": "Glass-break detection",
+      "escalate_if_unresolved": false
+    },
+    {
+      "role": "smoke_heat_detector",
+      "label": "Smoke/heat detector",
+      "critical": true,
+      "systems": [
+        "fire_detection"
+      ],
+      "existing_detectors": [
+        "none",
+        "replace"
+      ],
+      "product_id": "a2767f0b-0e54-4cd0-9ce8-f1162a423925",
+      "precedent": "livewire_standard",
+      "quantity": {
+        "kind": "minimum",
+        "qty": 1,
+        "verify": "detector count per code and floor plan"
+      },
+      "location": "Per code",
+      "capability": "Monitored wireless smoke and heat detection",
+      "escalate_if_unresolved": true
+    },
+    {
+      "role": "co_detector",
+      "label": "Carbon monoxide detector",
+      "critical": true,
+      "systems": [
+        "co_detection"
+      ],
+      "existing_detectors": [
+        "none",
+        "replace"
+      ],
+      "product_id": "6c37d915-db4c-4986-b7a3-4eeee6fdf356",
+      "precedent": "livewire_standard",
+      "quantity": {
+        "kind": "minimum",
+        "qty": 1,
+        "verify": "detector count per code and floor plan"
+      },
+      "location": "Per code",
+      "capability": "Monitored wireless CO detection",
+      "escalate_if_unresolved": true
+    },
+    {
+      "role": "panel_345_radio",
+      "label": "345 MHz radio card",
+      "critical": true,
+      "systems": [
+        "fire_detection",
+        "co_detection"
+      ],
+      "existing_detectors": [
+        "keep_and_monitor"
+      ],
+      "product_id": "02108890-2345-4dc2-88b3-432edffcd5c9",
+      "precedent": "livewire_standard",
+      "quantity": {
+        "kind": "fixed",
+        "qty": 1
+      },
+      "location": "Equipment location",
+      "capability": "Lets the panel receive the detector listener",
+      "escalate_if_unresolved": false
+    },
+    {
+      "role": "detector_listener",
+      "label": "Smoke/CO detector listener",
+      "critical": true,
+      "systems": [
+        "fire_detection",
+        "co_detection"
+      ],
+      "existing_detectors": [
+        "keep_and_monitor"
+      ],
+      "product_id": "69603177-eb96-4e48-8ac5-3773cdeb148c",
+      "precedent": "livewire_standard",
+      "quantity": {
+        "kind": "minimum",
+        "qty": 1,
+        "verify": "one per existing interconnected smoke/CO detector circuit"
+      },
+      "location": "Near an existing detector",
+      "capability": "Monitors the existing hard-wired smoke/CO detectors",
+      "escalate_if_unresolved": true
+    },
+    {
+      "role": "thermostat",
+      "label": "Smart thermostat",
+      "critical": false,
+      "systems": [
+        "climate_control"
+      ],
+      "retained_match": [
+        "thermostat"
+      ],
+      "product_id": "f32135ab-c33f-4da4-afd7-446b157dc3c1",
+      "precedent": "livewire_standard",
+      "quantity": {
+        "kind": "minimum",
+        "qty": 1,
+        "verify": "number of HVAC zones"
+      },
+      "location": "Per HVAC zone",
+      "capability": "Thermostat control in the security app",
+      "escalate_if_unresolved": false
+    }
   ],
   "services": [
-    { "category": "design", "label": "System design", "product_id": null },
-    { "category": "removal", "label": "Removal of existing equipment", "product_id": null },
-    { "category": "installation", "label": "Installation", "product_id": null },
-    { "category": "programming", "label": "Programming", "product_id": null },
-    { "category": "testing", "label": "Testing", "product_id": null },
-    { "category": "commissioning", "label": "Commissioning", "product_id": null },
-    { "category": "monitoring_activation", "label": "Monitoring activation", "product_id": null },
-    { "category": "training", "label": "Client training", "product_id": null }
+    {
+      "category": "design",
+      "label": "System design",
+      "product_id": null
+    },
+    {
+      "category": "removal",
+      "label": "Removal of existing equipment",
+      "product_id": null
+    },
+    {
+      "category": "installation",
+      "label": "Installation",
+      "product_id": null
+    },
+    {
+      "category": "programming",
+      "label": "Programming",
+      "product_id": null
+    },
+    {
+      "category": "testing",
+      "label": "Testing",
+      "product_id": null
+    },
+    {
+      "category": "commissioning",
+      "label": "Commissioning",
+      "product_id": null
+    },
+    {
+      "category": "monitoring_activation",
+      "label": "Monitoring activation",
+      "product_id": null
+    },
+    {
+      "category": "training",
+      "label": "Client training",
+      "product_id": null
+    }
   ],
-  "labor": { "labor_type": "07LABOR1MAN", "base_hours": 2.5, "hours_per_device": 0.5, "covers": ["design", "removal", "installation", "programming", "testing", "commissioning", "monitoring_activation", "training", "project_management"], "basis": "77 Livewire IQ security projects since 2024 averaged 2.4 hours plus 0.43 hours per device; rounded up to 2.5 plus 0.5" },
-  "parts": { "product_id": "141236a5-8780-493e-a20d-106b7f71c5b4", "label": "Installation parts and materials" },
+  "labor": {
+    "labor_type": "07LABOR1MAN",
+    "base_hours": 2.5,
+    "hours_per_device": 0.5,
+    "covers": [
+      "design",
+      "removal",
+      "installation",
+      "programming",
+      "testing",
+      "commissioning",
+      "monitoring_activation",
+      "training",
+      "project_management"
+    ],
+    "basis": "77 Livewire IQ security projects since 2024 averaged 2.4 hours plus 0.43 hours per device; rounded up to 2.5 plus 0.5"
+  },
+  "parts": {
+    "product_id": "141236a5-8780-493e-a20d-106b7f71c5b4",
+    "label": "Installation parts and materials"
+  },
   "assumptions": [
     "Existing wiring paths are usable where devices are replaced.",
     "Power and a network or cellular signal are available at the equipment location.",

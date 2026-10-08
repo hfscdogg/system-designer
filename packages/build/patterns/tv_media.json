@@ -1,0 +1,35 @@
+{
+  "schema": "architecture_pattern_v1",
+  "pattern": "tv_media",
+  "version": "2026-10-08.1",
+  "title": "TV and media wall",
+  "applies_when_any": ["audio_video"],
+  "roles": [
+    { "role": "tv_mount", "label": "Sanus tilt TV wall mount", "critical": true, "systems": ["audio_video"], "product_id": "a5e143b4-5150-4b7c-a9d7-bb039287e63d", "precedent": "livewire_standard", "quantity": { "kind": "minimum", "qty": 1, "verify": "one mount per wall-mounted TV" }, "location": "TV wall", "capability": "Low-profile tilt mount for 42–90 in. TVs, with concealed power and data", "hours_each": 5, "escalate_if_unresolved": false },
+    { "role": "television", "label": "Sony BRAVIA 8 65\" OLED TV", "critical": false, "systems": ["audio_video"], "mentions": ["new tv", "new television", "provide the tv", "supply the tv", "sony", "bravia", "oled", "include the tv", "tv purchase"], "retained_match": ["tv", "television"], "product_id": "47e8ba9b-b520-4890-b2d0-d92d37378382", "precedent": "livewire_standard", "quantity": { "kind": "minimum", "qty": 1, "verify": "TV size and count per room" }, "location": "TV wall", "capability": "65 in. 4K OLED Google TV", "hours_each": 0, "escalate_if_unresolved": false },
+    { "role": "soundbar", "label": "Sonos Arc Ultra soundbar", "critical": false, "systems": ["audio_video"], "mentions": ["soundbar", "sound bar", "surround", "arc", "better sound", "tv audio"], "retained_match": ["soundbar", "sound bar"], "product_id": "5eb671b0-b05d-4671-940a-0d77f3bbeac7", "precedent": "livewire_standard", "quantity": { "kind": "minimum", "qty": 1, "verify": "one soundbar per TV that needs better sound" }, "location": "Below the TV", "capability": "Dolby Atmos soundbar that also joins the Sonos system", "hours_each": 2, "escalate_if_unresolved": false },
+    { "role": "soundbar_mount", "label": "Sanus soundbar mount", "critical": false, "systems": ["audio_video"], "mentions": ["soundbar", "sound bar", "surround", "arc", "better sound", "tv audio"], "product_id": "5e66b358-6e5b-44b9-85ef-8945af55280a", "precedent": "livewire_standard", "quantity": { "kind": "minimum", "qty": 1, "verify": "one per soundbar" }, "location": "Below the TV", "capability": "Mounts the Arc Ultra to the TV mount", "hours_each": 0.5, "escalate_if_unresolved": false },
+    { "role": "subwoofer", "label": "Sonos Sub", "critical": false, "systems": ["audio_video"], "mentions": ["sub", "subwoofer", "bass", "surround", "theater", "theatre"], "product_id": "8f0f4999-80cf-40c8-9fab-28fc1d5f52ba", "precedent": "livewire_standard", "quantity": { "kind": "fixed", "qty": 1 }, "location": "Near the TV", "capability": "Wireless subwoofer paired with the soundbar", "hours_each": 0.5, "escalate_if_unresolved": false },
+    { "role": "streamer", "label": "Apple TV 4K", "critical": false, "systems": ["audio_video"], "mentions": ["apple tv", "streaming", "streamer", "netflix"], "retained_match": ["apple tv"], "product_id": "a73b7e0d-155a-45e3-80e1-5b5784dd77ea", "precedent": "livewire_standard", "quantity": { "kind": "minimum", "qty": 1, "verify": "one per TV" }, "location": "Behind the TV or in the cabinet", "capability": "Wired 4K streaming source", "hours_each": 1.5, "escalate_if_unresolved": false }
+  ],
+  "services": [
+    { "category": "design", "label": "Media design", "product_id": null },
+    { "category": "removal", "label": "Removal of existing equipment", "product_id": null },
+    { "category": "installation", "label": "Installation", "product_id": null },
+    { "category": "programming", "label": "Setup and calibration", "product_id": null },
+    { "category": "testing", "label": "Testing", "product_id": null },
+    { "category": "training", "label": "Client training", "product_id": null }
+  ],
+  "labor": { "labor_type": "07LABOR1MAN", "base_hours": 0.5, "hours_per_device": 0.5, "covers": ["design", "removal", "installation", "programming", "testing", "commissioning", "training", "project_management"], "basis": "Livewire packages since 2025: Basic Wall-Mounted TV Package 5 hours (mount, concealed power and data), Sonos Arc Ultra Package 2.5 hours with its mount, Sonos Sub Package 0.5 hours, Apple TV Package 1.5 hours" },
+  "parts": { "product_id": "141236a5-8780-493e-a20d-106b7f71c5b4", "label": "Installation parts and materials" },
+  "assumptions": [
+    "TVs are mounted on standard drywall over wood studs, with power and data concealed in the wall.",
+    "The client supplies the TV unless a new one is listed.",
+    "Quantities marked as minimums are confirmed during a site visit."
+  ],
+  "exclusions": [
+    "TV wall reinforcement, masonry or fireplace mounting unless listed.",
+    "Streaming and cable subscriptions.",
+    "Patching and painting."
+  ]
+}

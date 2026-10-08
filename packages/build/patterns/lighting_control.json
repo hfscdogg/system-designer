@@ -1,0 +1,138 @@
+{
+  "schema": "architecture_pattern_v1",
+  "pattern": "lighting_control",
+  "version": "2026-10-08.1",
+  "title": "Lutron lighting control",
+  "applies_when_any": [
+    "lighting_control"
+  ],
+  "roles": [
+    {
+      "role": "lighting_processor",
+      "label": "Lutron RadioRA 3 processor",
+      "critical": true,
+      "systems": [
+        "lighting_control"
+      ],
+      "retained_match": [
+        "lutron processor",
+        "radiora"
+      ],
+      "product_id": "620daa43-9ffe-47a0-abfb-9d050b77f4d5",
+      "precedent": "livewire_standard",
+      "quantity": {
+        "kind": "fixed",
+        "qty": 1
+      },
+      "location": "Equipment location",
+      "capability": "Wireless lighting control hub with app, schedules and scenes",
+      "hours_each": 2,
+      "escalate_if_unresolved": false
+    },
+    {
+      "role": "smart_dimmer",
+      "label": "Lutron Sunnata dimmer",
+      "critical": true,
+      "systems": [
+        "lighting_control"
+      ],
+      "retained_match": [
+        "dimmer"
+      ],
+      "product_id": "4c30dde8-aebb-48ed-b663-656fcb3ab1c3",
+      "precedent": "livewire_standard",
+      "quantity": {
+        "kind": "minimum",
+        "qty": 6,
+        "verify": "count of switch locations to replace with dimmers"
+      },
+      "location": "Existing switch locations",
+      "capability": "Replaces a wall switch; dims and joins scenes",
+      "hours_each": 0.5,
+      "escalate_if_unresolved": false
+    },
+    {
+      "role": "scene_keypad",
+      "label": "Lutron Sunnata 4-button keypad",
+      "critical": false,
+      "systems": [
+        "lighting_control"
+      ],
+      "mentions": [
+        "keypad",
+        "scene",
+        "scenes",
+        "goodnight",
+        "entry"
+      ],
+      "product_id": "a06da045-6a77-4aba-b494-711061e755b5",
+      "precedent": "livewire_standard",
+      "quantity": {
+        "kind": "minimum",
+        "qty": 2,
+        "verify": "keypad locations (entry, primary bedroom)"
+      },
+      "location": "Entry and primary bedroom",
+      "capability": "One-touch scenes such as Goodnight and Away",
+      "hours_each": 0.5,
+      "escalate_if_unresolved": false
+    }
+  ],
+  "services": [
+    {
+      "category": "design",
+      "label": "Lighting design",
+      "product_id": null
+    },
+    {
+      "category": "installation",
+      "label": "Installation",
+      "product_id": null
+    },
+    {
+      "category": "programming",
+      "label": "Scene programming",
+      "product_id": null
+    },
+    {
+      "category": "testing",
+      "label": "Testing",
+      "product_id": null
+    },
+    {
+      "category": "training",
+      "label": "Client training",
+      "product_id": null
+    }
+  ],
+  "labor": {
+    "labor_type": "07LABOR1MAN",
+    "base_hours": 1,
+    "hours_per_device": 0.5,
+    "covers": [
+      "design",
+      "removal",
+      "installation",
+      "programming",
+      "testing",
+      "commissioning",
+      "training",
+      "project_management"
+    ],
+    "basis": "Livewire lighting quotes since 2024: median 5.6 labor hours; processor setup about 2 hours, each dimmer or keypad about 0.5 hours"
+  },
+  "parts": {
+    "product_id": "141236a5-8780-493e-a20d-106b7f71c5b4",
+    "label": "Installation parts and materials"
+  },
+  "assumptions": [
+    "Existing switch boxes have a neutral wire and room for a dimmer.",
+    "Fixtures are dimmable LED.",
+    "Quantities marked as minimums are confirmed during a site visit."
+  ],
+  "exclusions": [
+    "New light fixtures unless listed.",
+    "Electrical rewiring or new circuits.",
+    "Patching and painting."
+  ]
+}

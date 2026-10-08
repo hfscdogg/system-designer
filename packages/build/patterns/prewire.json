@@ -1,0 +1,32 @@
+{
+  "schema": "architecture_pattern_v1",
+  "pattern": "prewire",
+  "version": "2026-10-08.1",
+  "title": "Prewire and structured wiring",
+  "applies_when_any": ["structured_wiring"],
+  "roles": [
+    { "role": "media_enclosure", "label": "42\" structured media enclosure", "critical": true, "systems": ["structured_wiring"], "retained_match": ["enclosure", "panel", "smc"], "product_id": "b3a591c3-c9ea-444d-8943-5cb7c56573a0", "precedent": "livewire_standard", "quantity": { "kind": "fixed", "qty": 1 }, "location": "Equipment location", "capability": "Central enclosure where every cable home-runs", "hours_each": 2, "escalate_if_unresolved": false },
+    { "role": "data_drop", "label": "Cat6 data outlet", "critical": true, "systems": ["structured_wiring"], "product_id": "9b061353-4df9-4219-964c-8e78e1613ec7", "precedent": "livewire_standard", "quantity": { "kind": "minimum", "qty": 6, "verify": "count of data outlets, TV locations, access points and cameras" }, "location": "Per plan", "capability": "Cat6 home run to the enclosure, terminated on a keystone jack", "hours_each": 1, "escalate_if_unresolved": false },
+    { "role": "cat6_cable", "label": "Cat6 cable (per foot)", "critical": true, "systems": ["structured_wiring"], "product_id": "f919a79d-9e9c-4fd5-84a2-d3ad6db1213e", "precedent": "livewire_standard", "quantity": { "kind": "minimum", "qty": 450, "verify": "about 75 ft of Cat6 per data outlet" }, "location": "Per plan", "capability": "Cat6 550 MHz cable for the data runs", "hours_each": 0, "escalate_if_unresolved": false },
+    { "role": "coax_drop", "label": "Coax outlet", "critical": false, "systems": ["structured_wiring"], "mentions": ["coax", "cable tv", "satellite", "antenna", "rg6"], "product_id": "b4b0f6b5-a6ba-4384-8040-c64062a836cc", "precedent": "livewire_standard", "quantity": { "kind": "minimum", "qty": 2, "verify": "count of coax outlets" }, "location": "Per plan", "capability": "RG6 home run for cable, satellite or antenna", "hours_each": 0.75, "escalate_if_unresolved": false },
+    { "role": "speaker_prewire", "label": "Speaker prewire", "critical": false, "systems": ["structured_wiring"], "mentions": ["speaker", "audio", "surround", "sonos", "music", "theater", "theatre"], "product_id": "85918cda-d40a-4eee-85cb-3f2c3af7d769", "precedent": "livewire_standard", "quantity": { "kind": "minimum", "qty": 4, "verify": "count of speaker locations (one per pair of terminals)" }, "location": "Per plan", "capability": "Speaker wire roughed in for future speakers", "hours_each": 0.75, "escalate_if_unresolved": false }
+  ],
+  "services": [
+    { "category": "design", "label": "Low-voltage design", "product_id": null },
+    { "category": "prewire", "label": "Rough-in", "product_id": null },
+    { "category": "installation", "label": "Trim-out", "product_id": null },
+    { "category": "testing", "label": "Cable testing and labeling", "product_id": null }
+  ],
+  "labor": { "labor_type": "07LABOR1MAN", "base_hours": 1, "hours_per_device": 1, "covers": ["design", "prewire", "installation", "testing", "commissioning", "project_management"], "basis": "Livewire packages since 2025: Cat6 Run 1 hour per drop (30 ft), Cat6 Retro 2 hours (75 ft); enclosure set and home-run termination about 2 hours; coax and speaker drops about 0.75 hours each in new construction" },
+  "parts": { "product_id": "141236a5-8780-493e-a20d-106b7f71c5b4", "label": "Installation parts and materials" },
+  "assumptions": [
+    "New construction or open walls: cables are run before drywall.",
+    "One rough-in visit and one trim-out visit.",
+    "Quantities marked as minimums are confirmed against the floor plan."
+  ],
+  "exclusions": [
+    "Equipment for the outlets (TVs, access points, speakers) unless listed.",
+    "Electrical work and permits unless listed.",
+    "Retrofit fishing in finished walls."
+  ]
+}

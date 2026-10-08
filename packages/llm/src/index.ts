@@ -31,7 +31,7 @@ The goal is a quick, roughly right budget from a short, often dictated message: 
 Rules:
 - Record what the message states or clearly implies. Never invent an address component, budget, date, product, price or quantity that is not written.
 - client: the person or company the work is for ("customer Henry Clifford", "for the Smiths" → "Henry Clifford", "Smith Family").
-- functional_systems: every system the message names or implies through its devices ("door contacts, motions, glass breaks" → security; "Alarm.com monitoring" → monitoring; "smoke detectors" → smoke detection).
+- functional_systems: every system the message names or implies through its devices ("door contacts, motions, glass breaks" → security; "Alarm.com monitoring" → monitoring; "smoke detectors" → smoke detection; "Sonos in the kitchen and patio", "music in three rooms" → whole-home audio).
 - Use null for anything not mentioned. Use the explicit "unknown" forms only when the salesperson says it is unknown, TBD or undecided:
   budget.status "unknown", target_installation_date "unknown", existing_equipment.status "unknown".
 - budget.status "not_provided" with amount_usd null when the budget is not mentioned.
