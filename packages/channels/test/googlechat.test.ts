@@ -191,6 +191,21 @@ describe("GoogleChatAdapter.postFile", () => {
     expect(fileCalls[1].data).toEqual({ text: "Here it is", attachment: [{ attachmentDataRef: { resourceName: "ref-123", attachmentUploadToken: "tok" } }], thread: { name: "spaces/A/threads/T" } });
   });
 
+  it("posts with an upload token when Google returns no resource name, and says what came back when it returns neither", async () => {
+    const posted: any[] = [];
+    const adapter = (upload: unknown) =>
+      new GoogleChatAdapter(
+        async () => ({ data: {} }),
+        async (o) => (o.url.includes("attachments:upload") ? { data: upload } : (posted.push(o.data), { data: { name: "spaces/DM/messages/pdf" } })),
+      );
+    const dm = { platform: "google_chat", spaceId: "spaces/DM", threadId: "spaces/DM" };
+    const file = { bytes: new TextEncoder().encode("%PDF"), filename: "p.pdf", contentType: "application/pdf", text: "PDF" };
+    const out = await adapter({ attachmentDataRef: { attachmentUploadToken: "tok-only" } }).postFile(dm, file, "run_2:pdf");
+    expect(out).toEqual({ messageId: "spaces/DM/messages/pdf", attachmentRef: "tok-only" });
+    expect(posted[0]).toEqual({ text: "PDF", attachment: [{ attachmentDataRef: { attachmentUploadToken: "tok-only" } }] });
+    await expect(adapter({ attachmentDataRef: {} }).postFile(dm, file, "run_3:pdf")).rejects.toThrow('did not return an attachment reference (got ["attachmentDataRef"], ref [])');
+  });
+
   it("requires a service account, and a user to act as, for delegated mode", async () => {
     const { googleFileRequest } = await import("../src/index.ts");
     expect(() => googleFileRequest("delegated", "henry@example.com")).toThrow(/service account/);
