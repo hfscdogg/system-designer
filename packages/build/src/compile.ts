@@ -2,7 +2,7 @@ import { z } from "zod";
 import { findAuthorityFields } from "@sd/core";
 import type { AdmittedProduct } from "./catalog.ts";
 import type { Selection } from "./materialize.ts";
-import { laborHours, type PatternSpec } from "./pattern.ts";
+import { laborHoursFor, type PatternSpec } from "./pattern.ts";
 
 /**
  * Compiler (PRD §13.3): validate a selection against the admitted catalog and
@@ -183,7 +183,7 @@ export function compile(raw: unknown, catalog: Map<string, AdmittedProduct>, pat
     const spec = pattern.labor;
     const devices = lines.reduce((n, l) => n + l.quantity, 0);
     if (!spec || spec.labor_type !== sel.labor.labor_type) errors.push("labor does not use the pattern's labor type");
-    else if (sel.labor.devices !== devices || sel.labor.hours !== laborHours(spec, devices)) errors.push("labor hours do not match the pattern estimate for the priced devices");
+    else if (sel.labor.devices !== devices || sel.labor.hours !== laborHoursFor(pattern, lines)) errors.push("labor hours do not match the pattern estimate for the priced devices");
     else if (sel.labor.covers.join() !== spec.covers.join()) errors.push("labor covers different services than the pattern");
     else labor = { ...sel.labor, basis: spec.basis };
   }

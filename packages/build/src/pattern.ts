@@ -30,6 +30,8 @@ export const RoleSpecSchema = z
     location: z.string().min(1),
     /** What this role contributes, shown as capability evidence. */
     capability: z.string().min(1),
+    /** Labor hours per unit of this role, when it differs from the pattern's per-device rate (a speaker pair takes longer than an amp). */
+    hours_each: z.number().min(0).optional(),
     /** Life-safety and similar roles escalate to Zack when unresolved. */
     escalate_if_unresolved: z.boolean().default(false),
   })
@@ -95,6 +97,14 @@ export function laborHours(spec: LaborSpec, devices: number): number {
   return Math.ceil((spec.base_hours + spec.hours_per_device * devices) * 2) / 2;
 }
 
+/** Labor hours for priced lines: base plus each line's units at its role's rate (or the pattern's per-device rate). */
+export function laborHoursFor(pattern: PatternSpec, lines: Array<{ role: string; quantity: number }>): number {
+  const spec = pattern.labor!;
+  const rate = (role: string) => pattern.roles.find((r) => r.role === role)?.hours_each ?? spec.hours_per_device;
+  const hours = lines.reduce((h, l) => h + l.quantity * rate(l.role), spec.base_hours);
+  return Math.ceil(Math.round(hours * 1000) / 1000 * 2) / 2;
+}
+
 /**
  * The pattern for a scope. When several apply (a security and network job),
  * they are combined into one, so each system is priced by its own approved
@@ -108,12 +118,13 @@ export function selectPattern(systems: string[], patterns: PatternSpec[]): Patte
 }
 
 export function combinePatterns(ps: PatternSpec[]): PatternSpec | null {
-  const roles = ps.flatMap((p) => p.roles);
+  // Each role keeps its own pattern's labor rate.
+  const roles = ps.flatMap((p) => p.roles.map((r) => (p.labor && r.hours_each === undefined ? { ...r, hours_each: p.labor.hours_per_device } : r)));
   if (new Set(roles.map((r) => r.role)).size !== roles.length) return null;
   const labors = ps.map((p) => p.labor);
   const parts = ps.map((p) => p.parts);
   if (labors.some((l) => l === undefined) && labors.some((l) => l !== undefined)) return null;
-  if (new Set(labors.map((l) => l && `${l.labor_type}:${l.hours_per_device}`)).size > 1) return null;
+  if (new Set(labors.map((l) => l?.labor_type)).size > 1) return null;
   if (new Set(parts.map((x) => x?.product_id)).size > 1) return null;
   const uniq = (xs: string[]) => [...new Set(xs)];
   const first = labors[0];
@@ -126,7 +137,7 @@ export function combinePatterns(ps: PatternSpec[]): PatternSpec | null {
     applies_when_any: uniq(ps.flatMap((p) => p.applies_when_any)),
     roles,
     services,
-    // One visit covers both systems: the base hours add up, the per-device rate is shared.
+    // One visit covers both systems: the base hours add up; each role keeps its own pattern's rate.
     ...(first
       ? {
           labor: {

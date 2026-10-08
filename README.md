@@ -97,7 +97,7 @@ A build below its market's floor, or with any requested discount, is **held** as
 - An admin must have messaged the app directly at least once to be reachable.
 - A discount the salesperson asks for ("10% off") is recorded as `requested_discount` and shown on the receipt. The budget applies it but is held until an admin approves; the PDF Summary then shows "Discount (10%)". Discounts on monitoring or service plans aren't priced in a budget.
 
-Patterns (`packages/build/patterns/`) cover security modernization and home networking. A scope that needs both gets both, combined into one budget with one visit's labor.
+Patterns (`packages/build/patterns/`) cover security modernization, home networking and whole-home audio (Sonos). A scope that needs several gets them combined into one budget: setup hours add up and each role keeps its own labor rate.
 
 Parts are sized to the parts share at the parts margin. `tax` can also be `{ "mode": "rate", "rate_pct": <n>, "applies_to": "taxable_equipment" }`.
 

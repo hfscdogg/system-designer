@@ -1,4 +1,5 @@
 import { describe, expect, it } from "vitest";
+import { normalizeFunctionalSystems } from "@sd/core";
 import { recordedDToolsReader } from "@sd/dtools";
 import {
   admitProduct,
@@ -6,6 +7,7 @@ import {
   compile,
   customerView,
   forbiddenCustomerKeys,
+  laborHoursFor,
   loadPatterns,
   materialize,
   patternRecordIds,
@@ -74,7 +76,7 @@ describe("catalog admission", () => {
 describe("patterns", () => {
   it("ships Livewire's standard D-Tools records for every role, and no invented service records", async () => {
     const patterns = await loadPatterns();
-    expect(patterns.map((p) => p.pattern)).toEqual(["home_network", "security_modernization"]);
+    expect(patterns.map((p) => p.pattern)).toEqual(["home_network", "security_modernization", "whole_home_audio"]);
     for (const p of patterns) {
       expect(p.roles.every((r) => r.product_id !== null), p.pattern).toBe(true);
       expect(p.services.every((s) => s.product_id === null), p.pattern).toBe(true);
@@ -94,6 +96,22 @@ describe("patterns", () => {
     expect(both.labor!.base_hours).toBe(patterns[0]!.labor!.base_hours + patterns[1]!.labor!.base_hours);
     expect(new Set(both.services.map((s) => s.category)).size).toBe(both.services.length);
     expect(selectPattern(["networking"], patterns)!.pattern).toBe("home_network");
+  });
+
+  it("routes music requests to whole-home audio, not to TV and theater", async () => {
+    const patterns = await loadPatterns();
+    const systems = normalizeFunctionalSystems(["Sonos in the kitchen", "in-ceiling speakers", "outdoor speakers on the patio"]);
+    expect(systems).toEqual(["whole_home_audio"]);
+    expect(selectPattern(systems, patterns)!.pattern).toBe("whole_home_audio");
+    expect(normalizeFunctionalSystems(["85 inch TV", "soundbar"])).toEqual(["audio_video"]);
+    const audio = patterns.find((p) => p.pattern === "whole_home_audio")!;
+    expect(audio.roles.find((r) => r.role === "zone_amplifier")).toMatchObject({ critical: true, quantity: { kind: "minimum", qty: 2 } });
+    expect(audio.roles.find((r) => r.role === "outdoor_speakers")!.mentions).toContain("patio");
+    // Speaker pairs take longer than amps: 1 h setup + 2 amps × 0.5 + 2 pairs × 3 = 8 h.
+    expect(laborHoursFor(audio, [{ role: "zone_amplifier", quantity: 2 }, { role: "in_ceiling_speakers", quantity: 2 }])).toBe(8);
+    // Combined with networking, each role keeps its own rate and the setup hours add: 4 + 1 + 6 + 3 × 0.5 = 12.5.
+    const both = selectPattern(["whole_home_audio", "networking"], patterns)!;
+    expect(laborHoursFor(both, [{ role: "zone_amplifier", quantity: 2 }, { role: "in_ceiling_speakers", quantity: 2 }, { role: "mesh_wifi", quantity: 3 }])).toBe(12.5);
   });
 
   it("selects exactly one applicable pattern or none", () => {

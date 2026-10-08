@@ -1,5 +1,5 @@
 import type { ScopeDraftV1 } from "@sd/core";
-import { laborHours, type PatternSpec, type RoleSpec } from "./pattern.ts";
+import { laborHoursFor, type PatternSpec, type RoleSpec } from "./pattern.ts";
 
 /**
  * Deterministic materializer (PRD §13.2): approved scope + approved pattern →
@@ -90,7 +90,7 @@ export function materialize(scope: ScopeDraftV1, pattern: PatternSpec): Selectio
   const devices = lines.reduce((n, l) => n + l.quantity, 0);
   const labor: Selection["labor"] =
     pattern.labor && devices > 0
-      ? { labor_type: pattern.labor.labor_type, hours: laborHours(pattern.labor, devices), devices, covers: pattern.labor.covers }
+      ? { labor_type: pattern.labor.labor_type, hours: laborHoursFor(pattern, lines), devices, covers: pattern.labor.covers }
       : null;
 
   const services: Selection["services"] = [];

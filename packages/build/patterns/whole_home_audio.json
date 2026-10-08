@@ -1,0 +1,34 @@
+{
+  "schema": "architecture_pattern_v1",
+  "pattern": "whole_home_audio",
+  "version": "2026-10-08.1",
+  "title": "Whole-home audio",
+  "applies_when_any": ["whole_home_audio"],
+  "roles": [
+    { "role": "zone_amplifier", "label": "Sonos Amp", "critical": true, "systems": ["whole_home_audio"], "retained_match": ["amp", "amplifier"], "product_id": "2f4f4038-cb86-4a7d-ba17-4919c5f2725f", "precedent": "livewire_standard", "quantity": { "kind": "minimum", "qty": 2, "verify": "one Sonos Amp per audio zone" }, "location": "Equipment location", "capability": "Streams and powers one audio zone, controlled from the Sonos app", "hours_each": 0.5, "escalate_if_unresolved": false },
+    { "role": "in_ceiling_speakers", "label": "Sonos In-Ceiling speakers (pair)", "critical": true, "systems": ["whole_home_audio"], "retained_match": ["speaker"], "product_id": "d3a4efcb-e1a4-4a84-876d-884672e1a5f1", "precedent": "livewire_standard", "quantity": { "kind": "minimum", "qty": 2, "verify": "one pair of in-ceiling speakers per indoor zone" }, "location": "Ceilings of each zone", "capability": "In-ceiling architectural speakers by Sonance, one pair per room", "hours_each": 3, "escalate_if_unresolved": false },
+    { "role": "outdoor_speakers", "label": "Sonos Outdoor speakers (pair)", "critical": false, "systems": ["whole_home_audio"], "mentions": ["outdoor", "outside", "patio", "pool", "deck", "porch", "yard", "exterior", "landscape"], "product_id": "fddaeb98-cff3-46bf-9b70-34cdf5014830", "precedent": "livewire_standard", "quantity": { "kind": "minimum", "qty": 1, "verify": "outdoor areas to cover, one pair each" }, "location": "Exterior", "capability": "Weather-resistant architectural speakers by Sonance for outdoor living areas", "hours_each": 3, "escalate_if_unresolved": false },
+    { "role": "streaming_port", "label": "Sonos Port", "critical": false, "systems": ["whole_home_audio"], "mentions": ["existing receiver", "existing amplifier", "existing amp", "stereo", "turntable", "record player", "receiver"], "product_id": "b96590da-e411-411e-91e8-ce7ad67381bd", "precedent": "livewire_standard", "quantity": { "kind": "fixed", "qty": 1 }, "location": "Equipment location", "capability": "Adds Sonos streaming to an existing stereo or receiver", "hours_each": 0.5, "escalate_if_unresolved": false }
+  ],
+  "services": [
+    { "category": "design", "label": "Audio design", "product_id": null },
+    { "category": "removal", "label": "Removal of existing equipment", "product_id": null },
+    { "category": "installation", "label": "Installation", "product_id": null },
+    { "category": "programming", "label": "Sonos setup and Trueplay tuning", "product_id": null },
+    { "category": "testing", "label": "Testing", "product_id": null },
+    { "category": "commissioning", "label": "Commissioning", "product_id": null },
+    { "category": "training", "label": "Client training", "product_id": null }
+  ],
+  "labor": { "labor_type": "07LABOR1MAN", "base_hours": 1, "hours_per_device": 0.5, "covers": ["design", "removal", "installation", "programming", "testing", "commissioning", "training", "project_management"], "basis": "Livewire packages since 2025: Sonos Amp Package 0.5 hours, SONOS by Sonance In-Ceiling Speakers package 2.9 hours per pair (retrofit with wire); so each amp and Port carries 0.5 hours and each speaker pair 3 hours, plus 1 hour of setup: 8 hours for a typical two-zone job" },
+  "parts": { "product_id": "141236a5-8780-493e-a20d-106b7f71c5b4", "label": "Installation parts and materials" },
+  "assumptions": [
+    "Speakers are retrofit into accessible ceilings with new speaker wire to the equipment location.",
+    "A working Wi-Fi network covers the equipment location; Sonos is controlled from the Sonos app.",
+    "Quantities marked as minimums are confirmed during a site visit."
+  ],
+  "exclusions": [
+    "Music streaming subscriptions.",
+    "Televisions, soundbars and home theater (quoted separately).",
+    "Patching and painting."
+  ]
+}

@@ -15,7 +15,9 @@ const FUNCTIONAL_SYSTEMS: Array<[canonical: string, patterns: RegExp[]]> = [
   ["climate_control", [/\b(thermostats?|hvac control|climate( control)?)\b/]],
   ["video_doorbell", [/\b(video )?door ?bell\b/]],
   ["video_surveillance", [/\b((?<!door ?bell )cameras?|cctv|surveillance|nvr)\b/]],
-  ["audio_video", [/\b(tvs?|television|home theater|theatre|media room|audio[/ -]?video|av|distributed audio|speakers?|soundbar)\b/]],
+  // Music through the house is its own system (Sonos amps and architectural speakers); TVs and theaters are audio_video.
+  ["whole_home_audio", [/\b(sonos|whole[- ](home|house) (audio|music)|distributed audio|multi[- ]room (audio|music)|background music|(in|on)[- ](ceiling|wall) speakers?|ceiling speakers?|outdoor speakers?|landscape speakers?|patio speakers?|speakers?|music)\b/]],
+  ["audio_video", [/\b(tvs?|television|home theater|theatre|media room|audio[/ -]?video|av|soundbar|surround( sound)?)\b/]],
   // "wireless" alone names how a device connects (wireless contacts, sensors), not a network.
   ["networking", [/\b(wi-?fi|network(ing)?|access points?|router|wireless (network|internet|coverage))\b/]],
   ["lighting_control", [/\b(lighting control|lutron|dimmers?|keypads? for lighting|lighting)\b/]],
