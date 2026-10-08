@@ -1,0 +1,113 @@
+{
+  "schema": "architecture_pattern_v1",
+  "pattern": "home_automation",
+  "version": "2026-10-08.1",
+  "title": "Control4 home automation",
+  "applies_when_any": [
+    "home_automation"
+  ],
+  "roles": [
+    {
+      "role": "automation_controller",
+      "label": "Control4 CORE 1 controller",
+      "critical": true,
+      "systems": [
+        "home_automation"
+      ],
+      "retained_match": [
+        "control4",
+        "controller"
+      ],
+      "product_id": "4ff6a8d7-4b25-4499-88a5-8bf8f29bdac0",
+      "precedent": "livewire_standard",
+      "quantity": {
+        "kind": "fixed",
+        "qty": 1
+      },
+      "location": "Equipment location",
+      "capability": "Runs Control4 for one main room plus app and voice control",
+      "hours_each": 4,
+      "escalate_if_unresolved": false
+    },
+    {
+      "role": "automation_remote",
+      "label": "Control4 Halo remote",
+      "critical": true,
+      "systems": [
+        "home_automation"
+      ],
+      "retained_match": [
+        "remote"
+      ],
+      "product_id": "b0802cfd-bc41-4f33-ab5f-a25e20af6978",
+      "precedent": "livewire_standard",
+      "quantity": {
+        "kind": "minimum",
+        "qty": 1,
+        "verify": "one remote per controlled TV room"
+      },
+      "location": "TV room",
+      "capability": "Rechargeable touchscreen remote for the TV and music",
+      "hours_each": 0.5,
+      "escalate_if_unresolved": false
+    }
+  ],
+  "services": [
+    {
+      "category": "design",
+      "label": "Automation design",
+      "product_id": null
+    },
+    {
+      "category": "installation",
+      "label": "Installation",
+      "product_id": null
+    },
+    {
+      "category": "programming",
+      "label": "Control4 programming",
+      "product_id": null
+    },
+    {
+      "category": "testing",
+      "label": "Testing",
+      "product_id": null
+    },
+    {
+      "category": "training",
+      "label": "Client training",
+      "product_id": null
+    }
+  ],
+  "labor": {
+    "labor_type": "07LABOR1MAN",
+    "base_hours": 0.5,
+    "hours_per_device": 0.5,
+    "covers": [
+      "design",
+      "removal",
+      "installation",
+      "programming",
+      "testing",
+      "commissioning",
+      "training",
+      "project_management"
+    ],
+    "basis": "Livewire automation quotes since 2024: median 4 labor hours on Automation lines; programming a CORE controller about 4 hours, each remote 0.5 hours"
+  },
+  "parts": {
+    "product_id": "141236a5-8780-493e-a20d-106b7f71c5b4",
+    "label": "Installation parts and materials"
+  },
+  "assumptions": [
+    "A CORE 1 controller covers a main room; larger multi-room systems are sized during design.",
+    "A working network is available at the equipment location.",
+    "Devices to control (TVs, audio, lighting) are listed separately or already installed.",
+    "Quantities marked as minimums are confirmed during a site visit."
+  ],
+  "exclusions": [
+    "Control4 4Sight subscription.",
+    "Third-party devices not listed.",
+    "Patching and painting."
+  ]
+}

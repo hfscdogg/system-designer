@@ -76,14 +76,17 @@ describe("catalog admission", () => {
 describe("patterns", () => {
   it("ships Livewire's standard D-Tools records for every role, and no invented service records", async () => {
     const patterns = await loadPatterns();
-    expect(patterns.map((p) => p.pattern)).toEqual(["home_network", "security_modernization", "tv_media", "whole_home_audio"]);
+    expect(patterns.map((p) => p.pattern)).toEqual([
+      "access_control", "home_automation", "home_network", "lighting_control", "motorized_shades", "prewire",
+      "security_modernization", "surveillance", "tv_media", "video_doorbell", "whole_home_audio",
+    ]);
     for (const p of patterns) {
       expect(p.roles.every((r) => r.product_id !== null), p.pattern).toBe(true);
       expect(p.services.every((s) => s.product_id === null), p.pattern).toBe(true);
-      expect(p.labor, p.pattern).toMatchObject({ labor_type: "07LABOR1MAN", hours_per_device: 0.5 });
+      expect(p.labor?.labor_type, p.pattern).toBe("07LABOR1MAN");
       expect(patternRecordIds(p), p.pattern).toHaveLength(p.roles.length + 1); // + the parts record
     }
-    const network = patterns[0]!;
+    const network = patterns.find((p) => p.pattern === "home_network")!;
     expect(network.applies_when_any).toEqual(["networking"]);
     expect(network.roles.find((r) => r.role === "mesh_wifi")).toMatchObject({ critical: true, quantity: { kind: "minimum", qty: 3 } });
   });
@@ -93,9 +96,28 @@ describe("patterns", () => {
     const both = selectPattern(["intrusion_security", "networking"], patterns)!;
     expect(both.pattern).toBe("home_network+security_modernization");
     expect(both.roles.map((r) => r.role)).toEqual(expect.arrayContaining(["security_panel", "mesh_wifi", "network_switch"]));
-    expect(both.labor!.base_hours).toBe(patterns[0]!.labor!.base_hours + patterns[1]!.labor!.base_hours);
+    const byName = (n: string) => patterns.find((p) => p.pattern === n)!;
+    expect(both.labor!.base_hours).toBe(byName("home_network").labor!.base_hours + byName("security_modernization").labor!.base_hours);
     expect(new Set(both.services.map((s) => s.category)).size).toBe(both.services.length);
     expect(selectPattern(["networking"], patterns)!.pattern).toBe("home_network");
+  });
+
+  it("routes each kind of request to its own pattern", async () => {
+    const patterns = await loadPatterns();
+    const route = (words: string[]) => selectPattern(normalizeFunctionalSystems(words), patterns)?.pattern ?? null;
+    expect(route(["prewire", "data drops"])).toBe("prewire");
+    expect(route(["network drops"])).toBe("prewire");
+    expect(route(["cameras", "surveillance"])).toBe("surveillance");
+    expect(route(["Control4", "universal remote"])).toBe("home_automation");
+    expect(route(["Lutron lighting control", "dimmers"])).toBe("lighting_control");
+    expect(route(["video doorbell"])).toBe("video_doorbell");
+    expect(route(["access control"])).toBe("access_control");
+    expect(route(["motorized shades"])).toBe("motorized_shades");
+    // Security with a doorbell prices the doorbell once, from its own pattern.
+    const both = selectPattern(normalizeFunctionalSystems(["alarm panel", "video doorbell"]), patterns)!;
+    expect(both.roles.filter((r) => r.systems.includes("video_doorbell"))).toHaveLength(1);
+    // Pool automation is not a home-automation platform.
+    expect(normalizeFunctionalSystems(["pool automation"])).toEqual(["pool automation"]);
   });
 
   it("routes music requests to whole-home audio, not to TV and theater", async () => {

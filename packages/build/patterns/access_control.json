@@ -1,0 +1,145 @@
+{
+  "schema": "architecture_pattern_v1",
+  "pattern": "access_control",
+  "version": "2026-10-08.1",
+  "title": "Access control",
+  "applies_when_any": [
+    "access_control"
+  ],
+  "roles": [
+    {
+      "role": "access_controller",
+      "label": "Alarm.com access control panel",
+      "critical": true,
+      "systems": [
+        "access_control"
+      ],
+      "product_id": "1461ee47-2e1a-4503-8215-0e7c9301c313",
+      "precedent": "livewire_standard",
+      "quantity": {
+        "kind": "fixed",
+        "qty": 1
+      },
+      "location": "Equipment location",
+      "capability": "Two-door access controller managed in Alarm.com",
+      "hours_each": 2,
+      "escalate_if_unresolved": false
+    },
+    {
+      "role": "door_reader",
+      "label": "HID keypad card reader",
+      "critical": true,
+      "systems": [
+        "access_control"
+      ],
+      "retained_match": [
+        "reader"
+      ],
+      "product_id": "de5e3f9a-74ce-4e03-9d36-67e3c1ad6063",
+      "precedent": "livewire_standard",
+      "quantity": {
+        "kind": "minimum",
+        "qty": 1,
+        "verify": "count of controlled doors"
+      },
+      "location": "Each controlled door",
+      "capability": "Card and PIN entry",
+      "hours_each": 2,
+      "escalate_if_unresolved": false
+    },
+    {
+      "role": "door_strike",
+      "label": "HES electric strike",
+      "critical": true,
+      "systems": [
+        "access_control"
+      ],
+      "product_id": "ccdf7b9d-b8d1-4f6a-92fc-882b8676ecb8",
+      "precedent": "livewire_standard",
+      "quantity": {
+        "kind": "minimum",
+        "qty": 1,
+        "verify": "one per controlled door; frame and hardware verified"
+      },
+      "location": "Each controlled door",
+      "capability": "Releases the door on a valid credential",
+      "hours_each": 1.5,
+      "escalate_if_unresolved": false
+    },
+    {
+      "role": "door_position",
+      "label": "Door position contact",
+      "critical": true,
+      "systems": [
+        "access_control"
+      ],
+      "product_id": "144ece84-0599-4706-9f3d-b2b8f0fc8997",
+      "precedent": "livewire_standard",
+      "quantity": {
+        "kind": "minimum",
+        "qty": 1,
+        "verify": "one per controlled door"
+      },
+      "location": "Each controlled door",
+      "capability": "Reports door open and forced entry",
+      "hours_each": 0.5,
+      "escalate_if_unresolved": false
+    }
+  ],
+  "services": [
+    {
+      "category": "design",
+      "label": "Access design",
+      "product_id": null
+    },
+    {
+      "category": "installation",
+      "label": "Installation",
+      "product_id": null
+    },
+    {
+      "category": "programming",
+      "label": "Credential and schedule setup",
+      "product_id": null
+    },
+    {
+      "category": "testing",
+      "label": "Testing",
+      "product_id": null
+    },
+    {
+      "category": "training",
+      "label": "Client training",
+      "product_id": null
+    }
+  ],
+  "labor": {
+    "labor_type": "07LABOR1MAN",
+    "base_hours": 0.5,
+    "hours_per_device": 0.5,
+    "covers": [
+      "design",
+      "removal",
+      "installation",
+      "programming",
+      "testing",
+      "commissioning",
+      "training",
+      "project_management"
+    ],
+    "basis": "Livewire Access Control Single Door Package since 2024: 4 hours per door (reader, strike, contact, wiring)"
+  },
+  "parts": {
+    "product_id": "141236a5-8780-493e-a20d-106b7f71c5b4",
+    "label": "Installation parts and materials"
+  },
+  "assumptions": [
+    "Doors and frames accept a standard electric strike.",
+    "Cable can be run from each door to the equipment location."
+  ],
+  "exclusions": [
+    "Alarm.com access control service fees.",
+    "Door hardware or frame modification unless listed.",
+    "Fire alarm interface and permits unless listed."
+  ]
+}

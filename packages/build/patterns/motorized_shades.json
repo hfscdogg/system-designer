@@ -1,0 +1,98 @@
+{
+  "schema": "architecture_pattern_v1",
+  "pattern": "motorized_shades",
+  "version": "2026-10-08.1",
+  "title": "Motorized shades",
+  "applies_when_any": [
+    "motorized_shades"
+  ],
+  "roles": [
+    {
+      "role": "battery_shade",
+      "label": "Lutron Triathlon battery shade",
+      "critical": true,
+      "systems": [
+        "motorized_shades"
+      ],
+      "product_id": "66659153-5f7b-43a2-9205-44103389b357",
+      "precedent": "livewire_standard",
+      "quantity": {
+        "kind": "minimum",
+        "qty": 4,
+        "verify": "count and sizes of windows; priced at a typical 32 x 55 in. inside-mount shade"
+      },
+      "location": "Windows",
+      "capability": "Quiet battery-powered roller shade, app and remote control",
+      "hours_each": 1,
+      "escalate_if_unresolved": false
+    },
+    {
+      "role": "shade_batteries",
+      "label": "D batteries (4-pack per shade)",
+      "critical": false,
+      "systems": [
+        "motorized_shades"
+      ],
+      "product_id": "73e36ada-0c37-48ce-9f1d-ce482c2cad75",
+      "precedent": "livewire_standard",
+      "quantity": {
+        "kind": "minimum",
+        "qty": 4,
+        "verify": "one 4-pack per shade"
+      },
+      "location": "In each shade",
+      "capability": "Powers each shade for years",
+      "hours_each": 0,
+      "escalate_if_unresolved": false
+    }
+  ],
+  "services": [
+    {
+      "category": "design",
+      "label": "Measure and fabric selection",
+      "product_id": null
+    },
+    {
+      "category": "installation",
+      "label": "Installation",
+      "product_id": null
+    },
+    {
+      "category": "programming",
+      "label": "Programming",
+      "product_id": null
+    },
+    {
+      "category": "training",
+      "label": "Client training",
+      "product_id": null
+    }
+  ],
+  "labor": {
+    "labor_type": "07LABOR1MAN",
+    "base_hours": 1,
+    "hours_per_device": 0.5,
+    "covers": [
+      "design",
+      "removal",
+      "installation",
+      "programming",
+      "testing",
+      "commissioning",
+      "training",
+      "project_management"
+    ],
+    "basis": "Livewire shade quotes since 2024: about 1 hour per battery shade plus setup"
+  },
+  "parts": {
+    "product_id": "141236a5-8780-493e-a20d-106b7f71c5b4",
+    "label": "Installation parts and materials"
+  },
+  "assumptions": [
+    "Inside-mount windows with enough depth; final price follows measured sizes and fabric."
+  ],
+  "exclusions": [
+    "Custom fabrics beyond the standard collection.",
+    "Window trim or blocking work."
+  ]
+}

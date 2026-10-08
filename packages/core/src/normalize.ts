@@ -18,8 +18,12 @@ const FUNCTIONAL_SYSTEMS: Array<[canonical: string, patterns: RegExp[]]> = [
   // Music through the house is its own system (Sonos amps and architectural speakers); TVs and theaters are audio_video.
   ["whole_home_audio", [/\b(sonos|whole[- ](home|house) (audio|music)|distributed audio|multi[- ]room (audio|music)|background music|(in|on)[- ](ceiling|wall) speakers?|ceiling speakers?|outdoor speakers?|landscape speakers?|patio speakers?|speakers?|music)\b/]],
   ["audio_video", [/\b(tvs?|television|home theater|theatre|media room|audio[/ -]?video|av|soundbar|surround( sound)?)\b/]],
+  // New-construction cabling; listed before networking so "network drops" are wiring, not Wi-Fi.
+  ["structured_wiring", [/\b(structured wiring|pre-?wire|prewiring|pre-?wired|low[- ]voltage wiring|cat ?6 (runs?|drops?|wiring)|data (drops?|outlets?|runs?)|network (drops?|outlets?|wiring)|rough[- ]?in)\b/]],
   // "wireless" alone names how a device connects (wireless contacts, sensors), not a network.
-  ["networking", [/\b(wi-?fi|network(ing)?|access points?|router|wireless (network|internet|coverage))\b/]],
+  ["networking", [/\b(wi-?fi|network(ing)?(?! (drops?|outlets?|wiring))|access points?|router|wireless (network|internet|coverage))\b/]],
+  // Bare "automation" is too broad (pool automation): only whole-home control platforms.
+  ["home_automation", [/\b(control4|c4|(home|house) automation|smart home|whole[- ](home|house) control|universal remote|savant|crestron)\b/]],
   ["lighting_control", [/\b(lighting control|lutron|dimmers?|keypads? for lighting|lighting)\b/]],
   ["motorized_shades", [/\b(shades?|blinds|motorized (window )?treatments?)\b/]],
   ["access_control", [/\b(door locks?|smart locks?|access control|gate)\b/]],
