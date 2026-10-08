@@ -17,7 +17,8 @@ const FUNCTIONAL_SYSTEMS: Array<[canonical: string, patterns: RegExp[]]> = [
   ["video_surveillance", [/\b((?<!door ?bell )cameras?|cctv|surveillance|nvr)\b/]],
   // Music through the house is its own system (Sonos amps and architectural speakers); TVs and theaters are audio_video.
   ["whole_home_audio", [/\b(sonos|whole[- ](home|house) (audio|music)|distributed audio|multi[- ]room (audio|music)|background music|(in|on)[- ](ceiling|wall) speakers?|ceiling speakers?|outdoor speakers?|landscape speakers?|patio speakers?|speakers?|music)\b/]],
-  ["audio_video", [/\b(tvs?|television|home theater|theatre|media room|audio[/ -]?video|av|soundbar|surround( sound)?)\b/]],
+  // Bare "video" is a TV; "video doorbell" and "video cameras" are their own systems.
+  ["audio_video", [/\b(tvs?|television|home theater|theatre|media room|audio[/ -]?video|a\/v|av|soundbar|surround( sound)?|video(?! ?(door ?bell|surveillance|cameras?|security)))\b/]],
   // New-construction cabling; listed before networking so "network drops" are wiring, not Wi-Fi.
   ["structured_wiring", [/\b(structured wiring|pre-?wire|prewiring|pre-?wired|low[- ]voltage wiring|cat ?6 (runs?|drops?|wiring)|data (drops?|outlets?|runs?)|network (drops?|outlets?|wiring)|rough[- ]?in)\b/]],
   // "wireless" alone names how a device connects (wireless contacts, sensors), not a network.
@@ -62,10 +63,14 @@ function matchAll(table: Array<[string, RegExp[]]>, text: string): string[] {
 }
 
 export function normalizeFunctionalSystems(items: string[]): string[] {
+  const mapped = items.map((item) => ({ item, hits: matchAll(FUNCTIONAL_SYSTEMS, item) }));
+  const hasAv = mapped.some((m) => m.hits.includes("audio_video"));
   return uniqSorted(
-    items.flatMap((item) => {
-      const hits = matchAll(FUNCTIONAL_SYSTEMS, item);
-      return hits.length ? hits : [fold(item)];
+    mapped.flatMap(({ item, hits }) => {
+      if (hits.length) return hits;
+      // Bare "audio" is the TV's sound when a TV is in scope, otherwise music through the house.
+      if (/^audio( systems?)?$/.test(fold(item))) return [hasAv ? "audio_video" : "whole_home_audio"];
+      return [fold(item)];
     }),
   );
 }

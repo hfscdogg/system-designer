@@ -90,6 +90,22 @@ describe("normalization", () => {
   });
 });
 
+describe("generic audio and video", () => {
+  it("reads bare audio and video as a TV when a TV is in scope, otherwise music", () => {
+    expect(normalizeFunctionalSystems(["audio", "video"])).toEqual(["audio_video"]);
+    expect(normalizeFunctionalSystems(["video"])).toEqual(["audio_video"]);
+    expect(normalizeFunctionalSystems(["A/V"])).toEqual(["audio_video"]);
+    expect(normalizeFunctionalSystems(["audio"])).toEqual(["whole_home_audio"]);
+    expect(normalizeFunctionalSystems(["video doorbell"])).toEqual(["video_doorbell"]);
+    expect(normalizeFunctionalSystems(["video surveillance"])).toEqual(["video_surveillance"]);
+    expect(normalizeFunctionalSystems(["cameras", "video"])).toEqual(["audio_video", "video_surveillance"]);
+  });
+  it("leaves canonical names unchanged", () => {
+    const canonical = ["audio_video", "video_doorbell", "video_surveillance", "whole_home_audio"];
+    expect(normalizeFunctionalSystems(canonical)).toEqual(canonical);
+  });
+});
+
 describe("tap-to-answer choices", () => {
   it("maps every system and service choice to exactly one canonical term", () => {
     for (const o of ANSWER_CHOICES.functional_systems!.options) expect(normalizeFunctionalSystems([o.value]), o.value).toHaveLength(1);
