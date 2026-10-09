@@ -50,6 +50,7 @@
     {
       "role": "door_strike",
       "label": "HES electric strike",
+      "count_terms": ["strike"],
       "critical": true,
       "systems": [
         "access_control"

@@ -52,6 +52,7 @@
     {
       "role": "door_window_contact",
       "label": "Door/window contact",
+      "count_terms": ["door", "window", "contact"],
       "critical": true,
       "systems": [
         "intrusion_security"
@@ -73,6 +74,7 @@
     {
       "role": "motion_detector",
       "label": "Motion detector",
+      "count_terms": ["motion"],
       "critical": false,
       "systems": [
         "intrusion_security"
@@ -98,6 +100,7 @@
     {
       "role": "glass_break",
       "label": "Glass-break sensor",
+      "count_terms": ["glass"],
       "critical": false,
       "systems": [
         "intrusion_security"
