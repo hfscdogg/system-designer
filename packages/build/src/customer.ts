@@ -51,6 +51,8 @@ export interface CustomerProposal {
   };
 }
 
+const extrasNote = (xs: Array<{ label: string; hours: number }>) => (xs.length ? `, including ${xs.map((x) => `${x.hours} h ${x.label}`).join(", ")}` : "");
+
 export function customerView(p: Proposal): CustomerProposal {
   return {
     watermark: p.watermark,
@@ -74,7 +76,7 @@ export function customerView(p: Proposal): CustomerProposal {
     labor_lines: [
       ...p.services.map((s) => ({ name: s.label, description: "", quantity: 1 })),
       ...(p.labor
-        ? [{ name: "Installation Labor", description: `${capitalize(labelFor(p.labor.included).replace(/^Labor: /, ""))} (estimated ${p.labor.hours} hours)`, quantity: p.labor.hours }]
+        ? [{ name: "Installation Labor", description: `${capitalize(labelFor(p.labor.included).replace(/^Labor: /, ""))} (estimated ${p.labor.hours} hours${extrasNote(p.labor.extras)})`, quantity: p.labor.hours }]
         : []),
     ],
     labor_total_cents: p.services.reduce((sum, s) => sum + s.unit_price_cents, 0) + (p.labor?.price_cents ?? 0),

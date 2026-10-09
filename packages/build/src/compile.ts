@@ -29,7 +29,7 @@ const SelectionSchema = z
     ),
     services: z.array(z.object({ category: z.string(), record_id: z.string(), quantity: z.literal(1) }).strict()),
     labor: z
-      .object({ labor_type: z.string(), hours: z.number().positive(), devices: z.number().int().positive(), covers: z.array(z.string()) })
+      .object({ labor_type: z.string(), hours: z.number().positive(), devices: z.number().int().positive(), covers: z.array(z.string()), extras: z.array(z.string()) })
       .strict()
       .nullable(),
     parts: z.object({ record_id: z.string() }).strict().nullable(),
@@ -75,6 +75,8 @@ export interface DraftLabor {
   hours: number;
   devices: number;
   covers: string[];
+  /** Labor-only allowances included in the hours, as labels with their hours. */
+  extras: Array<{ label: string; hours: number }>;
   basis: string;
 }
 
@@ -129,7 +131,8 @@ export function compile(raw: unknown, catalog: Map<string, AdmittedProduct>, pat
     }
     if (seenRoles.has(line.role)) errors.push(`role ${line.role} appears twice`);
     seenRoles.add(line.role);
-    if (role.product_id !== line.record_id) errors.push(`role ${line.role} must use its approved record ${role.product_id}, not ${line.record_id}`);
+    const variant = role.variants?.find((v) => v.product_id === line.record_id);
+    if (role.product_id !== line.record_id && !variant) errors.push(`role ${line.role} must use its approved record ${role.product_id}, not ${line.record_id}`);
     const product = catalog.get(line.record_id);
     if (!product) {
       errors.push(`record ${line.record_id} for ${line.role} has no admitted D-Tools evidence in this run`);
@@ -137,7 +140,7 @@ export function compile(raw: unknown, catalog: Map<string, AdmittedProduct>, pat
     }
     lines.push({
       role: line.role,
-      label: role.label,
+      label: variant?.label ?? role.label,
       record_id: product.record_id,
       brand: product.brand,
       model: product.model,
@@ -184,9 +187,10 @@ export function compile(raw: unknown, catalog: Map<string, AdmittedProduct>, pat
     const spec = pattern.labor;
     const devices = lines.reduce((n, l) => n + l.quantity, 0);
     if (!spec || spec.labor_type !== sel.labor.labor_type) errors.push("labor does not use the pattern's labor type");
-    else if (sel.labor.devices !== devices || sel.labor.hours !== laborHoursFor(pattern, lines, sel.add_on)) errors.push("labor hours do not match the pattern estimate for the priced devices");
+    else if (sel.labor.devices !== devices || sel.labor.hours !== laborHoursFor(pattern, lines, sel.add_on, sel.labor.extras)) errors.push("labor hours do not match the pattern estimate for the priced devices");
     else if (sel.labor.covers.join() !== spec.covers.join()) errors.push("labor covers different services than the pattern");
-    else labor = { ...sel.labor, basis: spec.basis };
+    else if (sel.labor.extras.some((id) => !pattern.labor_extras?.some((x) => x.id === id))) errors.push("labor includes an allowance the pattern does not define");
+    else labor = { ...sel.labor, extras: sel.labor.extras.map((id) => pattern.labor_extras!.find((x) => x.id === id)!).map((x) => ({ label: x.label, hours: x.hours })), basis: spec.basis };
   }
 
   let parts: DraftParts | null = null;

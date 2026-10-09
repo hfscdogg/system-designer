@@ -84,7 +84,8 @@ describe("patterns", () => {
       expect(p.roles.every((r) => r.product_id !== null), p.pattern).toBe(true);
       expect(p.services.every((s) => s.product_id === null), p.pattern).toBe(true);
       expect(p.labor?.labor_type, p.pattern).toBe("07LABOR1MAN");
-      expect(patternRecordIds(p), p.pattern).toHaveLength(p.roles.length + 1); // + the parts record
+      // Each role, its size variants and the parts record.
+      expect(patternRecordIds(p), p.pattern).toHaveLength(p.roles.length + p.roles.reduce((n, r) => n + (r.variants?.length ?? 0), 0) + 1);
     }
     const network = patterns.find((p) => p.pattern === "home_network")!;
     expect(network.applies_when_any).toEqual(["networking"]);
@@ -175,6 +176,53 @@ describe("patterns", () => {
     const lines = new Map(materialize(scope, security).lines.map((l) => [l.role, l]));
     expect(lines.get("door_window_contact")).toMatchObject({ quantity: 3, quantity_basis: "fixed" });
     expect(lines.get("motion_detector")).toMatchObject({ quantity: 2, quantity_basis: "fixed" });
+  });
+
+  it("prices a new TV alongside a moved existing one, with the niche allowance (Green job)", async () => {
+    const patterns = await loadPatterns();
+    const scope = approvedScope({
+      client: "Monica Green",
+      functional_systems: ["75-inch OLED TV", "Sonos Arc Ultra soundbar", "eero network", "Halo remote"],
+      room_types: ["Family room", "Fitness room"],
+      requested_changes: [
+        "Stud up and sheetrock a niche over the fireplace",
+        "Sell a new Livewire-provided 75-inch OLED TV with a Sonos Arc Ultra soundbar",
+        "Move the existing 65-inch TV and soundbar upstairs and wall-mount them in the fitness room",
+        "Add an eero access point network",
+        "Consolidate the family room remotes to one Halo remote",
+      ],
+      requested_quantities: [{ item: "eero access points", quantity: 3 }],
+      existing_equipment: { status: "described", retained: ["65-inch TV", "soundbar"], removed_or_replaced: [] },
+      existing_detectors: "not_provided",
+    }).scope;
+    const pattern = selectPattern(scope.functional_systems, patterns)!;
+    const sel = materialize(scope, pattern);
+    const lines = new Map(sel.lines.map((l) => [l.role, l]));
+    expect(sel.unresolved).toEqual([]);
+    // The new TV is the 77" BRAVIA 8 (closest OLED to 75"); the existing one moves, so it needs a second mount.
+    expect(lines.get("television")).toMatchObject({ record_id: "b89ed236-fff6-4985-a526-31d12b9c796f", quantity: 1 });
+    expect(lines.get("soundbar")!.quantity).toBe(1);
+    expect(lines.get("tv_mount")!.quantity).toBe(2);
+    expect(lines.get("soundbar_mount")!.quantity).toBe(2);
+    expect(lines.get("mesh_wifi")).toMatchObject({ quantity: 3, quantity_basis: "fixed" });
+    expect(lines.get("automation_remote")!.quantity).toBe(1);
+    expect(sel.labor!.extras).toEqual(["niche_framing"]);
+    // Without the niche allowance the hours are 8 lower.
+    expect(sel.labor!.hours - laborHoursFor(pattern, sel.lines)).toBe(8);
+  });
+
+  it("still asks to field-test existing equipment that is only kept", async () => {
+    const patterns = await loadPatterns();
+    const tv = patterns.find((p) => p.pattern === "tv_media")!;
+    const scope = approvedScope({
+      functional_systems: ["TV", "soundbar"],
+      requested_changes: ["Add a Sonos Arc Ultra soundbar to the existing 65-inch Sony TV"],
+      existing_equipment: { status: "described", retained: ["65-inch Sony TV"], removed_or_replaced: [] },
+      existing_detectors: "not_provided",
+    }).scope;
+    const sel = materialize(scope, tv);
+    expect(sel.unresolved.map((u) => u.role)).toContain("television");
+    expect(sel.lines.map((l) => l.role)).toEqual(["soundbar", "soundbar_mount"]);
   });
 
   it("prices a whole system when an add-on names nothing the pattern knows", async () => {
