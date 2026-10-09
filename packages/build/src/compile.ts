@@ -13,6 +13,7 @@ const SelectionSchema = z
     schema: z.literal("selection_v1"),
     pattern: z.string(),
     pattern_version: z.string(),
+    add_on: z.boolean(),
     lines: z.array(
       z
         .object({
@@ -183,7 +184,7 @@ export function compile(raw: unknown, catalog: Map<string, AdmittedProduct>, pat
     const spec = pattern.labor;
     const devices = lines.reduce((n, l) => n + l.quantity, 0);
     if (!spec || spec.labor_type !== sel.labor.labor_type) errors.push("labor does not use the pattern's labor type");
-    else if (sel.labor.devices !== devices || sel.labor.hours !== laborHoursFor(pattern, lines)) errors.push("labor hours do not match the pattern estimate for the priced devices");
+    else if (sel.labor.devices !== devices || sel.labor.hours !== laborHoursFor(pattern, lines, sel.add_on)) errors.push("labor hours do not match the pattern estimate for the priced devices");
     else if (sel.labor.covers.join() !== spec.covers.join()) errors.push("labor covers different services than the pattern");
     else labor = { ...sel.labor, basis: spec.basis };
   }
