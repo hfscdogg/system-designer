@@ -272,6 +272,27 @@ describe("patterns", () => {
     expect(sel.lines.map((l) => l.role)).toEqual(["soundbar", "soundbar_mount"]);
   });
 
+  it("prices only the camera type named, and drops a switch the request excludes (pilot: Kemp)", async () => {
+    const patterns = await loadPatterns();
+    const cams = patterns.find((p) => p.pattern === "surveillance")!;
+    const base = { functional_systems: ["security cameras"], existing_detectors: "not_provided", existing_equipment: { status: "none", retained: [], removed_or_replaced: [] } };
+    const roles = (o: object) => materialize(approvedScope({ ...base, ...o }).scope, cams).lines.map((l) => [l.role, l.quantity]);
+    // Cameras in general: the standard turret package.
+    expect(roles({ requested_changes: ["Install cameras"] })).toEqual([["outdoor_camera", 2], ["camera_storage", 2], ["camera_poe_switch", 1]]);
+    // Floodlight cameras named: no turrets added on top.
+    expect(roles({ requested_changes: ["Install 2 floodlight cameras"], requested_quantities: [{ item: "floodlight cameras", quantity: 2 }] })).toEqual([
+      ["camera_storage", 2],
+      ["floodlight_camera", 2],
+      ["camera_poe_switch", 1],
+    ]);
+    // Both named: both priced.
+    expect(roles({ requested_changes: ["2 turret cameras and a floodlight camera"] }).map(([r]) => r)).toEqual(["outdoor_camera", "camera_storage", "floodlight_camera", "camera_poe_switch"]);
+    // "No switch" removes the PoE switch.
+    const noSwitch = materialize(approvedScope({ ...base, requested_changes: ["Install cameras"], excluded_scope: ["no switch"] }).scope, cams);
+    expect(noSwitch.lines.map((l) => l.role)).toEqual(["outdoor_camera", "camera_storage"]);
+    expect(noSwitch.unresolved).toEqual([]);
+  });
+
   it("prices a whole system when an add-on names nothing the pattern knows", async () => {
     const patterns = await loadPatterns();
     const net = patterns.find((p) => p.pattern === "home_network")!;
