@@ -26,6 +26,7 @@ const silent: WebhookReply = { status: 200, body: {} };
 const HELP = [
   "I turn a project description into a scope receipt and, once you approve it, a held conceptual-budget PDF.",
   "Send the client, address, rooms, what they want, what happens to existing gear, budget and timeline. \"Unknown\" is a fine answer.",
+  "To change a scope before approving, tap Edit or just reply. To change a finished budget, tap \"Revise this budget\" under it (or start a message with \"revise\").",
   "Commands: `status` (your recent runs), `reset` (abandon the request in this conversation), `help`.",
 ].join("\n");
 
@@ -86,6 +87,7 @@ export async function handleEvent(deps: GatewayDeps, event: InboundEvent): Promi
     return approve(deps, person, event.thread, event.receiptId, event.scopeHash, event.providerEventId, "button");
   }
   if (event.kind === "answer_click") return answer(deps, person, event);
+  if (event.kind === "control_click") return control(deps, person, event);
   return message(deps, person, event);
 }
 
@@ -108,6 +110,57 @@ async function answer(deps: GatewayDeps, person: Person, event: Extract<InboundE
     return reply("Your previous request in this conversation stopped with an error, so I've closed it. Please send your request again as a new message.");
   }
   return reply(`✓ ${labels.join(", ")}`);
+}
+
+/** How long after a budget is finished a "revise …" message still revises it. */
+const REVISION_WINDOW_DAYS = 14;
+// Only an explicit "revise": in a DM every job shares one conversation, so "change the panel for the Joneses" may be a new job.
+const REVISE_WORDS = /^(revise|revision)\b/i;
+const EDIT_PROMPT = "What should change? Reply in plain words, for example \"make it 4 eeros\", \"remove the niche\" or \"client is Monica Greene\".";
+
+/** Card controls: edit or restart an open scope, revise a finished budget, or start a new request. */
+async function control(deps: GatewayDeps, person: Person, event: Extract<InboundEvent, { kind: "control_click" }>): Promise<WebhookReply> {
+  const { store } = deps;
+  if (event.control === "edit_scope" || event.control === "start_over") {
+    const receipt = await store.getReceipt(event.ref);
+    if (!receipt) return reply("I can't find that receipt any more.");
+    const run = await store.getRun(receipt.run_id);
+    if (run.person_id !== person.id) return reply("Only the person who made this request can change it.");
+    if (!OPEN_INTAKE_STATES.includes(run.state)) {
+      return reply("That scope is already approved. When the budget is posted, tap \"Revise this budget\" to change it.");
+    }
+    if (event.control === "edit_scope") return reply(EDIT_PROMPT);
+    if (!(await store.claimMessage(event.platform, event.providerEventId, "reset", run.id))) return silent;
+    const { staleRunIds } = await store.resetSession(event.thread, person.id);
+    for (const runId of staleRunIds) await signal(deps, runId, { type: "invalidate", reason: "session reset" });
+    return reply("Cleared. Send the request again whenever you're ready.");
+  }
+  const run = await store.getRun(event.ref).catch(() => null);
+  if (!run) return reply("I can't find that budget any more.");
+  if (run.person_id !== person.id) return reply("Only the person who made this request can revise it.");
+  if (event.control === "new_request") {
+    await store.clearPendingRevision(event.thread);
+    return reply("OK. Send the new request whenever you're ready.");
+  }
+  if (run.state !== "READY_HELD") {
+    return reply(run.state === "SUPERSEDED" ? "That budget was already revised. Use the newest one." : "That budget isn't finished, so it can't be revised yet.");
+  }
+  await store.setPendingRevision(event.thread, run.id, person.id);
+  return reply(EDIT_PROMPT);
+}
+
+/** The finished run a new message revises: one the requester tapped Revise on, or their latest budget when the message starts with "revise". */
+async function revisionTarget(deps: GatewayDeps, person: Person, event: Extract<InboundEvent, { kind: "message" }>): Promise<string | null> {
+  const { store } = deps;
+  const pending = await store.pendingRevision(event.thread);
+  if (pending && pending.person_id === person.id) {
+    const run = await store.getRun(pending.run_id);
+    if (run.state === "READY_HELD") return run.id;
+    await store.clearPendingRevision(event.thread);
+  }
+  if (!REVISE_WORDS.test(event.text.trim())) return null;
+  const latest = await store.findLatestFinishedRun(event.thread, REVISION_WINDOW_DAYS);
+  return latest && latest.person_id === person.id ? latest.id : null;
 }
 
 async function message(deps: GatewayDeps, person: Person, event: Extract<InboundEvent, { kind: "message" }>): Promise<WebhookReply> {
@@ -195,7 +248,8 @@ async function message(deps: GatewayDeps, person: Person, event: Extract<Inbound
     closedBuild = true;
   }
 
-  const started = await store.startRun(intake);
+  const parentRunId = await revisionTarget(deps, person, event);
+  const started = await store.startRun(intake, parentRunId ? { parentRunId } : {});
   if (!started.ok) {
     // Duplicate delivery, or another message opened a run first: never start a second run.
     return silent;

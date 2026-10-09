@@ -18,7 +18,7 @@ import {
   type ValidationResult,
 } from "@sd/build";
 import { hashCanonical, RUN_STATES, sha256Hex, type RunState, type ScopeDraftV1 } from "@sd/core";
-import type { OutboundFile } from "@sd/channels";
+import type { OutboundFile, View } from "@sd/channels";
 import { loadBrand, preflightPdf, renderProposalHtml, type PreflightResult } from "@sd/render";
 import type { CustomerProposal } from "@sd/build";
 import { DToolsReadError, type DToolsReader } from "@sd/dtools";
@@ -38,6 +38,7 @@ export interface BuildDeps {
   renderPdf: (html: string) => Promise<Uint8Array>;
   fetchImage: (url: string) => Promise<{ bytes: Uint8Array; contentType: string } | null>;
   postFile: (run: RunRecord, file: OutboundFile, key: string) => Promise<{ messageId: string; attachmentRef: string }>;
+  postView: (run: RunRecord, view: View, key: string) => Promise<void>;
 }
 
 interface Approved {
@@ -314,7 +315,7 @@ export function createBuildStage(deps: BuildDeps) {
         run,
         {
           bytes: pdf.bytes,
-          filename: `Livewire-${customer.proposal_number}-conceptual-budget.pdf`,
+          filename: `Livewire-${customer.proposal_number}-conceptual-budget${run.revision > 1 ? `-rev${run.revision}` : ""}.pdf`,
           contentType: "application/pdf",
           text: `Conceptual budget for ${customer.client} — held for internal review, not sent to the customer.\nPDF sha256 ${pdf.sha256.slice(0, 16)}…`,
         },
@@ -335,6 +336,15 @@ export function createBuildStage(deps: BuildDeps) {
         catalog_evidence: await store.catalogEvidence(runId),
       });
       await advance(runId, "READY_HELD", { pdfSha256: pdf.sha256, providerMessageId: posted.messageId });
+      // A revision replaces the budget it revises.
+      if (run.parent_run_id && (await store.getRun(run.parent_run_id)).state === "READY_HELD") {
+        await store.transitionRun(run.parent_run_id, "SUPERSEDED", "system", { by: runId });
+      }
+      await deps.postView(
+        run,
+        { kind: "budget_actions", runId, text: "Need changes? Tap Revise this budget and say what to change in plain words. I'll rebuild it." },
+        `${runId}:budget_actions`,
+      );
       return { ok: true, summary: "PDF posted, held" };
     },
   });

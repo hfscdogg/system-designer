@@ -9,3 +9,4 @@ export * from "./assumptions.ts";
 export * from "./receipt.ts";
 export * from "./route.ts";
 export * from "./addon.ts";
+export * from "./revision.ts";

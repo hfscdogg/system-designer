@@ -62,6 +62,8 @@ export function isTerminal(state: RunState): boolean {
 }
 
 export function canTransition(from: RunState, to: RunState): boolean {
+  // A finished budget is replaced, not reopened, when a revision of it is delivered.
+  if (from === "READY_HELD" && to === "SUPERSEDED") return true;
   if (isTerminal(from)) return false;
   if (OUTCOMES.includes(to)) return true;
   return (FORWARD[from] ?? []).includes(to);

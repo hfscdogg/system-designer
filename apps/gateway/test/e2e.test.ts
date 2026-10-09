@@ -62,6 +62,17 @@ function answerClick(receiptId: string, field: string, values: string[], user = 
   };
 }
 
+function controlClick(control: string, ref: string, user = "users/zack") {
+  return {
+    type: "CARD_CLICKED",
+    eventTime: `2026-10-05T12:2${++seq % 10}:00Z`,
+    space: { name: SPACE, spaceType: "SPACE" },
+    message: { name: `${SPACE}/messages/app-c${seq}`, thread: { name: THREAD } },
+    user: { name: user, type: "HUMAN" },
+    common: { invokedFunction: "conversation_control", parameters: { control, ref } },
+  };
+}
+
 interface BuildOptions {
   catalog?: Record<string, unknown>;
   dtools?: DToolsReader & { calls: string[] };
@@ -575,5 +586,75 @@ describe("margin exceptions (2026 sales comp policy)", () => {
     await t.send(chatMessage(`approve exception ${exception!.id}`, { user: "users/henry", space: HENRY_DM, dm: true }));
     await t.workflows.settled(run.id);
     expect((await t.store.getRun(run.id)).state).toBe("READY_HELD");
+  });
+});
+
+describe("editing a scope and revising a finished budget", () => {
+  const EDIT_PROMPT = /^What should change\? Reply in plain words/;
+
+  it("offers Edit and Start over on the receipt; Edit asks for the change and Start over closes the request", async () => {
+    const t = await setup([completeExtraction()]);
+    await t.send(chatMessage("Smith security upgrade"));
+    const [receipt] = t.receipts();
+    expect((await t.send(controlClick("edit_scope", receipt!.receiptId))).body).toMatchObject({ text: expect.stringMatching(EDIT_PROMPT) });
+    expect((await t.send(controlClick("edit_scope", receipt!.receiptId, "users/henry"))).body).toEqual({ text: "Only the person who made this request can change it." });
+    expect((await t.send(controlClick("start_over", receipt!.receiptId))).body).toEqual({ text: "Cleared. Send the request again whenever you're ready." });
+    const [run] = await t.store.listRunsForPerson("zack");
+    expect(run!.state).toBe("STALE");
+  });
+
+  it("revises a finished budget from its approved scope: Revision 2 receipt, -rev2 PDF, old budget superseded", async () => {
+    const t = await setup([completeExtraction()], [{ ...noPatch, requested_quantities: [{ item: "Glass-break sensor", quantity: 4 }] }]);
+    await t.send(chatMessage("Smith security upgrade"));
+    const [first] = t.receipts();
+    await t.send(click(first!.receiptId, first!.approve!.scopeHash));
+    const [original] = await t.store.listRunsForPerson("zack");
+    expect(original!.state).toBe("READY_HELD");
+    // The budget comes with Revise / New request buttons.
+    expect(t.chat.list().map((m) => m.view)).toContainEqual(expect.objectContaining({ kind: "budget_actions", runId: original!.id }));
+
+    // Only the requester can revise; the requester gets the prompt.
+    expect((await t.send(controlClick("revise_budget", original!.id, "users/henry"))).body).toEqual({ text: "Only the person who made this request can revise it." });
+    expect((await t.send(controlClick("revise_budget", original!.id))).body).toMatchObject({ text: expect.stringMatching(EDIT_PROMPT) });
+
+    // The next message is the change; no new extraction is made (the extractor queue is empty).
+    await t.send(chatMessage("make it 4 glass breaks"));
+    const runs = await t.store.listRunsForPerson("zack");
+    const revision = runs.find((r) => r.id !== original!.id)!;
+    expect(revision).toMatchObject({ parent_run_id: original!.id, revision: 2, state: "AWAITING_SCOPE_APPROVAL" });
+    const second = t.receipts().at(-1)!;
+    expect(second.lines).toContain(`Note: Revision 2 of the budget approved in ${first!.receiptId}; it replaces that budget once approved.`);
+    expect(second.lines).toContain("Note: Changed: glass-break sensor: none → 4");
+    expect(second.lines).toContain("Client: Smith Family");
+
+    await t.send(click(second.receiptId, second.approve!.scopeHash));
+    expect((await t.store.getRun(revision.id)).state).toBe("READY_HELD");
+    expect((await t.store.getRun(original!.id)).state).toBe("SUPERSEDED");
+    expect(t.chat.files.map((f) => f.file.filename)).toEqual(["Livewire-UNASSIGNED-conceptual-budget.pdf", "Livewire-UNASSIGNED-conceptual-budget-rev2.pdf"]);
+    // A superseded budget can't be revised again; the newest one can.
+    expect((await t.send(controlClick("revise_budget", original!.id))).body).toEqual({ text: "That budget was already revised. Use the newest one." });
+  });
+
+  it("treats a message starting with \"revise\" as a revision of the latest budget, and anything else as a new request", async () => {
+    const t = await setup(
+      [completeExtraction(), completeExtraction({ client: "Jones Family" })],
+      [{ ...noPatch, client: "Smith-Jones Family" }],
+    );
+    await t.send(chatMessage("Smith security upgrade"));
+    const [first] = t.receipts();
+    await t.send(click(first!.receiptId, first!.approve!.scopeHash));
+    await t.send(chatMessage("Revise: the client is the Smith-Jones family"));
+    const revised = t.receipts().at(-1)!;
+    expect(revised.lines).toContain("Client: Smith-Jones Family");
+    expect(revised.lines).toContain("Note: Changed: Client: Smith Family → Smith-Jones Family");
+    await t.send(click(revised.receiptId, revised.approve!.scopeHash));
+
+    // "New request" clears nothing pending, and a plain message is a new job from scratch.
+    const latest = (await t.store.listRunsForPerson("zack"))[0]!;
+    expect((await t.send(controlClick("new_request", latest.id))).body).toEqual({ text: "OK. Send the new request whenever you're ready." });
+    await t.send(chatMessage("Jones security upgrade"));
+    const newest = (await t.store.listRunsForPerson("zack"))[0]!;
+    expect(newest.parent_run_id).toBeNull();
+    expect(t.receipts().at(-1)!.lines).toContain("Client: Jones Family");
   });
 });

@@ -4,6 +4,7 @@ import {
   applyClarification,
   buildReceipt,
   computeBlockers,
+  describeScopeChanges,
   hashCanonical,
   normalizeExtraction,
   validateClarificationPatch,
@@ -60,6 +61,34 @@ export function createActivities(deps: ActivityDeps): RunActivities {
     return validateScope(raw, runId, kind, { model });
   }
 
+  /**
+   * A revision starts from the approved scope of the budget it revises, with the
+   * requester's change applied the same way a clarification is.
+   */
+  async function reviseScope(runId: string, parentRunId: string, revision: number, change: string): Promise<ExtractOutcome> {
+    const approval = await store.getApprovalForRun(parentRunId);
+    const parentReceipt = approval ? await store.getReceipt(approval.receipt_id) : null;
+    if (!parentReceipt) throw new IntegrityError(`run ${runId} revises ${parentRunId}, which has no approved receipt`);
+    const base = parentReceipt.body.extraction;
+    const { raw, model } = await deps.interpreter.interpret({ current: base, questions: [], answer: change });
+    const patch = validateClarificationPatch(raw);
+    if (!patch.ok || patch.value.unmapped) {
+      await store.appendEvent(runId, "revision_unmapped", "system", { model, parentRunId, errors: patch.ok ? [] : patch.errors });
+      return { ok: false, reason: "I couldn't apply that change to the earlier budget. Tap \"Revise this budget\" and say what to change, or tap \"New request\" for a different job" };
+    }
+    const outcome = await validateModelScope(applyClarification(base, patch.value), model, runId, "revision_applied");
+    if (!outcome.ok) return outcome;
+    const changed = describeScopeChanges(base, outcome.extraction);
+    return {
+      ...outcome,
+      notes: [
+        `Revision ${revision} of the budget approved in ${parentReceipt.id}; it replaces that budget once approved.`,
+        changed.length ? `Changed: ${changed.join("; ")}` : "Changed: nothing in the scope; the budget is rebuilt with today's prices.",
+        ...outcome.notes,
+      ],
+    };
+  }
+
   /** `source` is recorded with the event: the model that proposed the scope, or how the requester answered. */
   async function validateScope(raw: unknown, runId: string, kind: string, source: Record<string, unknown>): Promise<ExtractOutcome> {
     const valid = validateExtraction(raw);
@@ -80,6 +109,7 @@ export function createActivities(deps: ActivityDeps): RunActivities {
     async extractScope({ runId }) {
       const run = await store.getRun(runId);
       const intake = await store.getIntake(run.intake_id); // verifies the stored text hash
+      if (run.parent_run_id) return reviseScope(run.id, run.parent_run_id, run.revision, intake.text);
       let last: ExtractOutcome = { ok: false, reason: "no attempt made" };
       for (let i = 0; i < attempts; i++) {
         const { raw, model } = await deps.extractor.extract({
@@ -263,6 +293,7 @@ export function createActivities(deps: ActivityDeps): RunActivities {
       patterns: deps.patterns,
       renderPdf: deps.renderPdf,
       fetchImage: deps.fetchImage,
+      postView: (run, view, key) => adapterFor(run).post(threadOf(run), view, key).then(() => undefined),
       postFile: async (run, file, key) => {
         // Chat uploads need a user; a delegated upload acts as the requester, who is in the conversation.
         const actAs = (await store.requesterEmail(run.id)) ?? undefined;

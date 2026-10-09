@@ -1,9 +1,10 @@
-import type { InboundEvent } from "../types.ts";
+import { CONTROL_ACTIONS, type ControlAction, type InboundEvent } from "../types.ts";
 
 export const GOOGLE_CHAT = "google_chat";
 export const APPROVE_FUNCTION = "approve_scope";
 export const MARGIN_FUNCTION = "margin_exception";
 export const ANSWER_FUNCTION = "answer_question";
+export const CONTROL_FUNCTION = "conversation_control";
 /** Name of the checkbox input on a multi-choice question card. */
 export const ANSWER_INPUT = "answer";
 
@@ -166,6 +167,20 @@ export function parseGoogleChatEvent(rawBytes: Uint8Array): InboundEvent {
         sender: sender(who),
         exceptionId: params.exception_id,
         decision,
+      };
+    }
+    if (fn === CONTROL_FUNCTION) {
+      const control = params.control as ControlAction;
+      if (!CONTROL_ACTIONS.includes(control) || !params.ref || !threadId) return { kind: "ignored", reason: "control click missing parameters" };
+      return {
+        kind: "control_click",
+        platform: GOOGLE_CHAT,
+        providerEventId: `${event.message?.name ?? "?"}#${who.name ?? "?"}@${event.eventTime ?? "?"}`,
+        thread: { platform: GOOGLE_CHAT, spaceId, threadId },
+        isDirectMessage: isDm,
+        sender: sender(who),
+        control,
+        ref: params.ref,
       };
     }
     if (fn !== APPROVE_FUNCTION) return { kind: "ignored", reason: `unknown card action ${fn ?? "(none)"}` };

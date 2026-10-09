@@ -1,5 +1,5 @@
 import type { View } from "../types.ts";
-import { ANSWER_FUNCTION, ANSWER_INPUT, APPROVE_FUNCTION, MARGIN_FUNCTION } from "./parse.ts";
+import { ANSWER_FUNCTION, ANSWER_INPUT, APPROVE_FUNCTION, CONTROL_FUNCTION, MARGIN_FUNCTION } from "./parse.ts";
 
 const ICON: Record<string, string> = { done: "✅", active: "⏳", pending: "▫️", failed: "❌" };
 
@@ -21,8 +21,47 @@ export interface RenderOptions {
  * fallbackText (used for notifications and clients without cards): sending it
  * as text as well would show every card twice.
  */
+function controlButton(text: string, control: string, ref: string, opts: RenderOptions) {
+  return {
+    text,
+    onClick: {
+      action: {
+        function: opts.actionFunction ?? CONTROL_FUNCTION,
+        parameters: [
+          { key: "action", value: CONTROL_FUNCTION },
+          { key: "control", value: control },
+          { key: "ref", value: ref },
+        ],
+      },
+    },
+  };
+}
+
 export function renderGoogleChat(view: View, opts: RenderOptions = {}): Record<string, unknown> {
   switch (view.kind) {
+    case "budget_actions":
+      return {
+        fallbackText: view.text,
+        cardsV2: [
+          {
+            cardId: `budget-actions-${view.runId}`,
+            card: {
+              sections: [
+                {
+                  widgets: [
+                    { textParagraph: { text: escape(view.text) } },
+                    {
+                      buttonList: {
+                        buttons: [controlButton("Revise this budget", "revise_budget", view.runId, opts), controlButton("New request", "new_request", view.runId, opts)],
+                      },
+                    },
+                  ],
+                },
+              ],
+            },
+          },
+        ],
+      };
     case "text":
       return { text: view.text };
     case "status":
@@ -143,7 +182,7 @@ export function renderGoogleChat(view: View, opts: RenderOptions = {}): Record<s
               buttonList: {
                 buttons: [
                   {
-                    text: `Approve scope ${view.approve.receiptId}`,
+                    text: "Approve",
                     onClick: {
                       action: {
                         function: opts.actionFunction ?? APPROVE_FUNCTION,
@@ -155,6 +194,8 @@ export function renderGoogleChat(view: View, opts: RenderOptions = {}): Record<s
                       },
                     },
                   },
+                  controlButton("Edit", "edit_scope", view.approve.receiptId, opts),
+                  controlButton("Start over", "start_over", view.approve.receiptId, opts),
                 ],
               },
             },
