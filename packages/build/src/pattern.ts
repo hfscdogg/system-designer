@@ -22,6 +22,11 @@ export const RoleSpecSchema = z
     retained_match: z.array(z.string()).optional(),
     /** Extra terms that identify this role in a stated count ("3 doors" → door/window contacts). */
     count_terms: z.array(z.string()).optional(),
+    /**
+     * Roles that are alternatives for one job (turret vs floodlight cameras).
+     * When a request names any role in the group, only the named ones are priced.
+     */
+    alternative_group: z.string().optional(),
     /** One more of this role for each existing item the request moves that matches these terms (a mount per moved TV). */
     per_moved: z.array(z.string()).optional(),
     /** Alternative approved records chosen by the size the request names ("75-inch" → the 77" model). */

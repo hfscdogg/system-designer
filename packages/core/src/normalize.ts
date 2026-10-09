@@ -8,7 +8,7 @@ import type { ScopeExtraction } from "./scope.ts";
  */
 
 const FUNCTIONAL_SYSTEMS: Array<[canonical: string, patterns: RegExp[]]> = [
-  ["intrusion_security", [/\b((?<!(smoke|fire|co|monoxide) )alarm|alarm panel|security|security panel|intrusion|burglar|door contacts?|window contacts?|(?:door\/window|wireless) contacts?|glass[- ]?break( sensors?)?|motion (detector|sensor)s?|(alarm |security )?keypads?(?! for lighting))\b/]],
+  ["intrusion_security", [/\b((?<!(smoke|fire|co|monoxide) )alarm|alarm panel|security|security panel|intrusion|burglar|door contacts?|window contacts?|(?:door\/window|wireless) contacts?|glass[- ]?break( sensors?)?|motion (detector|sensor)s?|(?<!(lutron|scene|lighting|control4|c4) )(alarm |security )?keypads?(?! for lighting))\b/]],
   ["alarm_monitoring", [/\b(alarm\.com|monitoring|central station|monitored)\b/]],
   ["fire_detection", [/\b(fire|smoke)( detection| detectors?| alarms?| sensors?)?\b/]],
   ["co_detection", [/\b(co|carbon monoxide)( detection| detectors?| alarms?| sensors?)\b/]],
@@ -62,9 +62,23 @@ function matchAll(table: Array<[string, RegExp[]]>, text: string): string[] {
   return table.filter(([, patterns]) => patterns.some((p) => p.test(t))).map(([c]) => c);
 }
 
+/**
+ * Words that describe a camera rather than name another system: "security
+ * cameras" are not an alarm, "WiFi cameras" are not a network, "floodlight
+ * cameras" are not lighting control. Dropped before matching when the item is
+ * about cameras.
+ */
+const CAMERA_ITEM = /\b(cameras?|cams?|surveillance|cctv|nvr)\b/;
+const CAMERA_FEATURES = /\b(security|wi-?fi|wireless|hard-?wired|lighting|lights?|flood ?lights?|motion|power(ed)?|poe)\b/g;
+
+function systemHits(item: string): string[] {
+  const t = fold(item);
+  return matchAll(FUNCTIONAL_SYSTEMS, CAMERA_ITEM.test(t) ? t.replace(CAMERA_FEATURES, " ") : t);
+}
+
 export function normalizeFunctionalSystems(items: string[]): string[] {
   const mapped = items.map((item) => {
-    const hits = matchAll(FUNCTIONAL_SYSTEMS, item);
+    const hits = systemHits(item);
     // A Sonos soundbar ("Sonos Arc Ultra") is TV sound, not music through the house.
     const tvSound = hits.includes("audio_video") && /\b(soundbars?|sound bars?|arc|beam|ray)\b/.test(fold(item));
     return { item, hits: tvSound ? hits.filter((h) => h !== "whole_home_audio") : hits };

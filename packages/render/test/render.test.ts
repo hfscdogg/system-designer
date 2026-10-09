@@ -97,6 +97,11 @@ describe("PDF + preflight", () => {
     const leaky = await htmlToPdf(renderProposalHtml({ ...c, exclusions: ["Internal cost basis available on request"] }, await loadBrand(), {}, meta));
     expect((await preflightPdf(leaky, { customer: c, runId: "run_r1", sha256: sha256Hex(leaky) })).failures.join()).toMatch(/forbidden wording/);
 
+    // The same words inside the requester's own scope text are data, not an acceptance block (pilot: Alexis Courtney).
+    const own = { ...c, exclusions: [...c.exclusions, "Client to accept delivery of the Bretford cart"], remaining_verification: [...c.remaining_verification, "Requested product: low-cost conduit"] };
+    const ownPdf = await htmlToPdf(renderProposalHtml(own, await loadBrand(), {}, meta));
+    expect((await preflightPdf(ownPdf, { customer: own, runId: "run_r1", sha256: sha256Hex(ownPdf) })).failures).toEqual([]);
+
     expect((await preflightPdf(pdf, { customer: c, runId: "run_other", sha256: sha256Hex(pdf) })).failures.join()).toMatch(/title/);
     const other = { ...c, commercial: { ...c.commercial, subtotal_cents: c.commercial.subtotal_cents + 100 } };
     expect((await preflightPdf(pdf, { customer: other, runId: "run_r1", sha256: sha256Hex(pdf) })).failures.join()).toMatch(/subtotal/);

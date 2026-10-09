@@ -134,6 +134,13 @@ describe("generic audio and video", () => {
     expect(normalizeFunctionalSystems(["video doorbell"])).toEqual(["video_doorbell"]);
     expect(normalizeFunctionalSystems(["video surveillance"])).toEqual(["video_surveillance"]);
     expect(normalizeFunctionalSystems(["cameras", "video"])).toEqual(["audio_video", "video_surveillance"]);
+    // Pilot feedback: words describing a camera are not other systems.
+    expect(normalizeFunctionalSystems(["security cameras"])).toEqual(["video_surveillance"]);
+    expect(normalizeFunctionalSystems(["WiFi cameras with hardwired power"])).toEqual(["video_surveillance"]);
+    expect(normalizeFunctionalSystems(["floodlight camera lighting"])).toEqual(["video_surveillance"]);
+    expect(normalizeFunctionalSystems(["security cameras", "alarm"])).toEqual(["intrusion_security", "video_surveillance"]);
+    expect(normalizeFunctionalSystems(["Wi-Fi", "cameras"])).toEqual(["networking", "video_surveillance"]);
+    expect(normalizeFunctionalSystems(["Lutron scene keypads"])).toEqual(["lighting_control"]);
   });
   it("leaves canonical names unchanged", () => {
     const canonical = ["audio_video", "video_doorbell", "video_surveillance", "whole_home_audio"];
