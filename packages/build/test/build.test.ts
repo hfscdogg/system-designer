@@ -211,6 +211,53 @@ describe("patterns", () => {
     expect(sel.labor!.hours - laborHoursFor(pattern, sel.lines)).toBe(8);
   });
 
+  it("applies a revision's removals and stated mount count (Green job, revised)", async () => {
+    const patterns = await loadPatterns();
+    const base = {
+      client: "Monica Green",
+      room_types: ["Family room", "Fitness room"],
+      requested_quantities: [{ item: "eero access points", quantity: 3 }],
+      existing_equipment: { status: "described" as const, retained: ["65-inch TV", "soundbar"], removed_or_replaced: [] },
+      existing_detectors: "not_provided" as const,
+    };
+    const changes = [
+      "Sell a new Livewire-provided 75-inch OLED TV with a Sonos Arc Ultra soundbar",
+      "Move the existing 65-inch TV and soundbar to the fitness room; the existing TV has its own wall mount",
+      "Add an eero access point network",
+      "Apple TV remote controlling everything in the family room",
+    ];
+    // "Remove the Halo remote and Control4": the system is gone and so is the remote.
+    const scope = approvedScope({
+      ...base,
+      functional_systems: ["75-inch OLED TV", "Sonos Arc Ultra soundbar", "eero network"],
+      requested_changes: changes,
+      excluded_scope: ["Halo remote", "Control4"],
+    }).scope;
+    const sel = materialize(scope, selectPattern(scope.functional_systems, patterns)!);
+    const roles = new Map(sel.lines.map((l) => [l.role, l.quantity]));
+    expect(sel.unresolved).toEqual([]);
+    expect(roles.has("automation_remote")).toBe(false);
+    expect(roles.has("automation_controller")).toBe(false);
+    // Only the new TV needs a mount: the moved one has its own.
+    expect(roles.get("tv_mount")).toBe(1);
+    expect(roles.get("streamer")).toBe(1);
+
+    // If the interpreter leaves Control4 in the systems, the excluded remote is still removed.
+    const kept = approvedScope({
+      ...base,
+      functional_systems: ["75-inch OLED TV", "Sonos Arc Ultra soundbar", "eero network", "Control4"],
+      requested_changes: [...changes, "Consolidate the family room remotes"],
+      requested_quantities: [...base.requested_quantities, { item: "tv mount", quantity: 1 }],
+      excluded_scope: ["Halo remote", "TV wall reinforcement"],
+    }).scope;
+    const keptSel = materialize(kept, selectPattern(kept.functional_systems, patterns)!);
+    const keptRoles = new Map(keptSel.lines.map((l) => [l.role, l.quantity]));
+    expect(keptRoles.has("automation_remote")).toBe(false);
+    // "TV wall reinforcement" mentions the TV in passing; it doesn't remove the TV.
+    expect(keptRoles.get("television")).toBe(1);
+    expect(keptRoles.get("tv_mount")).toBe(1);
+  });
+
   it("still asks to field-test existing equipment that is only kept", async () => {
     const patterns = await loadPatterns();
     const tv = patterns.find((p) => p.pattern === "tv_media")!;

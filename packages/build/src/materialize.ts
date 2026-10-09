@@ -99,6 +99,31 @@ function movedCount(scope: ScopeDraftV1, terms: string[]): number {
   return moveChanges(scope).filter((c) => terms.some((t) => c.includes(fold(t)))).length;
 }
 
+/** Moved items that need a mount in the new room: not ones the request says already have their own mount. */
+function movedNeedingMount(scope: ScopeDraftV1, terms: string[]): number {
+  const ownMount = /\b(its own|own|existing|current|keeps? (its|the)) (wall |tv )?mounts?\b/;
+  return moveChanges(scope).filter((c) => !ownMount.test(c) && terms.some((t) => c.includes(fold(t)))).length;
+}
+
+const FILLER = new Set(["the", "a", "an", "any", "all", "existing", "new", "livewire", "of", "and"]);
+
+/**
+ * The request removes this device: an excluded item that names it and little else
+ * ("Halo remote", "in-ceiling speakers", "Control4"). A longer exclusion that only
+ * mentions it in passing ("TV wall reinforcement") does not remove it.
+ */
+function excluded(scope: ScopeDraftV1, role: RoleSpec): boolean {
+  const terms = [...roleTerms(role), ...(role.count_terms ?? []).map(fold)];
+  return scope.excluded_scope.some((raw) => {
+    const item = fold(raw);
+    const hit = terms.filter((t) => hasWord(item, t));
+    if (!hit.length) return false;
+    const covered = new Set(hit.flatMap((t) => t.split(/[\s/-]+/)));
+    const rest = item.split(/[\s/-]+/).filter((w) => w && !FILLER.has(w) && !covered.has(w) && !covered.has(w.replace(/e?s$/, "")));
+    return rest.length <= 1;
+  });
+}
+
 /** The approved record for the size the request names for a new device, if the role has size variants. */
 function variantFor(scope: ScopeDraftV1, role: RoleSpec) {
   const sizes = otherChanges(scope).flatMap((c) => [...c.matchAll(SIZE)].map((m) => Number(m[1])));
@@ -117,12 +142,17 @@ export function materialize(scope: ScopeDraftV1, pattern: PatternSpec): Selectio
   const addOnRequested = isAddOnRequest(scope);
   const addOn = addOnRequested && candidates.some((r) => named(scope, r, pattern.roles));
 
+  const removedRoles = new Set<string>();
   for (const role of candidates) {
     // In an add-on, a role is priced when the request names it or names its own system (smoke detection alongside sensors).
     const ownSystemRequested = role.systems.some((s) => scope.functional_systems.includes(s) && !pattern.applies_when_any.includes(s));
     if (addOn && !named(scope, role, pattern.roles) && !ownSystemRequested) continue;
     if (role.mentions && !mentioned(scope, role.mentions)) continue;
     if (role.existing_detectors && !(role.existing_detectors as string[]).includes(scope.existing_detectors)) continue;
+    if (excluded(scope, role)) {
+      removedRoles.add(role.role);
+      continue;
+    }
     included.push(role);
 
     const retained = role.retained_match?.length
@@ -145,7 +175,7 @@ export function materialize(scope: ScopeDraftV1, pattern: PatternSpec): Selectio
     const stated = statedQuantity(scope, role, pattern.roles);
     const minimum = stated === null && role.quantity.kind === "minimum";
     // Each existing item the request moves needs its own mount (and the mount's install labor) in the new room.
-    const moved = stated === null && role.per_moved ? movedCount(scope, role.per_moved) : 0;
+    const moved = stated === null && role.per_moved ? movedNeedingMount(scope, role.per_moved) : 0;
     const verify = minimum && role.quantity.kind === "minimum" ? role.quantity.verify : null;
     lines.push({
       role: role.role,
@@ -175,7 +205,11 @@ export function materialize(scope: ScopeDraftV1, pattern: PatternSpec): Selectio
     else allowances.push({ label: spec?.label ?? category, reason: "no authenticated price; shown as a TBD allowance outside committed totals" });
   }
 
-  const requirements: Selection["requirements"] = scope.functional_systems.map((system) => {
+  // A system whose devices the request removed entirely is no longer required.
+  const removedSystems = scope.functional_systems.filter(
+    (system) => !included.some((r) => r.systems.includes(system)) && candidates.some((r) => r.systems.includes(system) && removedRoles.has(r.role)),
+  );
+  const requirements: Selection["requirements"] = scope.functional_systems.filter((s) => !removedSystems.includes(s)).map((system) => {
     const roles = included.filter((r) => r.systems.includes(system));
     if (!roles.length) {
       unresolved.push({ item: system, role: null, reason: `not covered by the ${pattern.title} pattern`, escalate: true });

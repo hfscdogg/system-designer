@@ -76,7 +76,11 @@ export function createActivities(deps: ActivityDeps): RunActivities {
       await store.appendEvent(runId, "revision_unmapped", "system", { model, parentRunId, errors: patch.ok ? [] : patch.errors });
       return { ok: false, reason: "I couldn't apply that change to the earlier budget. Tap \"Revise this budget\" and say what to change, or tap \"New request\" for a different job" };
     }
-    const outcome = await validateModelScope(applyClarification(base, patch.value), model, runId, "revision_applied");
+    const revised = applyClarification(base, patch.value);
+    // Open questions about something the revision removed no longer apply.
+    const removed = revised.excluded_scope.filter((x) => !base.excluded_scope.includes(x)).map((x) => x.toLowerCase());
+    revised.unresolved_questions = revised.unresolved_questions.filter((q) => !removed.some((x) => q.toLowerCase().includes(x)));
+    const outcome = await validateModelScope(revised, model, runId, "revision_applied");
     if (!outcome.ok) return outcome;
     const changed = describeScopeChanges(base, outcome.extraction);
     return {
