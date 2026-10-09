@@ -162,6 +162,21 @@ describe("patterns", () => {
     expect(sel.lines.map((l) => [l.role, l.quantity])).toEqual([["automation_controller", 1], ["automation_remote", 3]]);
   });
 
+  it("reads short counts like \"3 doors, 2 motions\" as sensor counts", async () => {
+    const patterns = await loadPatterns();
+    const security = patterns.find((p) => p.pattern === "security_modernization")!;
+    const scope = approvedScope({
+      functional_systems: ["security system"],
+      requested_changes: ["Security system"],
+      requested_quantities: [{ item: "doors", quantity: 3 }, { item: "motions", quantity: 2 }],
+      existing_equipment: { status: "none", retained: [], removed_or_replaced: [] },
+      existing_detectors: "none",
+    }).scope;
+    const lines = new Map(materialize(scope, security).lines.map((l) => [l.role, l]));
+    expect(lines.get("door_window_contact")).toMatchObject({ quantity: 3, quantity_basis: "fixed" });
+    expect(lines.get("motion_detector")).toMatchObject({ quantity: 2, quantity_basis: "fixed" });
+  });
+
   it("prices a whole system when an add-on names nothing the pattern knows", async () => {
     const patterns = await loadPatterns();
     const net = patterns.find((p) => p.pattern === "home_network")!;

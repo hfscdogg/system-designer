@@ -20,6 +20,8 @@ export const RoleSpecSchema = z
     existing_detectors: z.array(z.enum(EXISTING_DETECTORS)).min(1).optional(),
     /** Terms that identify this role in the retained-equipment list. */
     retained_match: z.array(z.string()).optional(),
+    /** Extra terms that identify this role in a stated count ("3 doors" → door/window contacts). */
+    count_terms: z.array(z.string()).optional(),
     /** D-Tools product record. Null until Livewire chooses a standard product. */
     product_id: z.string().uuid().nullable(),
     precedent: z.enum(["livewire_standard", "accepted_comparable", "new_to_livewire"]),

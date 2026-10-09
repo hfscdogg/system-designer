@@ -36,8 +36,15 @@ export interface Selection {
 const fold = (s: string) => s.toLowerCase();
 
 function mentioned(scope: ScopeDraftV1, terms: string[]): boolean {
-  const text = fold([...scope.requested_changes, ...scope.functional_systems, ...scope.room_types].join(" | "));
+  const text = fold([...scope.requested_changes, ...scope.requested_quantities.map((q) => q.item), ...scope.functional_systems, ...scope.room_types].join(" | "));
   return terms.some((t) => text.includes(fold(t)));
+}
+
+const escape = (s: string) => s.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
+
+/** Count terms are short words ("door"), so they match whole words only: "doors" yes, "doorbell" no. */
+function hasWord(text: string, term: string): boolean {
+  return new RegExp(`\\b${escape(term)}(s|es)?\\b`).test(text);
 }
 
 /** Terms that identify a role in the request: its label, retained-equipment terms and mention terms. */
@@ -49,7 +56,9 @@ function roleTerms(role: RoleSpec): string[] {
 function matchScore(text: string, role: RoleSpec): number {
   const t = fold(text);
   if (t.includes(fold(role.label))) return 1000 + role.label.length;
-  return Math.max(0, ...[...(role.retained_match ?? []), ...(role.mentions ?? [])].map(fold).filter((term) => t.includes(term)).map((term) => term.length));
+  const terms = roleTerms(role).filter((term) => t.includes(term));
+  const words = (role.count_terms ?? []).map(fold).filter((term) => hasWord(t, term));
+  return Math.max(0, ...[...terms, ...words].map((term) => term.length));
 }
 
 /**
@@ -69,7 +78,7 @@ function statedQuantity(scope: ScopeDraftV1, role: RoleSpec, roles: RoleSpec[]):
 /** Whether the request itself names this role (its changes or a stated count), for add-on pricing. */
 function named(scope: ScopeDraftV1, role: RoleSpec, roles: RoleSpec[]): boolean {
   const changes = fold(scope.requested_changes.join(" | "));
-  return roleTerms(role).some((t) => changes.includes(t)) || statedQuantity(scope, role, roles) !== null;
+  return roleTerms(role).some((t) => changes.includes(t)) || (role.count_terms ?? []).some((t) => hasWord(changes, fold(t))) || statedQuantity(scope, role, roles) !== null;
 }
 
 export function materialize(scope: ScopeDraftV1, pattern: PatternSpec): Selection {

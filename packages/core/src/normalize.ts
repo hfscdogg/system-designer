@@ -24,7 +24,7 @@ const FUNCTIONAL_SYSTEMS: Array<[canonical: string, patterns: RegExp[]]> = [
   // "wireless" alone names how a device connects (wireless contacts, sensors), not a network.
   ["networking", [/\b(wi-?fi|network(ing)?(?! (drops?|outlets?|wiring))|access points?|router|wireless (network|internet|coverage))\b/]],
   // Bare "automation" is too broad (pool automation): only whole-home control platforms.
-  ["home_automation", [/\b(control4|c4|(home|house) automation|smart home|whole[- ](home|house) control|universal remote|savant|crestron)\b/]],
+  ["home_automation", [/\b(control4|c4|halo( remotes?)?|(home|house) automation|smart home|whole[- ](home|house) control|universal remote|savant|crestron)\b/]],
   ["lighting_control", [/\b(lighting control|lutron|dimmers?|keypads? for lighting|lighting)\b/]],
   ["motorized_shades", [/\b(shades?|blinds|motorized (window )?treatments?)\b/]],
   ["access_control", [/\b(door locks?|smart locks?|access control|gate)\b/]],

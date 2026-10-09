@@ -91,6 +91,12 @@ describe("normalization", () => {
   });
 });
 
+describe("Control4 remotes", () => {
+  it("reads Halo remotes as Control4, not lighting", () => {
+    expect(normalizeFunctionalSystems(["Halo remotes"])).toEqual(["home_automation"]);
+  });
+});
+
 describe("add-on requests", () => {
   it("treats pure additions to an existing system as add-ons", () => {
     expect(isAddOnRequest({ requested_changes: ["Add 3 Halo remotes"] })).toBe(true);
