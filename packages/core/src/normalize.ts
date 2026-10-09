@@ -63,7 +63,12 @@ function matchAll(table: Array<[string, RegExp[]]>, text: string): string[] {
 }
 
 export function normalizeFunctionalSystems(items: string[]): string[] {
-  const mapped = items.map((item) => ({ item, hits: matchAll(FUNCTIONAL_SYSTEMS, item) }));
+  const mapped = items.map((item) => {
+    const hits = matchAll(FUNCTIONAL_SYSTEMS, item);
+    // A Sonos soundbar ("Sonos Arc Ultra") is TV sound, not music through the house.
+    const tvSound = hits.includes("audio_video") && /\b(soundbars?|sound bars?|arc|beam|ray)\b/.test(fold(item));
+    return { item, hits: tvSound ? hits.filter((h) => h !== "whole_home_audio") : hits };
+  });
   const hasAv = mapped.some((m) => m.hits.includes("audio_video"));
   return uniqSorted(
     mapped.flatMap(({ item, hits }) => {

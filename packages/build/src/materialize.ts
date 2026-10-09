@@ -26,7 +26,7 @@ export interface Selection {
   lines: SelectionLine[];
   services: Array<{ category: string; record_id: string; quantity: 1 }>;
   /** Project labor estimate; null when the pattern has no labor model. */
-  labor: { labor_type: string; hours: number; devices: number; covers: string[] } | null;
+  labor: { labor_type: string; hours: number; devices: number; covers: string[]; extras: string[] } | null;
   parts: { record_id: string } | null;
   requirements: Array<{ system: string; classification: Classification; roles: string[]; note: string }>;
   allowances: Array<{ label: string; reason: string }>;
@@ -81,6 +81,30 @@ function named(scope: ScopeDraftV1, role: RoleSpec, roles: RoleSpec[]): boolean 
   return roleTerms(role).some((t) => changes.includes(t)) || (role.count_terms ?? []).some((t) => hasWord(changes, fold(t))) || statedQuantity(scope, role, roles) !== null;
 }
 
+const MOVE = /^(move|moving|relocate|relocating|reinstall|remount)\b/;
+const NEW_DEVICE = /\b(new|sell|selling|provide[sd]?|supply|supplied|purchase|buy|livewire)\b/;
+const SIZE = /\b(\d{2,3})\s*(?:-\s*)?(?:inch(?:es)?|in\b\.?|"|”|″)/g;
+
+const changes = (scope: ScopeDraftV1) => scope.requested_changes.map(fold);
+const moveChanges = (scope: ScopeDraftV1) => changes(scope).filter((c) => MOVE.test(c));
+const otherChanges = (scope: ScopeDraftV1) => changes(scope).filter((c) => !MOVE.test(c));
+
+/** The request asks for a new one of this device, even if the customer also has an existing one ("sell a new 75-inch TV"). */
+function wantsNew(scope: ScopeDraftV1, role: RoleSpec): boolean {
+  return otherChanges(scope).some((c) => roleTerms(role).some((t) => c.includes(t)) && NEW_DEVICE.test(c));
+}
+
+/** How many existing items matching these terms the request moves ("move the existing TV and soundbar upstairs"). */
+function movedCount(scope: ScopeDraftV1, terms: string[]): number {
+  return moveChanges(scope).filter((c) => terms.some((t) => c.includes(fold(t)))).length;
+}
+
+/** The approved record for the size the request names for a new device, if the role has size variants. */
+function variantFor(scope: ScopeDraftV1, role: RoleSpec) {
+  const sizes = otherChanges(scope).flatMap((c) => [...c.matchAll(SIZE)].map((m) => Number(m[1])));
+  return role.variants?.find((v) => v.sizes.some((n) => sizes.includes(n)));
+}
+
 export function materialize(scope: ScopeDraftV1, pattern: PatternSpec): Selection {
   const lines: SelectionLine[] = [];
   const allowances: Selection["allowances"] = [];
@@ -104,7 +128,9 @@ export function materialize(scope: ScopeDraftV1, pattern: PatternSpec): Selectio
     const retained = role.retained_match?.length
       ? scope.retained_equipment.find((e) => role.retained_match!.some((t) => fold(e).includes(fold(t))))
       : undefined;
-    if (retained) {
+    if (retained && !wantsNew(scope, role)) {
+      // Existing equipment being moved stays the customer's: its mount and labor are priced on the roles that carry it.
+      if (movedCount(scope, role.retained_match ?? []) > 0) continue;
       // Retained equipment awaiting field testing is unresolved, not supported (PRD §12).
       unresolved.push({ item: `${role.label} (retained: ${retained})`, role: role.role, reason: "existing equipment must be field-tested before it can be reused", escalate: false });
       blockedRoles.add(role.role);
@@ -118,12 +144,15 @@ export function materialize(scope: ScopeDraftV1, pattern: PatternSpec): Selectio
     // A count the requester stated is used as written; otherwise the pattern's quantity (a minimum is verified on site).
     const stated = statedQuantity(scope, role, pattern.roles);
     const minimum = stated === null && role.quantity.kind === "minimum";
+    // Each existing item the request moves needs its own mount (and the mount's install labor) in the new room.
+    const moved = stated === null && role.per_moved ? movedCount(scope, role.per_moved) : 0;
+    const verify = minimum && role.quantity.kind === "minimum" ? role.quantity.verify : null;
     lines.push({
       role: role.role,
-      record_id: role.product_id,
-      quantity: stated ?? role.quantity.qty,
+      record_id: variantFor(scope, role)?.product_id ?? role.product_id,
+      quantity: (stated ?? role.quantity.qty) + moved,
       quantity_basis: minimum ? "minimum_to_verify" : "fixed",
-      verify: minimum && role.quantity.kind === "minimum" ? role.quantity.verify : null,
+      verify: moved && verify ? `${verify}; includes ${moved} for moved existing equipment (confirm wall and power in the new room)` : verify,
       // A single-room scope places devices in that room; otherwise use the pattern's location.
       location: scope.room_types.length === 1 ? scope.room_types[0]! : role.location,
       precedent: role.precedent,
@@ -131,9 +160,11 @@ export function materialize(scope: ScopeDraftV1, pattern: PatternSpec): Selectio
   }
 
   const devices = lines.reduce((n, l) => n + l.quantity, 0);
+  // Labor-only allowances the request mentions (framing a niche), priced as hours at the pattern's labor rate.
+  const extras = (pattern.labor_extras ?? []).filter((x) => mentioned(scope, x.mentions)).map((x) => x.id);
   const labor: Selection["labor"] =
     pattern.labor && devices > 0
-      ? { labor_type: pattern.labor.labor_type, hours: laborHoursFor(pattern, lines, addOn), devices, covers: pattern.labor.covers }
+      ? { labor_type: pattern.labor.labor_type, hours: laborHoursFor(pattern, lines, addOn, extras), devices, covers: pattern.labor.covers, extras }
       : null;
 
   const services: Selection["services"] = [];

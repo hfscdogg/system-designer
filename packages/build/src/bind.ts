@@ -214,6 +214,7 @@ export function bind(draft: ProposalDraft, ctx: BindContext): Proposal {
     exclusions: [...draft.exclusions, ...ctx.scope.excluded_scope],
     remaining_verification: [
       ...verifyQuantities,
+      ...(draft.labor?.extras ?? []).map((x) => `${x.label}: ${x.hours} hours included in labor`),
       ...draft.unresolved.map((u) => `${u.item}: ${u.reason}`),
       ...ctx.scope.unresolved_questions,
     ],

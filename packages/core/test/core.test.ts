@@ -95,6 +95,10 @@ describe("Control4 remotes", () => {
   it("reads Halo remotes as Control4, not lighting", () => {
     expect(normalizeFunctionalSystems(["Halo remotes"])).toEqual(["home_automation"]);
   });
+  it("reads a Sonos soundbar as TV sound, not whole-home audio", () => {
+    expect(normalizeFunctionalSystems(["Sonos Arc Ultra soundbar"])).toEqual(["audio_video"]);
+    expect(normalizeFunctionalSystems(["Sonos in the kitchen"])).toEqual(["whole_home_audio"]);
+  });
 });
 
 describe("add-on requests", () => {

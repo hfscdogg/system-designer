@@ -22,6 +22,12 @@ export const RoleSpecSchema = z
     retained_match: z.array(z.string()).optional(),
     /** Extra terms that identify this role in a stated count ("3 doors" → door/window contacts). */
     count_terms: z.array(z.string()).optional(),
+    /** One more of this role for each existing item the request moves that matches these terms (a mount per moved TV). */
+    per_moved: z.array(z.string()).optional(),
+    /** Alternative approved records chosen by the size the request names ("75-inch" → the 77" model). */
+    variants: z
+      .array(z.object({ sizes: z.array(z.number().int().positive()).min(1), product_id: z.string().uuid(), label: z.string().min(1) }).strict())
+      .optional(),
     /** D-Tools product record. Null until Livewire chooses a standard product. */
     product_id: z.string().uuid().nullable(),
     precedent: z.enum(["livewire_standard", "accepted_comparable", "new_to_livewire"]),
@@ -75,6 +81,10 @@ export const PatternSpecSchema = z
     roles: z.array(RoleSpecSchema).min(1),
     services: z.array(ServiceSpecSchema),
     labor: LaborSpecSchema.optional(),
+    /** Labor-only allowances added to project labor when the request mentions them (framing a TV niche). */
+    labor_extras: z
+      .array(z.object({ id: z.string().min(1), label: z.string().min(1), hours: z.number().positive(), mentions: z.array(z.string()).min(1) }).strict())
+      .optional(),
     /** D-Tools parts-and-materials record, sized from the policy's parts mix target. */
     parts: z.object({ product_id: z.string().uuid(), label: z.string().min(1) }).strict().optional(),
     assumptions: z.array(z.string()),
@@ -103,11 +113,12 @@ export function laborHours(spec: LaborSpec, devices: number): number {
 /** Minimum labor for an add-on visit, matching the hourly service-call minimum on Livewire quotes. */
 export const ADD_ON_MIN_HOURS = 1;
 
-export function laborHoursFor(pattern: PatternSpec, lines: Array<{ role: string; quantity: number }>, addOn = false): number {
+export function laborHoursFor(pattern: PatternSpec, lines: Array<{ role: string; quantity: number }>, addOn = false, extras: string[] = []): number {
   const spec = pattern.labor!;
   const rate = (role: string) => pattern.roles.find((r) => r.role === role)?.hours_each ?? spec.hours_per_device;
+  const extraHours = extras.reduce((h, id) => h + (pattern.labor_extras?.find((x) => x.id === id)?.hours ?? 0), 0);
   // An add-on visit has no system setup (base hours), only the devices, with an hourly minimum.
-  const raw = lines.reduce((h, l) => h + l.quantity * rate(l.role), addOn ? 0 : spec.base_hours);
+  const raw = lines.reduce((h, l) => h + l.quantity * rate(l.role), (addOn ? 0 : spec.base_hours) + extraHours);
   const hours = addOn ? Math.max(ADD_ON_MIN_HOURS, raw) : raw;
   return Math.ceil(Math.round(hours * 1000) / 1000 * 2) / 2;
 }
@@ -156,6 +167,7 @@ export function combinePatterns(ps: PatternSpec[]): PatternSpec | null {
         }
       : {}),
     ...(ps[0]!.parts ? { parts: ps[0]!.parts } : {}),
+    ...(ps.some((p) => p.labor_extras?.length) ? { labor_extras: ps.flatMap((p) => p.labor_extras ?? []) } : {}),
     assumptions: uniq(ps.flatMap((p) => p.assumptions)),
     exclusions: uniq(ps.flatMap((p) => p.exclusions)),
   });
@@ -163,7 +175,7 @@ export function combinePatterns(ps: PatternSpec[]): PatternSpec | null {
 
 /** Every product record a pattern may need, for exact-record reads. */
 export function patternRecordIds(p: PatternSpec): string[] {
-  const ids = [...p.roles, ...p.services].map((x) => x.product_id).filter((x): x is string => x !== null);
+  const ids = [...p.roles, ...p.services, ...p.roles.flatMap((r) => r.variants ?? [])].map((x) => x.product_id).filter((x): x is string => x !== null);
   if (p.parts) ids.push(p.parts.product_id);
   return [...new Set(ids)].sort();
 }
