@@ -10,6 +10,7 @@ import {
   findAuthorityFields,
   hashCanonical,
   normalizeExtraction,
+  describeScopeChanges,
   isAddOnRequest,
   normalizeFunctionalSystems,
   normalizeServiceCategories,
@@ -88,6 +89,15 @@ describe("normalization", () => {
     const once = normalizeExtraction(completeExtraction({ service_categories: ["monitoring activation", "project management", "installation"] })).scope;
     expect(once.service_categories).toEqual(["installation", "monitoring_activation", "project_management"]);
     expect(normalizeExtraction(once)).toEqual({ scope: once, notes: [] });
+  });
+});
+
+describe("revision changes", () => {
+  it("lists what a revision changed in plain words, and nothing when nothing changed", () => {
+    const before = normalizeExtraction(completeExtraction({ requested_quantities: [{ item: "eero", quantity: 3 }] })).scope;
+    const after = normalizeExtraction(completeExtraction({ client: "Monica Greene", requested_quantities: [{ item: "eero", quantity: 4 }], excluded_scope: ["Painting"] })).scope;
+    expect(describeScopeChanges(before, after)).toEqual(["Client: Smith Family → Monica Greene", "eero: 3 → 4", "Excluded added: Painting"]);
+    expect(describeScopeChanges(before, structuredClone(before))).toEqual([]);
   });
 });
 
@@ -266,6 +276,9 @@ describe("state machine and signals", () => {
     expect(canTransition("NEEDS_CLARIFICATION", "SCOPE_APPROVED")).toBe(false);
     expect(canTransition("AUTHENTICATED_AND_CAPTURED", "PREBUILD_VERIFIED")).toBe(false);
     expect(canTransition("READY_HELD", "FAILED")).toBe(false);
+    // A finished budget can only be replaced by its revision.
+    expect(canTransition("READY_HELD", "SUPERSEDED")).toBe(true);
+    expect(canTransition("SUPERSEDED", "READY_HELD")).toBe(false);
     expect(canTransition("COMPILED", "BLOCKED")).toBe(true);
   });
 

@@ -81,6 +81,9 @@ export interface RunRecord {
   state: RunState;
   release_id: string;
   status_message_id: string | null;
+  /** The finished run this one revises, if any. */
+  parent_run_id: string | null;
+  revision: number;
 }
 
 export interface ReceiptRecord {
@@ -292,7 +295,10 @@ export class Store {
    * Create a run for a captured intake and claim its message atomically.
    * Fails if the message was already claimed or the thread already has an open run.
    */
-  async startRun(intake: IntakeRecord): Promise<{ ok: true; run: RunRecord } | { ok: false; reason: "already_claimed" | "open_run_exists" }> {
+  async startRun(
+    intake: IntakeRecord,
+    opts: { parentRunId?: string } = {},
+  ): Promise<{ ok: true; run: RunRecord } | { ok: false; reason: "already_claimed" | "open_run_exists" }> {
     const runId = `run_${randomUUID().replace(/-/g, "")}`;
     try {
       return await this.db.transaction(async (tx) => {
@@ -301,13 +307,28 @@ export class Store {
           intake.provider_message_id,
         ]);
         if (existing.rows.length) return { ok: false as const, reason: "already_claimed" as const };
+        const parent = opts.parentRunId ? await this.getRun(opts.parentRunId, tx) : null;
         const run = await tx.query<RunRecord>(
-          `INSERT INTO runs (id, platform, space_id, thread_id, person_id, session_generation, intake_id, state, release_id)
-           VALUES ($1,$2,$3,$4,$5,$6,$7,'AUTHENTICATED_AND_CAPTURED',$8) RETURNING *`,
-          [runId, intake.platform, intake.space_id, intake.thread_id, intake.person_id, intake.session_generation, intake.id, this.releaseId],
+          `INSERT INTO runs (id, platform, space_id, thread_id, person_id, session_generation, intake_id, state, release_id, parent_run_id, revision)
+           VALUES ($1,$2,$3,$4,$5,$6,$7,'AUTHENTICATED_AND_CAPTURED',$8,$9,$10) RETURNING *`,
+          [
+            runId,
+            intake.platform,
+            intake.space_id,
+            intake.thread_id,
+            intake.person_id,
+            intake.session_generation,
+            intake.id,
+            this.releaseId,
+            parent?.id ?? null,
+            parent ? parent.revision + 1 : 1,
+          ],
         );
         await this.claimMessage(intake.platform, intake.provider_message_id, "intake", runId, tx);
-        await this.event(tx, runId, "run_started", intake.person_id, { intakeId: intake.id, textSha256: intake.text_sha256 });
+        await this.event(tx, runId, "run_started", intake.person_id, { intakeId: intake.id, textSha256: intake.text_sha256, parentRunId: parent?.id ?? null });
+        if (parent) {
+          await tx.query(`DELETE FROM pending_revisions WHERE platform = $1 AND space_id = $2 AND thread_id = $3`, [intake.platform, intake.space_id, intake.thread_id]);
+        }
         return { ok: true as const, run: run.rows[0]! };
       });
     } catch (err) {
@@ -350,6 +371,39 @@ export class Store {
       [t.platform, t.spaceId, t.threadId, BUILD_STATES],
     );
     return res.rows[0] ?? null;
+  }
+
+  /** The most recent finished budget in this thread, if it is younger than `maxAgeDays`. */
+  async findLatestFinishedRun(t: ThreadRef, maxAgeDays: number): Promise<RunRecord | null> {
+    const res = await this.db.query<RunRecord>(
+      `SELECT * FROM runs WHERE platform = $1 AND space_id = $2 AND thread_id = $3 AND state = 'READY_HELD'
+         AND updated_at > now() - make_interval(days => $4)
+       ORDER BY updated_at DESC LIMIT 1`,
+      [t.platform, t.spaceId, t.threadId, maxAgeDays],
+    );
+    return res.rows[0] ?? null;
+  }
+
+  /** The requester asked to revise a finished run; their next message in the thread revises it. */
+  async setPendingRevision(t: ThreadRef, runId: string, personId: string): Promise<void> {
+    await this.db.query(
+      `INSERT INTO pending_revisions (platform, space_id, thread_id, run_id, person_id) VALUES ($1,$2,$3,$4,$5)
+       ON CONFLICT (platform, space_id, thread_id) DO UPDATE SET run_id = $4, person_id = $5, created_at = now()`,
+      [t.platform, t.spaceId, t.threadId, runId, personId],
+    );
+    await this.event(this.db, runId, "revision_requested", personId, { thread: t });
+  }
+
+  async pendingRevision(t: ThreadRef): Promise<{ run_id: string; person_id: string } | null> {
+    const res = await this.db.query<{ run_id: string; person_id: string }>(
+      `SELECT run_id, person_id FROM pending_revisions WHERE platform = $1 AND space_id = $2 AND thread_id = $3`,
+      [t.platform, t.spaceId, t.threadId],
+    );
+    return res.rows[0] ?? null;
+  }
+
+  async clearPendingRevision(t: ThreadRef): Promise<void> {
+    await this.db.query(`DELETE FROM pending_revisions WHERE platform = $1 AND space_id = $2 AND thread_id = $3`, [t.platform, t.spaceId, t.threadId]);
   }
 
   async listRunsForPerson(personId: string, limit = 10): Promise<RunRecord[]> {

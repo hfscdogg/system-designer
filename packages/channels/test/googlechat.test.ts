@@ -350,3 +350,29 @@ describe("question cards", () => {
     expect(parseGoogleChatEvent(enc(click({ field: "service_categories" })))).toMatchObject({ kind: "answer_click", values: [] });
   });
 });
+
+describe("conversation controls", () => {
+  it("puts Approve, Edit and Start over on an approvable receipt, and Revise / New request under a budget", () => {
+    const receipt: View = { kind: "receipt", receiptId: "R-X-1", version: 1, status: "AWAITING_APPROVAL", lines: ["x"], approve: { receiptId: "R-X-1", scopeHash: "sha256:h" } };
+    const buttons = (body: any) => body.cardsV2[0].card.sections.flatMap((s: any) => s.widgets).flatMap((w: any) => w.buttonList?.buttons ?? []);
+    const params = (b: any) => Object.fromEntries(b.onClick.action.parameters.map((p: any) => [p.key, p.value]));
+    const r = buttons(renderGoogleChat(receipt));
+    expect(r.map((b: any) => b.text)).toEqual(["Approve", "Edit", "Start over"]);
+    expect(params(r[1])).toEqual({ action: "conversation_control", control: "edit_scope", ref: "R-X-1" });
+    const a = buttons(renderGoogleChat({ kind: "budget_actions", runId: "run_1", text: "Need changes?" }));
+    expect(a.map((b: any) => [b.text, params(b).control])).toEqual([["Revise this budget", "revise_budget"], ["New request", "new_request"]]);
+  });
+
+  it("parses a control click and ignores unknown controls", () => {
+    const click = (control: string) => ({
+      type: "CARD_CLICKED",
+      eventTime: "2026-10-05T12:00:00Z",
+      space: { name: "spaces/A", spaceType: "DIRECT_MESSAGE" },
+      message: { name: "spaces/A/messages/M2" },
+      user: { name: "users/zack", type: "HUMAN" },
+      common: { invokedFunction: "conversation_control", parameters: { control, ref: "run_1" } },
+    });
+    expect(parseGoogleChatEvent(enc(click("revise_budget")))).toMatchObject({ kind: "control_click", control: "revise_budget", ref: "run_1", isDirectMessage: true });
+    expect(parseGoogleChatEvent(enc(click("delete_everything")))).toMatchObject({ kind: "ignored" });
+  });
+});

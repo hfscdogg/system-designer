@@ -47,7 +47,22 @@ export type InboundEvent =
       exceptionId: string;
       decision: "approved" | "declined";
     }
+  | {
+      /** A conversation control on a card: edit the scope, start over, revise a finished budget, or start a new request. */
+      kind: "control_click";
+      platform: string;
+      providerEventId: string;
+      thread: ThreadRef;
+      isDirectMessage: boolean;
+      sender: { providerUserId: string; email: string | null; displayName: string | null; isHuman: boolean };
+      control: ControlAction;
+      /** The receipt (edit, start over) or run (revise, new request) the card belongs to. */
+      ref: string;
+    }
   | { kind: "ignored"; reason: string };
+
+export const CONTROL_ACTIONS = ["edit_scope", "start_over", "revise_budget", "new_request"] as const;
+export type ControlAction = (typeof CONTROL_ACTIONS)[number];
 
 export type StepState = "done" | "active" | "pending" | "failed";
 
@@ -63,6 +78,8 @@ export type View =
       lines: string[];
       approve: { receiptId: string; scopeHash: string } | null;
     }
+  /** Posted under a finished budget: revise it, or start a new request. */
+  | { kind: "budget_actions"; runId: string; text: string }
   /**
    * The receipt's next blocking question, with tap-to-answer choices when the
    * field has them. `lines` is the full receipt, shown verbatim (collapsed).
