@@ -98,10 +98,15 @@ export function laborHours(spec: LaborSpec, devices: number): number {
 }
 
 /** Labor hours for priced lines: base plus each line's units at its role's rate (or the pattern's per-device rate). */
-export function laborHoursFor(pattern: PatternSpec, lines: Array<{ role: string; quantity: number }>): number {
+/** Minimum labor for an add-on visit, matching the hourly service-call minimum on Livewire quotes. */
+export const ADD_ON_MIN_HOURS = 1;
+
+export function laborHoursFor(pattern: PatternSpec, lines: Array<{ role: string; quantity: number }>, addOn = false): number {
   const spec = pattern.labor!;
   const rate = (role: string) => pattern.roles.find((r) => r.role === role)?.hours_each ?? spec.hours_per_device;
-  const hours = lines.reduce((h, l) => h + l.quantity * rate(l.role), spec.base_hours);
+  // An add-on visit has no system setup (base hours), only the devices, with an hourly minimum.
+  const raw = lines.reduce((h, l) => h + l.quantity * rate(l.role), addOn ? 0 : spec.base_hours);
+  const hours = addOn ? Math.max(ADD_ON_MIN_HOURS, raw) : raw;
   return Math.ceil(Math.round(hours * 1000) / 1000 * 2) / 2;
 }
 

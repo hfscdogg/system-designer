@@ -133,11 +133,41 @@ describe("patterns", () => {
     const audio = patterns.find((p) => p.pattern === "whole_home_audio")!;
     expect(audio.roles.find((r) => r.role === "zone_amplifier")).toMatchObject({ critical: true, quantity: { kind: "minimum", qty: 2 } });
     expect(audio.roles.find((r) => r.role === "outdoor_speakers")!.mentions).toContain("patio");
-    // Speaker pairs take longer than amps: 1 h setup + 2 amps × 0.5 + 2 pairs × 3 = 8 h.
-    expect(laborHoursFor(audio, [{ role: "zone_amplifier", quantity: 2 }, { role: "in_ceiling_speakers", quantity: 2 }])).toBe(8);
-    // Combined with networking, each role keeps its own rate and the setup hours add: 4 + 1 + 6 + 3 × 0.5 = 12.5.
+    // Speaker pairs take longer than amps: 1 h setup + 2 amps × 1 + 2 pairs × 3 = 9 h.
+    expect(laborHoursFor(audio, [{ role: "zone_amplifier", quantity: 2 }, { role: "in_ceiling_speakers", quantity: 2 }])).toBe(9);
+    // Combined with networking, each role keeps its own rate and the setup hours add: 4 + 2 + 6 + 3 × 0.5 = 13.5.
     const both = selectPattern(["whole_home_audio", "networking"], patterns)!;
-    expect(laborHoursFor(both, [{ role: "zone_amplifier", quantity: 2 }, { role: "in_ceiling_speakers", quantity: 2 }, { role: "mesh_wifi", quantity: 3 }])).toBe(12.5);
+    expect(laborHoursFor(both, [{ role: "zone_amplifier", quantity: 2 }, { role: "in_ceiling_speakers", quantity: 2 }, { role: "mesh_wifi", quantity: 3 }])).toBe(13.5);
+  });
+
+  it("prices an add-on as only the devices named, with no setup hours", async () => {
+    const patterns = await loadPatterns();
+    const c4 = patterns.find((p) => p.pattern === "home_automation")!;
+    const addOn = approvedScope({ functional_systems: ["Control4"], requested_changes: ["Add 3 Halo remotes"], requested_quantities: [{ item: "Control4 Halo remote", quantity: 3 }], existing_detectors: "not_provided" }).scope;
+    const sel = materialize(addOn, c4);
+    expect(sel.add_on).toBe(true);
+    expect(sel.lines.map((l) => [l.role, l.quantity])).toEqual([["automation_remote", 3]]);
+    // 3 remotes × 0.5 h, no controller setup.
+    expect(sel.labor!.hours).toBe(1.5);
+    // A single small device still carries the one-hour visit minimum.
+    expect(laborHoursFor(c4, [{ role: "automation_remote", quantity: 1 }], true)).toBe(1);
+  });
+
+  it("gives each stated count to the one device it names", async () => {
+    const patterns = await loadPatterns();
+    const c4 = patterns.find((p) => p.pattern === "home_automation")!;
+    const system = approvedScope({ functional_systems: ["Control4"], requested_changes: ["Install Control4"], requested_quantities: [{ item: "Control4 Halo remote", quantity: 3 }], existing_detectors: "not_provided" }).scope;
+    const sel = materialize(system, c4);
+    expect(sel.add_on).toBe(false);
+    expect(sel.lines.map((l) => [l.role, l.quantity])).toEqual([["automation_controller", 1], ["automation_remote", 3]]);
+  });
+
+  it("prices a whole system when an add-on names nothing the pattern knows", async () => {
+    const patterns = await loadPatterns();
+    const net = patterns.find((p) => p.pattern === "home_network")!;
+    const sel = materialize(approvedScope({ functional_systems: ["Wi-Fi"], requested_changes: ["Add Wi-Fi to the house"], existing_detectors: "not_provided" }).scope, net);
+    expect(sel.add_on).toBe(false);
+    expect(sel.lines.map((l) => l.role)).toEqual(expect.arrayContaining(["mesh_wifi", "network_switch"]));
   });
 
   it("selects exactly one applicable pattern or none", () => {

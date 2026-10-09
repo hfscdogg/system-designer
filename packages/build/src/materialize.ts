@@ -1,4 +1,4 @@
-import type { ScopeDraftV1 } from "@sd/core";
+import { isAddOnRequest, type ScopeDraftV1 } from "@sd/core";
 import { laborHoursFor, type PatternSpec, type RoleSpec } from "./pattern.ts";
 
 /**
@@ -21,6 +21,8 @@ export interface Selection {
   schema: "selection_v1";
   pattern: string;
   pattern_version: string;
+  /** Priced as an add-on to an existing system: only the named devices, no system setup hours. */
+  add_on: boolean;
   lines: SelectionLine[];
   services: Array<{ category: string; record_id: string; quantity: 1 }>;
   /** Project labor estimate; null when the pattern has no labor model. */
@@ -38,11 +40,36 @@ function mentioned(scope: ScopeDraftV1, terms: string[]): boolean {
   return terms.some((t) => text.includes(fold(t)));
 }
 
-/** The requester's stated count for a role, matched on the role's own terms (e.g. "keypad" in "keypads"). */
-function statedQuantity(scope: ScopeDraftV1, role: RoleSpec): number | null {
-  const terms = [...(role.retained_match ?? []), role.label].map(fold);
-  const hit = scope.requested_quantities.find((q) => terms.some((t) => fold(q.item).includes(t)));
-  return hit ? hit.quantity : null;
+/** Terms that identify a role in the request: its label, retained-equipment terms and mention terms. */
+function roleTerms(role: RoleSpec): string[] {
+  return [role.label, ...(role.retained_match ?? []), ...(role.mentions ?? [])].map(fold);
+}
+
+/** How specifically `text` names `role`: a full label beats the longest matching term; 0 when it doesn't. */
+function matchScore(text: string, role: RoleSpec): number {
+  const t = fold(text);
+  if (t.includes(fold(role.label))) return 1000 + role.label.length;
+  return Math.max(0, ...[...(role.retained_match ?? []), ...(role.mentions ?? [])].map(fold).filter((term) => t.includes(term)).map((term) => term.length));
+}
+
+/**
+ * The requester's stated count for a role. Each stated item belongs to the one
+ * role it names most specifically, so "3 Control4 Halo remotes" sets the
+ * remotes, not the Control4 controller too.
+ */
+function statedQuantity(scope: ScopeDraftV1, role: RoleSpec, roles: RoleSpec[]): number | null {
+  for (const q of scope.requested_quantities) {
+    const scores = roles.map((r) => matchScore(q.item, r));
+    const best = Math.max(...scores);
+    if (best > 0 && roles[scores.indexOf(best)] === role) return q.quantity;
+  }
+  return null;
+}
+
+/** Whether the request itself names this role (its changes or a stated count), for add-on pricing. */
+function named(scope: ScopeDraftV1, role: RoleSpec, roles: RoleSpec[]): boolean {
+  const changes = fold(scope.requested_changes.join(" | "));
+  return roleTerms(role).some((t) => changes.includes(t)) || statedQuantity(scope, role, roles) !== null;
 }
 
 export function materialize(scope: ScopeDraftV1, pattern: PatternSpec): Selection {
@@ -52,8 +79,15 @@ export function materialize(scope: ScopeDraftV1, pattern: PatternSpec): Selectio
   const included: RoleSpec[] = [];
   const blockedRoles = new Set<string>();
 
-  for (const role of pattern.roles) {
-    if (!role.systems.some((s) => scope.functional_systems.includes(s))) continue;
+  const candidates = pattern.roles.filter((role) => role.systems.some((s) => scope.functional_systems.includes(s)));
+  // An add-on prices only the devices the request names. A pattern it names nothing from (e.g. "add Wi-Fi") is priced whole.
+  const addOnRequested = isAddOnRequest(scope);
+  const addOn = addOnRequested && candidates.some((r) => named(scope, r, pattern.roles));
+
+  for (const role of candidates) {
+    // In an add-on, a role is priced when the request names it or names its own system (smoke detection alongside sensors).
+    const ownSystemRequested = role.systems.some((s) => scope.functional_systems.includes(s) && !pattern.applies_when_any.includes(s));
+    if (addOn && !named(scope, role, pattern.roles) && !ownSystemRequested) continue;
     if (role.mentions && !mentioned(scope, role.mentions)) continue;
     if (role.existing_detectors && !(role.existing_detectors as string[]).includes(scope.existing_detectors)) continue;
     included.push(role);
@@ -73,7 +107,7 @@ export function materialize(scope: ScopeDraftV1, pattern: PatternSpec): Selectio
       continue;
     }
     // A count the requester stated is used as written; otherwise the pattern's quantity (a minimum is verified on site).
-    const stated = statedQuantity(scope, role);
+    const stated = statedQuantity(scope, role, pattern.roles);
     const minimum = stated === null && role.quantity.kind === "minimum";
     lines.push({
       role: role.role,
@@ -90,7 +124,7 @@ export function materialize(scope: ScopeDraftV1, pattern: PatternSpec): Selectio
   const devices = lines.reduce((n, l) => n + l.quantity, 0);
   const labor: Selection["labor"] =
     pattern.labor && devices > 0
-      ? { labor_type: pattern.labor.labor_type, hours: laborHoursFor(pattern, lines), devices, covers: pattern.labor.covers }
+      ? { labor_type: pattern.labor.labor_type, hours: laborHoursFor(pattern, lines, addOn), devices, covers: pattern.labor.covers }
       : null;
 
   const services: Selection["services"] = [];
@@ -119,6 +153,7 @@ export function materialize(scope: ScopeDraftV1, pattern: PatternSpec): Selectio
     schema: "selection_v1",
     pattern: pattern.pattern,
     pattern_version: pattern.version,
+    add_on: addOn,
     lines,
     services,
     labor,

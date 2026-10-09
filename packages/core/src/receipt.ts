@@ -1,5 +1,6 @@
 import { ADDRESS_TO_CONFIRM, applyAssumptions } from "./assumptions.ts";
 import { computeBlockers, needsDetectorAnswer, questionsForTurn, type Blocker } from "./blockers.ts";
+import { isAddOnRequest } from "./addon.ts";
 import { hashCanonical } from "./canonical.ts";
 import { ScopeDraftV1Schema, type ScopeDraftV1, type ScopeExtraction } from "./scope.ts";
 import type { ReceiptStatus } from "./signals.ts";
@@ -115,6 +116,13 @@ function scopeLines(s: ScopeExtraction, assumed: string[]): string[] {
     mark("room_types", `Rooms/areas: ${s.room_types.length ? s.room_types.join("; ") : missing}`),
     `Systems: ${s.functional_systems.length ? s.functional_systems.join("; ") : missing}`,
     mark("requested_changes", `Requested outcomes: ${s.requested_changes.length ? s.requested_changes.join("; ") : missing}`),
+    ...(s.requested_changes.length
+      ? [
+          isAddOnRequest(s)
+            ? "Budget type: add-on to the existing system, pricing only the devices named (assumed; reply \"price a complete system\" to change)"
+            : "Budget type: complete system (assumed)",
+        ]
+      : []),
     ...(s.requested_quantities.length ? [`Stated quantities: ${s.requested_quantities.map((q) => `${q.item} × ${q.quantity}`).join("; ")}`] : []),
     ...(s.requested_discount ? [`Discount: ${s.requested_discount.pct}%${s.requested_discount.note ? ` (${s.requested_discount.note})` : ""}, needs Henry's or Zack's approval`] : []),
     mark("existing_equipment", `Existing equipment: ${equipment}`),

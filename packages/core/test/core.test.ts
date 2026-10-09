@@ -10,6 +10,7 @@ import {
   findAuthorityFields,
   hashCanonical,
   normalizeExtraction,
+  isAddOnRequest,
   normalizeFunctionalSystems,
   normalizeServiceCategories,
   parseApprovalText,
@@ -87,6 +88,20 @@ describe("normalization", () => {
     const once = normalizeExtraction(completeExtraction({ service_categories: ["monitoring activation", "project management", "installation"] })).scope;
     expect(once.service_categories).toEqual(["installation", "monitoring_activation", "project_management"]);
     expect(normalizeExtraction(once)).toEqual({ scope: once, notes: [] });
+  });
+});
+
+describe("add-on requests", () => {
+  it("treats pure additions to an existing system as add-ons", () => {
+    expect(isAddOnRequest({ requested_changes: ["Add 3 Halo remotes"] })).toBe(true);
+    expect(isAddOnRequest({ requested_changes: ["Add a Sonos Port", "another amp in the den"] })).toBe(true);
+  });
+  it("prices replacements, new systems and anything unclear as a complete system", () => {
+    expect(isAddOnRequest({ requested_changes: ["Replace the alarm panel"] })).toBe(false);
+    expect(isAddOnRequest({ requested_changes: ["Add a new security system"] })).toBe(false);
+    expect(isAddOnRequest({ requested_changes: ["Add whole-home audio"] })).toBe(false);
+    expect(isAddOnRequest({ requested_changes: ["Add glass-break sensors", "Replace legacy panel"] })).toBe(false);
+    expect(isAddOnRequest({ requested_changes: [] })).toBe(false);
   });
 });
 
