@@ -2,6 +2,7 @@ import type { ScopeDraftV1 } from "@sd/core";
 import type { DraftLabor, DraftLine, DraftParts, DraftService, ProposalDraft } from "./compile.ts";
 import { sum } from "./money.ts";
 import { minimumMarginPct, type CommercialPolicy, type PolicyRecord } from "./policy.ts";
+import { likelyRange, type LikelyRange } from "./range.ts";
 
 /**
  * Binder (PRD §13.4): injects authoritative identity, approved scope and
@@ -93,6 +94,8 @@ export interface Proposal {
     tax: { status: "tbd" } | { status: "calculated"; rate_pct: number; cents: number };
     /** Omitted (null) whenever the commercial scope is incomplete (PRD §14.3). */
     total_cents: number | null;
+    /** Where similar accepted jobs landed (middle half), around the total or the priced scope; null when history is too thin or spread. */
+    likely_range: LikelyRange | null;
   };
   internal: {
     cost_cents: number;
@@ -229,6 +232,7 @@ export function bind(draft: ProposalDraft, ctx: BindContext): Proposal {
       subtotal_cents: subtotal,
       tax,
       total_cents: complete && tax.status === "calculated" ? subtotal + tax.cents : null,
+      likely_range: likelyRange(draft.pattern, complete && tax.status === "calculated" ? subtotal + tax.cents : subtotal),
     },
     internal: {
       cost_cents: cost,

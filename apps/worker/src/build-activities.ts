@@ -1,9 +1,11 @@
 import {
   admitProduct,
   bind,
+  catalogIndex,
   compile,
   CommercialPolicySchema,
   customerView,
+  findNamedProducts,
   formatUsd,
   materialize,
   patternRecordIds,
@@ -11,6 +13,9 @@ import {
   selectPattern,
   validateProposal,
   type AdmittedProduct,
+  type CatalogEntry,
+  type CatalogIndex,
+  type NamedProduct,
   type PatternSpec,
   type PolicyRecord,
   type Proposal,
@@ -39,6 +44,23 @@ export interface BuildDeps {
   fetchImage: (url: string) => Promise<{ bytes: Uint8Array; contentType: string } | null>;
   postFile: (run: RunRecord, file: OutboundFile, key: string) => Promise<{ messageId: string; attachmentRef: string }>;
   postView: (run: RunRecord, view: View, key: string) => Promise<void>;
+  now?: () => number;
+}
+
+const CATALOG_TTL_MS = 24 * 60 * 60 * 1000;
+const MAX_CATALOG_PAGES = 100;
+
+/** The whole D-Tools product list, page by page, as a model-number index. */
+async function readCatalogIndex(dtools: DToolsReader): Promise<CatalogIndex> {
+  const entries: CatalogEntry[] = [];
+  for (let page = 1; page <= MAX_CATALOG_PAGES; page++) {
+    const read = await dtools.listProducts!(page);
+    const json = JSON.parse(new TextDecoder().decode(read.body)) as { products?: CatalogEntry[] };
+    const products = json.products ?? [];
+    entries.push(...products);
+    if (products.length < 500) break;
+  }
+  return catalogIndex(entries);
 }
 
 interface Approved {
@@ -50,6 +72,26 @@ interface Approved {
 
 export function createBuildStage(deps: BuildDeps) {
   const { store } = deps;
+  const now = deps.now ?? Date.now;
+
+  // The catalog index is read once a day. Without it, requests are priced with pattern standards only.
+  let index: { value: CatalogIndex; at: number } | null = null;
+  async function catalogLookup(): Promise<CatalogIndex | null> {
+    if (!deps.dtools.listProducts) return null;
+    if (index && now() - index.at < CATALOG_TTL_MS) return index.value;
+    try {
+      index = { value: await readCatalogIndex(deps.dtools), at: now() };
+    } catch (err) {
+      console.warn(`D-Tools catalog list unavailable; pricing pattern standards only: ${(err as Error).message}`);
+      if (!index) return null;
+    }
+    return index.value;
+  }
+
+  /** Products the request names by model, frozen at prebuild. Runs from before the lookup existed have none. */
+  async function namedProducts(runId: string): Promise<NamedProduct[]> {
+    return (await store.readArtifact<NamedProduct[]>(runId, "prebuild", "named")) ?? [];
+  }
 
   async function approved(runId: string): Promise<Approved> {
     const approval = await store.getApprovalForRun(runId);
@@ -93,6 +135,11 @@ export function createBuildStage(deps: BuildDeps) {
       }
       // Freeze the pattern this run builds with, so later stages and retries use exactly it.
       await store.publishArtifact(runId, "prebuild", "pattern", pattern);
+      // A retry keeps the products found the first time, even if the catalog changed since.
+      if ((await store.readArtifact(runId, "prebuild", "named")) === null) {
+        const lookup = await catalogLookup();
+        await store.publishArtifact(runId, "prebuild", "named", lookup ? findNamedProducts(a.scope, lookup) : []);
+      }
       await advance(runId, "PREBUILD_VERIFIED", { pattern: pattern.pattern, version: pattern.version });
       return { ok: true, summary: `${pattern.title} pattern` };
     },
@@ -101,14 +148,19 @@ export function createBuildStage(deps: BuildDeps) {
       const pattern = PatternSpecSchema.parse(await artifact(runId, "prebuild", "pattern"));
       const admitted: AdmittedProduct[] = [];
       const rejected: string[] = [];
-      for (const id of patternRecordIds(pattern)) {
+      const standard = new Set(patternRecordIds(pattern));
+      const named = (await namedProducts(runId)).map((n) => n.record_id).filter((id) => !standard.has(id));
+      // A product the request named that can't be admitted is priced with the pattern's standard instead; it never blocks.
+      const skipped: string[] = [];
+      for (const id of [...standard, ...named]) {
+        const reject = (reason: string) => (standard.has(id) ? rejected : skipped).push(`${id}: ${reason}`);
         let read;
         try {
           read = await deps.dtools.getProduct(id);
         } catch (err) {
           // Missing records block; outages are thrown so the activity retries, then fails visibly.
           if (err instanceof DToolsReadError && err.status !== null && err.status < 500) {
-            rejected.push(`${id}: ${err.message}`);
+            reject(err.message);
             continue;
           }
           throw err;
@@ -120,21 +172,22 @@ export function createBuildStage(deps: BuildDeps) {
           { admitted: admission.ok, reason: admission.ok ? null : admission.reason },
         );
         if (admission.ok) admitted.push({ ...admission.product, evidence: { ...admission.product.evidence, blob_key: blobKey } });
-        else rejected.push(`${id}: ${admission.reason}`);
+        else reject(admission.reason);
       }
       if (rejected.length) return { ok: false, reason: `D-Tools records could not be admitted (${rejected.join("; ")})` };
       await store.publishArtifact(runId, "catalog", "admitted", admitted);
-      await advance(runId, "CATALOG_EVIDENCE_ADMITTED", { records: admitted.length });
+      await advance(runId, "CATALOG_EVIDENCE_ADMITTED", { records: admitted.length, ...(skipped.length ? { named_not_admitted: skipped } : {}) });
       return { ok: true, summary: `${admitted.length} D-Tools records read` };
     },
 
     async compileSelection(runId) {
       const a = await approved(runId);
       const pattern = PatternSpecSchema.parse(await artifact(runId, "prebuild", "pattern"));
-      const selection = materialize(a.scope, pattern);
+      const catalog = await admittedCatalog(runId);
+      const selection = materialize(a.scope, pattern, (await namedProducts(runId)).filter((n) => catalog.has(n.record_id)));
       await store.publishArtifact(runId, "selection", "selection", selection);
       await advance(runId, "SELECTION_READY");
-      const compiled = compile(selection, await admittedCatalog(runId), pattern);
+      const compiled = compile(selection, catalog, pattern);
       if (!compiled.ok) return { ok: false, reason: `the compiler rejected the selection (${compiled.errors.slice(0, 3).join("; ")})` };
       await store.publishArtifact(runId, "compile", "draft", compiled.draft);
       await advance(runId, "COMPILED");
@@ -224,6 +277,7 @@ export function createBuildStage(deps: BuildDeps) {
       const summary = [
         `Proposal validated for ${proposal.client}.`,
         `${c.label}: ${formatUsd(c.subtotal_cents)}${c.total_cents !== null ? ` (total ${formatUsd(c.total_cents)})` : ""}; tax ${c.tax.status === "calculated" ? formatUsd(c.tax.cents) : "TBD"}.`,
+        c.likely_range ? `Likely range: ${formatUsd(c.likely_range.low_cents)} – ${formatUsd(c.likely_range.high_cents)} (middle half of ${c.likely_range.jobs} similar Livewire jobs).` : null,
         proposal.allowances.length ? `Allowances (TBD): ${proposal.allowances.map((x) => x.label).join(", ")}.` : null,
         proposal.remaining_verification.length ? `To verify: ${proposal.remaining_verification.join("; ")}.` : null,
       ].filter(Boolean);

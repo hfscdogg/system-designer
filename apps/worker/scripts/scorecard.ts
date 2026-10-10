@@ -12,9 +12,12 @@
  * coverable when every system it needs has a pattern and uncovered equipment is
  * at most 20% of its equipment.
  *
- * Accuracy: each coverable quote is priced as a complete system from its own
- * device counts (the counts a rep would type), and compared with what the
- * customer accepted. The bar is 80% of quotes within ±20%.
+ * Accuracy ("same scope, same answer"): each coverable quote's own device list
+ * (category, name, model and count, as a rep would type it) is the request.
+ * Products it names by model are priced from the catalog, as in production.
+ * The budget is compared with what the customer accepted for that same scope.
+ * The bar is 80% of quotes within ±20%. SD_SCORECARD_NAMED=0 turns off the
+ * model lookup, for comparison.
  *
  * Customer data stays in that directory; nothing from it is committed.
  */
@@ -22,7 +25,20 @@ import { readFileSync, writeFileSync } from "node:fs";
 import { join } from "node:path";
 import { hashCanonical, type ScopeDraftV1 } from "@sd/core";
 import { recordedDToolsReader } from "@sd/dtools";
-import { admitProduct, bind, CommercialPolicySchema, compile, loadPatterns, materialize, patternRecordIds, selectPattern, type AdmittedProduct } from "@sd/build";
+import {
+  admitProduct,
+  bind,
+  catalogIndex,
+  CommercialPolicySchema,
+  compile,
+  findNamedProducts,
+  loadPatterns,
+  materialize,
+  patternRecordIds,
+  selectPattern,
+  type AdmittedProduct,
+  type CatalogEntry,
+} from "@sd/build";
 
 type Item = {
   type: string;
@@ -56,6 +72,7 @@ const DATA = process.env.SD_DTOOLS_DATA;
 if (!DATA) throw new Error("set SD_DTOOLS_DATA to the D-Tools export directory");
 const OUT = process.env.SD_SCORECARD_OUT ?? join(DATA, "scorecard.json");
 const MODE = process.env.SD_SCORECARD_MODE === "complete" ? "complete" : "add_on";
+const NAMED = process.env.SD_SCORECARD_NAMED !== "0";
 
 /** D-Tools category → the system our patterns price, "accessory" (neutral) or "uncovered:<kind>". First match wins. */
 const BUCKETS: Array<[RegExp, string]> = [
@@ -93,10 +110,12 @@ function actual(q: Quote) {
   let taxable = 0;
   let labor = 0;
   let hours = 0;
+  let accessories = 0;
   for (const i of q.items.filter(billable)) {
     if (i.type === "Product") {
       const v = (i.unitPrice ?? 0) * i.quantity;
       equipment += v;
+      if (bucketOf(i.category) === "accessory") accessories += v;
       if (i.isTaxable) taxable += v;
     }
     if (i.unitLaborPrice) {
@@ -120,13 +139,15 @@ function actual(q: Quote) {
   }
   const rate = q.taxes.find((t) => t.id === q.taxSettings?.taxId)?.rate ?? 0;
   const tax = q.isExemptFromTax ? 0 : (taxable + adjTaxable) * rate;
-  return { equipment, labor, hours, rebuilt: equipment + labor + adjustments + tax, price: q.price };
+  return { equipment, accessories, labor, hours, rebuilt: equipment + labor + adjustments + tax, price: q.price };
 }
 
 const quotes: Quote[] = JSON.parse(readFileSync(join(DATA, "quotes.json"), "utf8"))
   .map((x: { quote?: Quote }) => x.quote)
   .filter((q: Quote | undefined): q is Quote => !!q && q.state === "Accepted" && Array.isArray(q.items));
-const products = Object.fromEntries((JSON.parse(readFileSync(join(DATA, "products.json"), "utf8")) as Array<{ id: string }>).map((p) => [p.id, p]));
+const productList = JSON.parse(readFileSync(join(DATA, "products.json"), "utf8")) as CatalogEntry[];
+const products = Object.fromEntries(productList.map((p) => [p.id, p]));
+const index = catalogIndex(productList);
 const patterns = await loadPatterns();
 const policySource = JSON.parse(readFileSync(new URL("../../../config/commercial-policy-2026.json", import.meta.url), "utf8"));
 const policy = { version: 1, policy: CommercialPolicySchema.parse(policySource.policy ?? policySource) };
@@ -142,7 +163,7 @@ for (const p of patterns) {
 // Systems a pattern can price on their own (a thermostat role inside the security pattern doesn't make thermostat jobs coverable).
 const priced = new Set(patterns.flatMap((p) => p.applies_when_any));
 
-function price(systems: string[], items: Item[]) {
+async function price(systems: string[], items: Item[]) {
   // The device counts a rep would type: each quoted device, by its category and name.
   const counts = new Map<string, number>();
   for (const i of items) {
@@ -174,7 +195,14 @@ function price(systems: string[], items: Item[]) {
   } as unknown as ScopeDraftV1;
   const pattern = selectPattern(systems, patterns);
   if (!pattern) return { error: `no pattern for ${systems.join(", ")}` };
-  const selection = materialize(scope, pattern);
+  // As in production: named products are admitted on demand; one that can't be admitted falls back to the standard.
+  const named = NAMED ? findNamedProducts(scope, index) : [];
+  for (const n of named) {
+    if (catalog.has(n.record_id)) continue;
+    const a = admitProduct(n.record_id, await reader.getProduct(n.record_id), "");
+    if (a.ok) catalog.set(n.record_id, a.product);
+  }
+  const selection = materialize(scope, pattern, named.filter((n) => catalog.has(n.record_id)));
   const compiled = compile(selection, catalog, pattern);
   if (!compiled.ok) return { error: compiled.errors.join("; ").slice(0, 200) };
   const p = bind(compiled.draft, { runId: "sc", receiptId: "sc", approvalId: "sc", scopeHash: hashCanonical(scope), scope, policy, releaseId: "scorecard" });
@@ -185,9 +213,11 @@ function price(systems: string[], items: Item[]) {
     total: (c.total_cents ?? c.subtotal_cents + tax) / 100,
     equipment: c.equipment_cents / 100,
     labor: (c.labor_cents + c.parts_cents) / 100,
+    labor_only: c.labor_cents / 100,
+    parts: c.parts_cents / 100,
     hours: selection.labor?.hours ?? 0,
     add_on: selection.add_on,
-    lines: selection.lines.map((l) => ({ role: l.role, quantity: l.quantity })),
+    lines: selection.lines.map((l) => ({ role: l.role, quantity: l.quantity, ...(l.requested_model ? { model: l.requested_model } : {}) })),
   };
 }
 
@@ -204,7 +234,7 @@ for (const q of quotes) {
   const kind =
     a.equipment <= 0 ? "labor_or_service_only" : countedTotal <= 0 ? "accessories_only" : uncovered / countedTotal > 0.2 ? "uncovered" : systems.every((s) => priced.has(s)) && systems.length ? "coverable" : "uncovered";
   const explainable = a.price > 0 && Math.abs(a.rebuilt - a.price) <= Math.max(1, 0.02 * a.price);
-  const ours = kind === "coverable" && explainable ? price(systems, q.items.filter(billable)) : null;
+  const ours = kind === "coverable" && explainable ? await price(systems, q.items.filter(billable)) : null;
   rows.push({
     quote: q.number,
     price: a.price,
@@ -214,6 +244,7 @@ for (const q of quotes) {
     uncovered_share: countedTotal > 0 ? Math.round((uncovered / countedTotal) * 100) : null,
     ours,
     actual_hours: Math.round(a.hours * 100) / 100,
+    actual: { equipment: Math.round(a.equipment), accessories: Math.round(a.accessories), labor: Math.round(a.labor) },
     error_pct: ours && "total" in ours ? Math.round((ours.total / a.price - 1) * 100) : null,
     equipment_error_pct: ours && "total" in ours && a.equipment > 0 ? Math.round((ours.equipment / a.equipment - 1) * 100) : null,
     labor_error_pct: ours && "total" in ours && a.labor > 0 ? Math.round((ours.labor / a.labor - 1) * 100) : null,
@@ -251,3 +282,20 @@ for (const [k, rs] of group(unc, (r) => (r.uncovered_kinds.length ? r.uncovered_
   console.log(`  ${k.padEnd(48)} n ${String(rs.length).padStart(4)}  ${pct(money(rs), money(design)).padStart(4)} of revenue`);
 }
 console.log("\npricing errors:", [...new Set(cov.map((r) => r.ours && "error" in r.ours ? r.ours.error.slice(0, 90) : null).filter(Boolean))].slice(0, 8));
+
+// ---- likely-range bands (packages/build/src/budget-range.json) ----
+// Where the middle half of accepted jobs landed relative to our price for the same device list, per pattern with enough history.
+const RANGE_OUT = process.env.SD_SCORECARD_RANGE_OUT;
+if (RANGE_OUT) {
+  const quantile = (xs: number[], p: number) => [...xs].sort((x, y) => x - y)[Math.min(xs.length - 1, Math.floor(xs.length * p))]!;
+  const pricedRows = cov.filter((r) => r.ours && "total" in r.ours && r.ours.total > 0);
+  const band = (rs: typeof pricedRows) => {
+    const ratios = rs.map((r) => r.price / (r.ours as { total: number }).total);
+    return { low: Math.round(quantile(ratios, 0.25) * 100) / 100, high: Math.round(quantile(ratios, 0.75) * 100) / 100, n: rs.length };
+  };
+  const bands: Record<string, ReturnType<typeof band>> = { "*": band(pricedRows) };
+  for (const [k, rs] of group(pricedRows, (r) => (r.ours as { pattern: string }).pattern)) if (rs.length >= 15) bands[k] = band(rs);
+  const basis = `middle half (25th-75th percentile) of ${pricedRows.length} accepted D-Tools quotes, priced from their own device lists (${MODE})`;
+  writeFileSync(RANGE_OUT, JSON.stringify({ schema: "budget_range_v1", basis, bands }, null, 2) + "\n");
+  console.log(`\nwrote ${Object.keys(bands).length} range bands to ${RANGE_OUT}`);
+}

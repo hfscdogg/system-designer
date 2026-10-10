@@ -48,6 +48,8 @@ export interface CustomerProposal {
     reduction: { pct: number; cents: number } | null;
     /** DESIGN_RETAINER_PCT of the total, or of the priced scope while the total is incomplete. */
     retainer: { pct: number; cents: number };
+    /** Where similar Livewire jobs landed, shown under the total. */
+    likely_range: { low_cents: number; high_cents: number } | null;
   };
 }
 
@@ -101,6 +103,7 @@ export function customerView(p: Proposal): CustomerProposal {
         pct: DESIGN_RETAINER_PCT,
         cents: Math.round(((p.commercial.total_cents ?? p.commercial.subtotal_cents) * DESIGN_RETAINER_PCT) / 100),
       },
+      likely_range: p.commercial.likely_range ? { low_cents: p.commercial.likely_range.low_cents, high_cents: p.commercial.likely_range.high_cents } : null,
     },
   };
 }

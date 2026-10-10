@@ -24,6 +24,7 @@ const SelectionSchema = z
           verify: z.string().nullable(),
           location: z.string().min(1),
           precedent: z.enum(["livewire_standard", "accepted_comparable", "new_to_livewire"]),
+          requested_model: z.string().min(1).optional(),
         })
         .strict(),
     ),
@@ -122,6 +123,8 @@ export function compile(raw: unknown, catalog: Map<string, AdmittedProduct>, pat
 
   const roles = new Map(pattern.roles.map((r) => [r.role, r]));
   const seenRoles = new Set<string>();
+  const standardRoles = new Set<string>();
+  const requestedRecords = new Set<string>();
   const lines: DraftLine[] = [];
   for (const line of sel.lines) {
     const role = roles.get(line.role);
@@ -129,18 +132,33 @@ export function compile(raw: unknown, catalog: Map<string, AdmittedProduct>, pat
       errors.push(`role ${line.role} is not in the pattern`);
       continue;
     }
-    if (seenRoles.has(line.role)) errors.push(`role ${line.role} appears twice`);
+    // A role's standard (or variant) appears once; separate products the request named by model add their own lines.
+    if (!line.requested_model) {
+      if (standardRoles.has(line.role)) errors.push(`role ${line.role} appears twice`);
+      standardRoles.add(line.role);
+    } else if (requestedRecords.has(`${line.role}:${line.record_id}`)) errors.push(`role ${line.role} names ${line.record_id} twice`);
+    else requestedRecords.add(`${line.role}:${line.record_id}`);
     seenRoles.add(line.role);
     const variant = role.variants?.find((v) => v.product_id === line.record_id);
-    if (role.product_id !== line.record_id && !variant) errors.push(`role ${line.role} must use its approved record ${role.product_id}, not ${line.record_id}`);
     const product = catalog.get(line.record_id);
+    // A product the request named by model replaces the standard only when the admitted record carries that model.
+    const key = (s: string | null | undefined) => (s ?? "").toLowerCase().replace(/[^a-z0-9]/g, "");
+    const requested =
+      !!line.requested_model && !!product && [product.model, product.part_number].some((m) => m && key(m) === key(line.requested_model));
+    if (role.product_id !== line.record_id && !variant && !requested) {
+      errors.push(
+        line.requested_model
+          ? `record ${line.record_id} for ${line.role} is not the requested model ${line.requested_model}`
+          : `role ${line.role} must use its approved record ${role.product_id}, not ${line.record_id}`,
+      );
+    }
     if (!product) {
       errors.push(`record ${line.record_id} for ${line.role} has no admitted D-Tools evidence in this run`);
       continue;
     }
     lines.push({
       role: line.role,
-      label: variant?.label ?? role.label,
+      label: requested && role.product_id !== line.record_id ? `${product.brand} ${product.model}` : (variant?.label ?? role.label),
       record_id: product.record_id,
       brand: product.brand,
       model: product.model,
@@ -149,7 +167,7 @@ export function compile(raw: unknown, catalog: Map<string, AdmittedProduct>, pat
       quantity_basis: line.quantity_basis,
       verify: line.verify,
       location: line.location,
-      precedent: line.precedent,
+      precedent: requested && role.product_id !== line.record_id ? "new_to_livewire" : line.precedent,
       image_url: product.image_url,
       unit_price_cents: product.unit_price_cents,
       unit_cost_cents: product.unit_cost_cents,

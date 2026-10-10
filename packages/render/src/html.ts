@@ -127,6 +127,7 @@ export function renderProposalHtml(c: CustomerProposal, brand: Brand, images: Im
     [complete ? "Subtotal" : k.label, formatUsd(k.subtotal_cents), "strong"],
     ["Tax", k.tax === "TBD" ? "TBD" : formatUsd(k.tax.cents), ""],
     ...(complete ? [["Total Price", formatUsd(k.total_cents!), "grand"]] : []),
+    ...(k.likely_range ? [["Likely range for similar projects", `${formatUsd(k.likely_range.low_cents)} – ${formatUsd(k.likely_range.high_cents)}`, "range"]] : []),
   ]
     .map(([label, value, cls]) => `<div class="sum-row ${cls}"><span>${escapeHtml(label)}</span><span class="amt">${value}</span></div>`)
     .join("");
@@ -199,6 +200,7 @@ img.product{width:46px;height:40px;object-fit:contain}
 .sum-row.strong{font-weight:600}
 .sum-row.strong .amt,.sum-row.grand .amt{color:var(--navy)}
 .sum-row.grand{font-weight:600;font-size:14px;border-bottom:0}
+.sum-row.range{font-size:10px;color:var(--gray);border-bottom:0}
 .terms-head{display:flex;justify-content:space-between;align-items:baseline}
 .terms-head .amount{font-weight:600;font-size:11px}
 .financing{padding:4px 0 10px 24px;border-bottom:1px solid var(--rule);margin-bottom:16px}
