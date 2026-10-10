@@ -16,6 +16,8 @@ export interface DToolsRead {
 
 export interface DToolsReader {
   getProduct(id: string): Promise<DToolsRead>;
+  /** One page (1-based) of the product catalog, for finding products a request names by model. */
+  listProducts?(page: number, pageSize?: number): Promise<DToolsRead>;
 }
 
 export class DToolsReadError extends Error {
@@ -67,6 +69,7 @@ export function httpDToolsReader(cfg: DToolsHttpConfig): DToolsReader {
 
   return {
     getProduct: (id) => get("Products/GetProduct", { id }),
+    listProducts: (page, pageSize = 500) => get("Products/GetProducts", { page: String(page), pageSize: String(pageSize) }),
   };
 }
 
@@ -75,6 +78,11 @@ export function recordedDToolsReader(products: Record<string, unknown>, fetchedA
   const calls: string[] = [];
   return {
     calls,
+    async listProducts(page, pageSize = 500) {
+      const all = Object.values(products);
+      const body = new TextEncoder().encode(JSON.stringify({ products: all.slice((page - 1) * pageSize, page * pageSize), totalCount: all.length }));
+      return { endpoint: "Products/GetProducts", query: { page: String(page), pageSize: String(pageSize) }, status: 200, body, sha256: sha256Hex(body), fetchedAt };
+    },
     async getProduct(id) {
       calls.push(id);
       if (!(id in products)) throw new DToolsReadError(`D-Tools Products/GetProduct returned 404`, "Products/GetProduct", 404);
