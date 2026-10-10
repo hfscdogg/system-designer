@@ -1,7 +1,7 @@
 {
   "schema": "architecture_pattern_v1",
   "pattern": "home_automation",
-  "version": "2026-10-10.1",
+  "version": "2026-10-10.2",
   "title": "Control4 home automation",
   "applies_when_any": [
     "home_automation"
@@ -53,6 +53,41 @@
       "location": "TV room",
       "capability": "Rechargeable touchscreen remote for the TV and music",
       "hours_each": 0,
+      "escalate_if_unresolved": false
+    },
+    {
+      "role": "touchscreen",
+      "categories": [
+        "Control Systems > Touchscreens"
+      ],
+      "label": "Control4 T5 8-inch in-wall touchscreen",
+      "model": "C4-T5IW8-MB",
+      "critical": false,
+      "systems": [
+        "home_automation"
+      ],
+      "mentions": [
+        "touchscreen",
+        "touch screen",
+        "touch panel",
+        "touchpanel",
+        "in-wall screen"
+      ],
+      "retained_match": [
+        "touchscreen",
+        "touch screen",
+        "touch panel"
+      ],
+      "product_id": "5e5ba379-7b3d-41ac-9d97-5669cd3c6465",
+      "precedent": "livewire_standard",
+      "quantity": {
+        "kind": "minimum",
+        "qty": 1,
+        "verify": "touchscreen locations with power and network at the wall box"
+      },
+      "location": "Main living area",
+      "capability": "Wall-mounted control of the whole Control4 system",
+      "hours_each": 1,
       "escalate_if_unresolved": false
     }
   ],

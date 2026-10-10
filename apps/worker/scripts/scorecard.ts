@@ -125,6 +125,9 @@ const categoryOf = (i: { category: string | null; name: string | null; model: st
     : // Alarm.com video doorbells are filed as cameras; a rep asks for a doorbell.
       /\bADC-VDB(?!A-?\d*-?(WMK|MNT))/i.test(`${i.model ?? ""} ${i.name ?? ""}`) && !/Mounts|Brackets/.test(i.category ?? "")
       ? "Surveillance > Video Doorbells"
+      : // Qolsys IQ panels are alarm panels, though D-Tools files some as Control Systems touchscreens.
+        /\b(IQP\d|QW9104)/i.test(`${i.model ?? ""} ${i.name ?? ""}`)
+        ? "Security Systems > Control Panels"
     : /^Uncategorized/.test(i.category ?? "") ? (UNCATEGORIZED.find(([re]) => re.test(`${i.name ?? ""} ${i.model ?? ""}`))?.[1] ?? i.category) : i.category;
 
 const billable = (i: Item) => i.isBillable && !i.isOptional && !i.alternateSetId && !i.isClientSupplied;
