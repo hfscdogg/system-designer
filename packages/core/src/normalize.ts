@@ -8,7 +8,7 @@ import type { ScopeExtraction } from "./scope.ts";
  */
 
 const FUNCTIONAL_SYSTEMS: Array<[canonical: string, patterns: RegExp[]]> = [
-  ["intrusion_security", [/\b((?<!(smoke|fire|co|monoxide) )alarm|alarm panel|security|security panel|intrusion|burglar|door contacts?|window contacts?|(?:door\/window|wireless) contacts?|glass[- ]?break( sensors?)?|motion (detector|sensor)s?|(?<!(lutron|scene|lighting|control4|c4) )(alarm |security )?keypads?(?! for lighting))\b/]],
+  ["intrusion_security", [/\b((?<!(smoke|fire|co|monoxide) )alarm|alarm panel|security|security panel|intrusion|burglar|door contacts?|window contacts?|(?:door\/window|wireless) contacts?|glass[- ]?break( sensors?)?|motion (detector|sensor)s?|(?<!(lutron|scene|lighting|control4|c4) )(alarm |security )?keypads?(?! for lighting| locks?))\b/]],
   ["alarm_monitoring", [/\b(alarm\.com|monitoring|central station|monitored)\b/]],
   ["fire_detection", [/\b(fire|smoke)( detection| detectors?| alarms?| sensors?)?\b/]],
   ["co_detection", [/\b(co|carbon monoxide)( detection| detectors?| alarms?| sensors?)\b/]],
@@ -27,7 +27,9 @@ const FUNCTIONAL_SYSTEMS: Array<[canonical: string, patterns: RegExp[]]> = [
   ["home_automation", [/\b(control4|c4|halo( remotes?)?|(home|house) automation|smart home|whole[- ](home|house) control|universal remote|savant|crestron)\b/]],
   ["lighting_control", [/\b(lighting control|lutron|dimmers?|keypads? for lighting|lighting)\b/]],
   ["motorized_shades", [/\b(shades?|blinds|motorized (window )?treatments?)\b/]],
-  ["access_control", [/\b(door locks?|smart locks?|access control|gate)\b/]],
+  // Residential smart locks (a Yale or Schlage deadbolt) are their own system; card-access doors are access control.
+  ["smart_locks", [/\b(smart (door )?locks?|door locks?|deadbolts?|keypad locks?|keyless (entry|locks?)|yale( assure)?|schlage|kwikset)\b/]],
+  ["access_control", [/\b(access control|card (readers?|access)|key ?fobs?|door strikes?|electric strikes?|mag(netic)? locks?|gate)\b/]],
 ];
 
 /** Service categories are labor/service delivery only (PRD §8.1). */

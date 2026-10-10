@@ -211,7 +211,9 @@ function namedForRoles(named: NamedProduct[], roles: RoleSpec[]): Map<string, Na
   for (const n of named) {
     // The product's own category ("Speakers > Outdoor") says which role it fills, on top of how the request names it.
     const leaf = n.category.split(">").at(-1) ?? "";
-    const scores = roles.map((r) => matchScore(`${n.category} ${n.label} ${n.text}`, r) + matchScore(leaf, r));
+    // A role whose D-Tools categories include the product's outranks any word match short of naming the role itself.
+    const inCategory = (r: RoleSpec) => (r.categories ?? []).some((c) => n.category.toLowerCase().startsWith(c.toLowerCase()));
+    const scores = roles.map((r) => matchScore(`${n.category} ${n.label} ${n.text}`, r) + matchScore(leaf, r) + (inCategory(r) ? 100 : 0));
     const best = Math.max(0, ...scores);
     const role = roles[scores.indexOf(best)];
     if (best > 1 && role) byRole.set(role.role, [...(byRole.get(role.role) ?? []), n]);
@@ -339,17 +341,29 @@ export function materialize(original: ScopeDraftV1, pattern: PatternSpec, namedP
     });
   }
 
+  // Roles counted from others (a card per camera) take those roles' priced units, unless the request stated their own count.
+  for (const line of lines) {
+    const role = pattern.roles.find((r) => r.role === line.role);
+    if (!role?.quantity_follows || statedQuantity(scope, role, pattern.roles) !== null || line.requested_model) continue;
+    const units = lines.filter((l) => role.quantity_follows!.includes(l.role)).reduce((n, l) => n + l.quantity, 0);
+    if (units > 0) {
+      line.quantity = units;
+      line.quantity_basis = "fixed";
+      line.verify = null;
+    }
+  }
+
   const devices = lines.reduce((n, l) => n + l.quantity, 0);
   // Labor-only allowances the request mentions (framing a niche), priced as hours at the pattern's labor rate.
   const extras = (pattern.labor_extras ?? []).filter((x) => mentioned(scope, x.mentions)).map((x) => x.id);
+  const hours = pattern.labor && devices > 0 ? laborHoursFor(pattern, lines, addOn, extras) : 0;
   const labor: Selection["labor"] =
-    pattern.labor && devices > 0
-      ? { labor_type: pattern.labor.labor_type, hours: laborHoursFor(pattern, lines, addOn, extras), devices, covers: pattern.labor.covers, extras }
-      : null;
+    pattern.labor && hours > 0 ? { labor_type: pattern.labor.labor_type, hours, devices, covers: pattern.labor.covers, extras } : null;
 
   const services: Selection["services"] = [];
   for (const category of scope.service_categories) {
-    if (labor?.covers.includes(category)) continue;
+    // Services the pattern's labor estimate includes are never priced separately, even when no labor is needed.
+    if ((labor ?? pattern.labor)?.covers.includes(category)) continue;
     const spec = pattern.services.find((s) => s.category === category);
     if (spec?.product_id) services.push({ category, record_id: spec.product_id, quantity: 1 });
     else allowances.push({ label: spec?.label ?? category, reason: "no authenticated price; shown as a TBD allowance outside committed totals" });

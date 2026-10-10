@@ -109,6 +109,16 @@ describe("systems a sentence mentions", () => {
   });
 });
 
+describe("smart locks", () => {
+  it("reads a residential smart lock as its own system, and card access as access control", () => {
+    expect(normalizeFunctionalSystems(["smart lock"])).toEqual(["smart_locks"]);
+    expect(normalizeFunctionalSystems(["Yale keypad lock on the front door"])).toEqual(["smart_locks"]);
+    expect(normalizeFunctionalSystems(["Schlage deadbolt"])).toEqual(["smart_locks"]);
+    expect(normalizeFunctionalSystems(["card readers for the office"])).toEqual(["access_control"]);
+    expect(normalizeFunctionalSystems(["access control"])).toEqual(["access_control"]);
+  });
+});
+
 describe("Control4 remotes", () => {
   it("reads Halo remotes as Control4, not lighting", () => {
     expect(normalizeFunctionalSystems(["Halo remotes"])).toEqual(["home_automation"]);

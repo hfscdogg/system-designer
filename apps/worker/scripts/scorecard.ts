@@ -90,6 +90,7 @@ const BUCKETS: Array<[RegExp, string]> = [
   [/^Control Systems/, "home_automation"],
   [/^Lighting/, "lighting_control"],
   [/shade|window treatment/i, "motorized_shades"],
+  [/^Access Control > Door Locks/, "smart_locks"],
   [/^Access Control/, "access_control"],
   [/^Structured Wiring/, "structured_wiring"],
   [/^(Video Conferencing|Microphones)/, "uncovered:conferencing"],
@@ -101,6 +102,22 @@ const BUCKETS: Array<[RegExp, string]> = [
   [/^Furniture|^Mounts > TV Lifts/, "uncovered:furniture_and_lifts"],
 ];
 const bucketOf = (category: string | null) => BUCKETS.find(([re]) => re.test(category ?? ""))?.[1] ?? "uncovered:other";
+
+/**
+ * D-Tools files many real devices under "Uncategorized" (Livewire's own standard
+ * Alarm.com cameras among them). Their models say what they are; anything else
+ * uncategorized (parts, markups) stays an accessory.
+ */
+const UNCATEGORIZED: Array<[RegExp, string]> = [
+  [/\bADC-VDBA?-?\d/i, "Surveillance > Video Doorbells"],
+  [/\bADC-V(C|-)?\d|\bcamera\b/i, "Surveillance > Cameras"],
+  [/\bADC-USD-|micro ?sd/i, "Surveillance > Storage"],
+  [/\bADC-C?SVR/i, "Surveillance > DVRs & NVRs"],
+  [/\beero\b/i, "Networking > Wireless Access Points"],
+  [/\bYRD\d|\block\b/i, "Access Control > Door Locks"],
+];
+const categoryOf = (i: { category: string | null; name: string | null; model: string | null }) =>
+  /^Uncategorized/.test(i.category ?? "") ? (UNCATEGORIZED.find(([re]) => re.test(`${i.name ?? ""} ${i.model ?? ""}`))?.[1] ?? i.category) : i.category;
 
 const billable = (i: Item) => i.isBillable && !i.isOptional && !i.alternateSetId && !i.isClientSupplied;
 
@@ -115,7 +132,7 @@ function actual(q: Quote) {
     if (i.type === "Product") {
       const v = (i.unitPrice ?? 0) * i.quantity;
       equipment += v;
-      if (bucketOf(i.category) === "accessory") accessories += v;
+      if (bucketOf(categoryOf(i)) === "accessory") accessories += v;
       if (i.isTaxable) taxable += v;
     }
     if (i.unitLaborPrice) {
@@ -167,8 +184,8 @@ async function price(systems: string[], items: Item[]) {
   // The device counts a rep would type: each quoted device, by its category and name.
   const counts = new Map<string, number>();
   for (const i of items) {
-    if (i.type !== "Product" || bucketOf(i.category).startsWith("uncovered") || bucketOf(i.category) === "accessory") continue;
-    const text = `${(i.category ?? "").split(" > ").at(-1)} ${i.name ?? ""} ${i.model ?? ""}`.trim();
+    if (i.type !== "Product" || bucketOf(categoryOf(i)).startsWith("uncovered") || bucketOf(categoryOf(i)) === "accessory") continue;
+    const text = `${(categoryOf(i) ?? "").split(" > ").at(-1)} ${i.name ?? ""} ${i.model ?? ""}`.trim();
     counts.set(text, (counts.get(text) ?? 0) + i.quantity);
   }
   const scope = {
@@ -225,7 +242,7 @@ const rows = [];
 for (const q of quotes) {
   const a = actual(q);
   const byBucket: Record<string, number> = {};
-  for (const i of q.items.filter(billable)) if (i.type === "Product") byBucket[bucketOf(i.category)] = (byBucket[bucketOf(i.category)] ?? 0) + (i.unitPrice ?? 0) * i.quantity;
+  for (const i of q.items.filter(billable)) if (i.type === "Product") byBucket[bucketOf(categoryOf(i))] = (byBucket[bucketOf(categoryOf(i))] ?? 0) + (i.unitPrice ?? 0) * i.quantity;
   const counted = Object.entries(byBucket).filter(([b]) => b !== "accessory");
   const countedTotal = counted.reduce((n, [, v]) => n + v, 0);
   const uncovered = counted.filter(([b]) => b.startsWith("uncovered")).reduce((n, [, v]) => n + v, 0);

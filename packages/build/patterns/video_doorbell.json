@@ -9,6 +9,7 @@
   "roles": [
     {
       "role": "doorbell_camera",
+      "categories": ["Surveillance > Cameras"],
       "label": "Alarm.com video doorbell",
       "model": "ADC-VDB775",
       "critical": true,

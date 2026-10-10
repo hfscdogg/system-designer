@@ -87,5 +87,27 @@ describe("a named product's own words", () => {
     }).scope;
     const sel = materialize(scope, audio, findNamedProducts(scope, index));
     expect(sel.lines.map((l) => [l.role, l.record_id, l.quantity])).toEqual([["outdoor_speakers", OUT, 2]]);
+    // Two speakers sold each are one pair's install time, not two pairs'.
+    const pair = audio.roles.find((r) => r.role === "outdoor_speakers")!.hours_each!;
+    expect(sel.labor?.hours).toBe(Math.max(1, Math.ceil(((audio.labor!.add_on_base_hours ?? 0) + pair) * 2) / 2));
+  });
+});
+
+describe("a named product's D-Tools category", () => {
+  it("picks the role whose categories hold it, even when no role's words match", async () => {
+    const { loadPatterns } = await import("../src/index.ts");
+    const net = (await loadPatterns()).find((p) => p.pattern === "home_network")!;
+    const AP = "9a9a9a9a-9a9a-4a9a-8a9a-9a9a9a9a9a9a";
+    const index = catalogIndex([{ id: AP, name: "Araknis Networks AN-520-AP-I", brand: "Araknis Networks", model: "AN-520-AP-I", category: "Networking > Wireless Access Points" }]);
+    const scope = approvedScope({
+      functional_systems: ["networking"],
+      existing_detectors: "not_provided",
+      existing_equipment: { status: "none", retained: [], removed_or_replaced: [] },
+      requested_changes: ["Add an Araknis AN-520-AP-I"],
+      requested_quantities: [{ item: "Araknis AN-520-AP-I", quantity: 1 }],
+    }).scope;
+    const sel = materialize(scope, net, findNamedProducts(scope, index));
+    expect(sel.add_on).toBe(true);
+    expect(sel.lines.map((l) => [l.role, l.record_id, l.quantity])).toEqual([["wired_access_point", AP, 1]]);
   });
 });
