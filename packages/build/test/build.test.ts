@@ -152,10 +152,11 @@ describe("patterns", () => {
     const sel = materialize(addOn, c4);
     expect(sel.add_on).toBe(true);
     expect(sel.lines.map((l) => [l.role, l.quantity])).toEqual([["automation_remote", 3]]);
-    // 3 remotes × 0.5 h, no controller setup.
-    expect(sel.labor!.hours).toBe(1.5);
-    // A single small device still carries the one-hour visit minimum.
-    expect(laborHoursFor(c4, [{ role: "automation_remote", quantity: 1 }], true)).toBe(1);
+    // Remotes are sold without install time, and there is no controller setup: no labor at all.
+    expect(sel.labor).toBeNull();
+    // A single small device that does need install time still carries the one-hour visit minimum.
+    const quick = { ...c4, roles: c4.roles.map((r) => (r.role === "automation_remote" ? { ...r, hours_each: 0.25 } : r)) };
+    expect(laborHoursFor(quick, [{ role: "automation_remote", quantity: 1 }], true)).toBe(1);
   });
 
   it("gives each stated count to the one device it names", async () => {
@@ -391,6 +392,18 @@ describe("patterns", () => {
     expect(roles({ requested_changes: ["Add 2 Control4 remotes"], requested_quantities: [{ item: "Control4 remotes", quantity: 2 }] })).toEqual([["automation_remote", 2]]);
     // Naming only the brand still names the system's core.
     expect(roles({ requested_changes: ["Add Control4 to the family room"] }).map(([r]) => r)).toContain("automation_controller");
+  });
+
+  it("sells a Control4 remote without install labor", async () => {
+    const patterns = await loadPatterns();
+    const c4 = patterns.find((p) => p.pattern === "home_automation")!;
+    const sel = materialize(approvedScope({ functional_systems: ["home_automation"], existing_detectors: "not_provided", existing_equipment: { status: "none", retained: [], removed_or_replaced: [] }, requested_changes: ["Add a Control4 SR260 remote"] }).scope, c4);
+    expect(sel.lines.map((l) => l.role)).toEqual(["automation_remote"]);
+    expect(sel.labor).toBeNull();
+    expect(sel.allowances).toEqual([]);
+    // A controller still carries its install time.
+    const core = materialize(approvedScope({ functional_systems: ["home_automation"], existing_detectors: "not_provided", existing_equipment: { status: "none", retained: [], removed_or_replaced: [] }, requested_changes: ["Add a Control4 CORE 1 controller"] }).scope, c4);
+    expect(core.labor?.hours).toBeGreaterThan(0);
   });
 
   it("prices one memory card per camera", async () => {

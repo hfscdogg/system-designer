@@ -1,7 +1,7 @@
 {
   "schema": "architecture_pattern_v1",
   "pattern": "home_automation",
-  "version": "2026-10-09.1",
+  "version": "2026-10-10.1",
   "title": "Control4 home automation",
   "applies_when_any": [
     "home_automation"
@@ -52,7 +52,7 @@
       },
       "location": "TV room",
       "capability": "Rechargeable touchscreen remote for the TV and music",
-      "hours_each": 0.5,
+      "hours_each": 0,
       "escalate_if_unresolved": false
     }
   ],
@@ -97,7 +97,7 @@
       "training",
       "project_management"
     ],
-    "basis": "Livewire automation quotes since 2024: median 4 labor hours on Automation lines; a CORE controller about 2 hours (backtest of 15 accepted controller jobs, median 2 h), each remote 0.5 hours"
+    "basis": "Livewire automation quotes since 2024: median 4 labor hours on Automation lines; a CORE controller about 2 hours (backtest of 15 accepted controller jobs, median 2 h), each remote 0 hours: Control4 remotes are sold without install time (0 hours on 9 of 10 remote-only quotes)"
   },
   "parts": {
     "product_id": "141236a5-8780-493e-a20d-106b7f71c5b4",

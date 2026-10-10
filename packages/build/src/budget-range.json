@@ -3,8 +3,8 @@
   "basis": "middle half (25th-75th percentile) of 742 accepted D-Tools quotes, priced from their own device lists (add_on)",
   "bands": {
     "*": {
-      "low": 0.71,
-      "high": 1.24,
+      "low": 0.74,
+      "high": 1.25,
       "n": 742
     },
     "tv_media": {
@@ -18,8 +18,8 @@
       "n": 101
     },
     "home_automation": {
-      "low": 0.51,
-      "high": 0.9,
+      "low": 0.78,
+      "high": 0.93,
       "n": 77
     },
     "home_network+tv_media": {

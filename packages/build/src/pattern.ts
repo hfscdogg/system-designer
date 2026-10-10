@@ -132,7 +132,8 @@ export function laborHoursFor(pattern: PatternSpec, lines: Array<{ role: string;
   const extraHours = extras.reduce((h, id) => h + (pattern.labor_extras?.find((x) => x.id === id)?.hours ?? 0), 0);
   // An add-on visit has no system setup (base hours), only its own visit setup and the devices, with an hourly minimum.
   const raw = lines.reduce((h, l) => h + l.quantity * rate(l.role), (addOn ? (spec.add_on_base_hours ?? 0) : spec.base_hours) + extraHours);
-  const hours = addOn ? Math.max(ADD_ON_MIN_HOURS, raw) : raw;
+  // Devices sold without install time (a Control4 remote, paired remotely) carry no visit and no minimum.
+  const hours = addOn && raw > 0 ? Math.max(ADD_ON_MIN_HOURS, raw) : raw;
   return Math.ceil(Math.round(hours * 1000) / 1000 * 2) / 2;
 }
 

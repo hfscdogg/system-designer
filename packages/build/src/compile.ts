@@ -201,6 +201,9 @@ export function compile(raw: unknown, catalog: Map<string, AdmittedProduct>, pat
 
   // Labor must be the pattern's own estimate for the priced devices: never a free number.
   let labor: DraftLabor | null = null;
+  if (!sel.labor && pattern.labor && lines.length && laborHoursFor(pattern, lines, sel.add_on, []) > 0) {
+    errors.push("the selection omits labor the pattern estimates for the priced devices");
+  }
   if (sel.labor) {
     const spec = pattern.labor;
     const devices = lines.reduce((n, l) => n + l.quantity, 0);

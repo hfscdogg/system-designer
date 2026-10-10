@@ -356,14 +356,14 @@ export function materialize(original: ScopeDraftV1, pattern: PatternSpec, namedP
   const devices = lines.reduce((n, l) => n + l.quantity, 0);
   // Labor-only allowances the request mentions (framing a niche), priced as hours at the pattern's labor rate.
   const extras = (pattern.labor_extras ?? []).filter((x) => mentioned(scope, x.mentions)).map((x) => x.id);
+  const hours = pattern.labor && devices > 0 ? laborHoursFor(pattern, lines, addOn, extras) : 0;
   const labor: Selection["labor"] =
-    pattern.labor && devices > 0
-      ? { labor_type: pattern.labor.labor_type, hours: laborHoursFor(pattern, lines, addOn, extras), devices, covers: pattern.labor.covers, extras }
-      : null;
+    pattern.labor && hours > 0 ? { labor_type: pattern.labor.labor_type, hours, devices, covers: pattern.labor.covers, extras } : null;
 
   const services: Selection["services"] = [];
   for (const category of scope.service_categories) {
-    if (labor?.covers.includes(category)) continue;
+    // Services the pattern's labor estimate includes are never priced separately, even when no labor is needed.
+    if ((labor ?? pattern.labor)?.covers.includes(category)) continue;
     const spec = pattern.services.find((s) => s.category === category);
     if (spec?.product_id) services.push({ category, record_id: spec.product_id, quantity: 1 });
     else allowances.push({ label: spec?.label ?? category, reason: "no authenticated price; shown as a TBD allowance outside committed totals" });
