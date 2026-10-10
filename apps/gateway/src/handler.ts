@@ -137,10 +137,20 @@ async function control(deps: GatewayDeps, person: Person, event: Extract<Inbound
   }
   const run = await store.getRun(event.ref).catch(() => null);
   if (!run) return reply("I can't find that budget any more.");
-  if (run.person_id !== person.id) return reply("Only the person who made this request can revise it.");
+  if (run.person_id !== person.id) {
+    return reply(event.control === "send_retainer" ? "Only the person who made this request can send its retainer." : "Only the person who made this request can revise it.");
+  }
   if (event.control === "new_request") {
     await store.clearPendingRevision(event.thread);
     return reply("OK. Send the new request whenever you're ready.");
+  }
+  if (event.control === "send_retainer") {
+    if (run.state !== "READY_HELD") {
+      return reply(run.state === "SUPERSEDED" ? "That budget was revised. Send the retainer from the newest one." : "That budget isn't finished yet.");
+    }
+    if (!(await store.claimMessage(event.platform, event.providerEventId, "retainer", run.id))) return silent;
+    await withRetry(() => deps.workflows.startRetainer(run.id, event.providerEventId));
+    return reply("Setting up the design retainer in D-Tools. I'll post the opportunity here in a moment.");
   }
   if (run.state !== "READY_HELD") {
     return reply(run.state === "SUPERSEDED" ? "That budget was already revised. Use the newest one." : "That budget isn't finished, so it can't be revised yet.");

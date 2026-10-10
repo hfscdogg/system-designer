@@ -48,6 +48,11 @@ export class InlineWorkflows implements WorkflowPort {
     }).catch(() => {});
   }
 
+  /** The retainer request, run to completion in-process. */
+  async startRetainer(runId: string, tap: string): Promise<void> {
+    await this.acts.createRetainer({ runId, tap });
+  }
+
   async signal(runId: string, signal: RunSignal): Promise<void> {
     const run = this.runs.get(runId);
     if (!run || run.closed) throw new WorkflowClosedError(`run ${runId} is not running`);

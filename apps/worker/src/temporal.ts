@@ -46,6 +46,20 @@ export class TemporalWorkflows implements WorkflowPort {
     }
   }
 
+  async startRetainer(runId: string, tap: string): Promise<void> {
+    try {
+      await this.client.workflow.start("retainerRequest", {
+        workflowId: `${runId}:retainer`,
+        taskQueue: this.queue,
+        args: [{ runId, tap }],
+        // A second tap re-posts the recorded opportunity; a failed attempt can run again.
+        workflowIdReusePolicy: "ALLOW_DUPLICATE",
+      });
+    } catch (err) {
+      if (!(err instanceof WorkflowExecutionAlreadyStartedError)) throw err;
+    }
+  }
+
   async isRunning(runId: string): Promise<boolean> {
     try {
       return (await this.client.workflow.getHandle(runId).describe()).status.name === "RUNNING";

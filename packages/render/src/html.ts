@@ -264,7 +264,7 @@ ${summaryRows}
   ${brand.copy.financing.map(([label, value]) => `<p>${escapeHtml(label)}</p><p class="${value.startsWith("www.") ? "link" : ""}">${escapeHtml(value)}</p>`).join("")}
 </div>
 <h3 class="plan">Design Payment Terms</h3>
-<div class="milestone"><span>Design Retainer (${escapeHtml(k.retainer.pct)}%)</span><span class="amt">${formatUsd(k.retainer.cents)}</span></div>
+<div class="milestone"><span>Design Retainer</span><span class="amt">${formatUsd(k.retainer.cents)}</span></div>
 <div class="milestone-note">Due to begin design. Project payment terms are set in the final proposal.</div>
 
 <h2>Terms &amp; Conditions</h2>

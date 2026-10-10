@@ -2,7 +2,7 @@ import { createServer } from "node:http";
 import { fileURLToPath } from "node:url";
 import { NativeConnection, Worker } from "@temporalio/worker";
 import { loadPatterns } from "@sd/build";
-import { httpDToolsReader } from "@sd/dtools";
+import { httpDToolsReader, httpDToolsWriter } from "@sd/dtools";
 import { anthropicClarificationInterpreter, anthropicScopeExtractor } from "@sd/llm";
 import { fetchProductImage, htmlToPdf } from "@sd/render";
 import { createActivities } from "./activities.ts";
@@ -31,6 +31,8 @@ async function main() {
       interpreter: anthropicClarificationInterpreter({ model }),
       // Read-only D-Tools access; use a key scoped to catalog reads where D-Tools allows it.
       dtools: httpDToolsReader({ apiKey: requireEnv("DTOOLS_API_KEY"), basicAuth: requireEnv("DTOOLS_BASIC_AUTH") }),
+      // The one approved write, off unless SD_DTOOLS_RETAINER=on (Henry, 2026-10-10).
+      dtoolsWriter: process.env.SD_DTOOLS_RETAINER === "on" ? httpDToolsWriter({ apiKey: requireEnv("DTOOLS_API_KEY"), basicAuth: requireEnv("DTOOLS_BASIC_AUTH") }) : null,
       patterns: await loadPatterns(),
       renderPdf: (html) => htmlToPdf(html),
       fetchImage: (url) => fetchProductImage(url),

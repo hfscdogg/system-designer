@@ -15,6 +15,11 @@ const acts = proxyActivities<RunActivities>({
   },
 });
 
+/** Creates a budget's design retainer in D-Tools; workflowId = `${runId}:retainer`. */
+export async function retainerRequest(input: { runId: string; tap: string }): Promise<void> {
+  await acts.createRetainer(input);
+}
+
 /** One workflow per proposal run; workflowId = runId. */
 export async function proposalRun(input: ProposalRunInput): Promise<RunResult> {
   const queue: RunSignal[] = [];
