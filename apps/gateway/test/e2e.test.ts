@@ -13,7 +13,7 @@ import type { DToolsReader } from "@sd/dtools";
 
 const PIXEL = Uint8Array.from(atob("iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mNkYAAAAAYAAjCB0C8AAAAASUVORK5CYII="), (ch) => ch.charCodeAt(0));
 import { handleGoogleChat, type GatewayDeps } from "../src/handler.ts";
-import { prepareSmoke, runSmoke, SMOKE_PERSON } from "../src/smoke.ts";
+import { prepareSmoke, runSmoke, SMOKE_PERSON, SMOKE_SCENARIOS, type SmokeScenario } from "../src/smoke.ts";
 
 const SPACE = "spaces/A";
 const THREAD = "spaces/A/threads/T";
@@ -661,42 +661,71 @@ describe("editing a scope and revising a finished budget", () => {
 });
 
 describe("post-deploy smoke test", () => {
-  const smoke = async (expectRevised: number) => {
-    const t = await setup([completeExtraction()], [{ ...noPatch, requested_quantities: [{ item: "Glass-break sensor", quantity: 4 }] }]);
+  const smoke = async (scenarios: SmokeScenario[], extractions = [completeExtraction()]) => {
+    const t = await setup(extractions, [{ ...noPatch, requested_quantities: [{ item: "Glass-break sensor", quantity: 4 }] }]);
     await prepareSmoke(t.db, "spaces/S");
     const run = runSmoke({
       store: t.store,
       workflows: t.workflows,
       chat: t.chat,
       spaceId: "spaces/S",
-      release: "sha256:test",
-      script: [
-        { say: "Smith security upgrade", expect: { security_panel: 1 } },
-        { say: "Revise: make it 4 glass breaks", expect: { glass_break: expectRevised, security_panel: 1 } },
-      ],
+      release: "sha256:0123456789abcdef",
+      scenarios,
       pollMs: 1,
       settle: (id) => t.workflows.settled(id),
       log: () => {},
     });
     return { t, run };
   };
+  const security = (glassBreaks: number): SmokeScenario => ({
+    name: "Smith security",
+    steps: [
+      { say: "Smith security upgrade", pattern: "security_modernization", expect: { security_panel: 1 } },
+      { say: "Revise: make it 4 glass breaks", expect: { glass_break: glassBreaks, security_panel: 1 }, receipt: ["Revision 2"] },
+    ],
+  });
 
-  it("plays the script as the smoke user, approves each receipt and checks the finished quantities", async () => {
-    const { t, run } = await smoke(4);
-    const { runs } = await run;
+  it("plays each job in its own thread as the smoke user, approves each receipt and checks the finished budgets", async () => {
+    const { t, run } = await smoke([security(4)]);
+    const { runs, failures } = await run;
+    expect(failures).toEqual([]);
     expect(runs).toHaveLength(2);
     const [revised, original] = await t.store.listRunsForPerson(SMOKE_PERSON.id);
     expect(revised).toMatchObject({ id: runs[1], parent_run_id: runs[0], state: "READY_HELD", space_id: "spaces/S" });
     expect(original!.state).toBe("SUPERSEDED");
     // The scripted lines, the real replies and the result all land in the smoke space.
+    expect(t.texts()).toContain("🧪 Smoke: Smith security (release 0123456789ab)");
     expect(t.texts()).toContain("🧪 User says: Revise: make it 4 glass breaks");
-    expect(t.texts().at(-1)).toBe("✅ Smoke passed: 2 steps.");
+    expect(t.texts()).toContain("✅ Smith security: passed.");
+    expect(t.texts().at(-1)).toBe("✅ Smoke passed: 1 jobs, 2 budgets.");
     expect(t.chat.files.map((f) => f.file.filename)).toHaveLength(2);
   });
 
-  it("fails, and says so in the space, when a budget's quantity is wrong", async () => {
-    const { t, run } = await smoke(5);
-    await expect(run).rejects.toThrow(/step 2 .*glass_break expected 5, got 4/);
-    expect(t.texts().at(-1)).toMatch(/^❌ Smoke failed: step 2/);
+  it("reports every failing job, keeps going, and fails overall", async () => {
+    const wrongPattern: SmokeScenario = { name: "Jones cameras", steps: [{ say: "Jones cameras", pattern: "surveillance" }] };
+    const { t, run } = await smoke([wrongPattern, security(5)], [completeExtraction(), completeExtraction({ client: "Smith Family" })]);
+    await expect(run).rejects.toThrow(/Jones cameras, step 1 .*pattern expected surveillance, got security_modernization/);
+    // The second job still ran after the first failed, and its own mismatch is reported in its thread.
+    expect(t.texts()).toContain("🧪 Smoke: Smith security (release 0123456789ab)");
+    expect(t.texts().some((x) => /^❌ Smoke failed: Smith security, step 2 .*glass_break expected 5, got 4/.test(x))).toBe(true);
+    expect(t.texts().at(-1)).toBe("❌ Smoke failed: 2 of 2 jobs (3 budgets built).");
+  });
+
+  it("checks the receipt text", async () => {
+    const { run } = await smoke([{ name: "Smith", steps: [{ say: "Smith security upgrade", receipt: ["Requested product: Sony ultra slim mount"] }] }]);
+    await expect(run).rejects.toThrow(/receipt is missing "Requested product: Sony ultra slim mount"/);
+  });
+});
+
+describe("smoke scenarios", () => {
+  it("name only roles the shipped patterns have", async () => {
+    const { loadPatterns } = await import("@sd/build");
+    const patterns = await loadPatterns();
+    const roles = new Set(patterns.flatMap((p) => p.roles.map((r) => r.role)));
+    const names = new Set(patterns.map((p) => p.pattern));
+    for (const s of SMOKE_SCENARIOS.flatMap((x) => x.steps)) {
+      for (const role of [...Object.keys(s.expect ?? {}), ...Object.keys(s.atLeast ?? {})]) expect(roles, role).toContain(role);
+      if (s.pattern) expect(names, s.pattern).toContain(s.pattern);
+    }
   });
 });
