@@ -118,8 +118,17 @@ if [[ "${ENV_NAME}" == "staging" && -n "${SMOKE_SPACE_ID:-}" ]]; then
     --set-env-vars "${COMMON_ENV},SMOKE_SPACE_ID=${SMOKE_SPACE_ID},SMOKE_USER_EMAIL=${SMOKE_USER_EMAIL:-},GOOGLE_CHAT_UPLOAD_MODE=${GOOGLE_CHAT_UPLOAD_MODE},GOOGLE_CHAT_DELEGATED_USER=${GOOGLE_CHAT_DELEGATED_USER:-},WORKER_SERVICE_ACCOUNT=${WORKER_SA}" \
     --set-secrets "${DB_SECRET},TEMPORAL_API_KEY=temporal-api-key:latest" \
     --task-timeout 45m --max-retries 0 --quiet
-  gcloud run jobs execute "sd-smoke-${ENV_NAME}" --region "${REGION}" --wait \
-    || { echo "conversation smoke test failed; see the sd-smoke-${ENV_NAME} job logs and the smoke Chat space" >&2; exit 1; }
+  SMOKE_OK=1
+  gcloud run jobs execute "sd-smoke-${ENV_NAME}" --region "${REGION}" --wait || SMOKE_OK=0
+  # Print each job's result line from the execution's logs (needs roles/logging.viewer; best effort).
+  EXEC="$(gcloud run jobs executions list --job "sd-smoke-${ENV_NAME}" --region "${REGION}" --limit 1 --format 'value(metadata.name)' 2>/dev/null || true)"
+  if [[ -n "${EXEC}" ]]; then
+    sleep 15
+    gcloud logging read "resource.type=\"cloud_run_job\" AND resource.labels.job_name=\"sd-smoke-${ENV_NAME}\" AND labels.\"run.googleapis.com/execution_name\"=\"${EXEC}\"" \
+      --freshness 2h --order asc --limit 300 --format 'value(textPayload)' 2>/dev/null \
+      | grep -E ': ok |FAILED|smoke passed|Error|error' || echo "(smoke job logs unavailable to the deployer; see the smoke Chat space)"
+  fi
+  [[ "${SMOKE_OK}" == 1 ]] || { echo "conversation smoke test failed; see the lines above and the smoke Chat space" >&2; exit 1; }
 else
   log "conversation smoke test skipped (staging only, needs SMOKE_SPACE_ID)"
 fi
