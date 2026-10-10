@@ -729,6 +729,13 @@ describe("post-deploy smoke test", () => {
     expect(t.texts().at(-1)).toBe("✅ Smoke passed: 1 jobs, 2 budgets.");
   });
 
+  it("says why a budget was blocked", async () => {
+    const bad = { ...completeExtraction(), approved_by: "zack" };
+    const { t, run } = await smoke([{ name: "Smith", steps: [{ say: "Smith security upgrade" }] }], [bad, bad]);
+    await expect(run).rejects.toThrow(/Smith, step 1 .*ended BLOCKED \(at .+: .+\)/);
+    expect(t.texts().some((x) => /^❌ Smoke failed: .*ended BLOCKED \(at /.test(x))).toBe(true);
+  });
+
   it("checks the receipt text", async () => {
     const { run } = await smoke([{ name: "Smith", steps: [{ say: "Smith security upgrade", receipt: ["Requested product: Sony ultra slim mount"] }] }]);
     await expect(run).rejects.toThrow(/receipt is missing "Requested product: Sony ultra slim mount"/);

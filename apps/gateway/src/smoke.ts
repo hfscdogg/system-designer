@@ -196,12 +196,22 @@ export async function runSmoke(deps: SmokeDeps): Promise<{ runs: string[]; failu
       await deps.settle?.(runId);
       const { state } = await deps.store.getRun(runId);
       if (want.includes(state)) return state;
-      if (FAILED.includes(state)) throw new SmokeFailure(`${step}: run ${runId} ended ${state}`);
+      if (FAILED.includes(state)) throw new SmokeFailure(`${step}: run ${runId} ended ${state}${await whyStopped(runId)}`);
       if (Date.now() > deadline) throw new SmokeFailure(`${step}: run ${runId} stuck in ${state}`);
       await new Promise((r) => setTimeout(r, deps.pollMs ?? 3000));
     }
   };
 
+  // The reason a run stopped: recorded on its last state change, plus any open receipt blockers.
+  const whyStopped = async (runId: string): Promise<string> => {
+    const last = (await deps.store.listEvents(runId)).filter((e) => e.type === "state_changed").at(-1)?.data;
+    const blockers = (await deps.store.latestReceipt(runId))?.body.blockers ?? [];
+    const parts = [
+      ...(last?.error ? [`at ${String(last.from ?? "?")}: ${String(last.error)}`] : []),
+      ...(blockers.length ? [`blockers: ${JSON.stringify(blockers).slice(0, 300)}`] : []),
+    ];
+    return parts.length ? ` (${parts.join("; ")})` : "";
+  };
   const runs: string[] = [];
   const failures: string[] = [];
   let budgets = 0;
