@@ -9,6 +9,7 @@
   "roles": [
     {
       "role": "battery_shade",
+      "categories": ["Shades & Blinds", "Motorized Window Treatments > Shades"],
       "label": "Lutron Triathlon battery shade",
       "critical": true,
       "systems": [

@@ -78,7 +78,7 @@ describe("patterns", () => {
     const patterns = await loadPatterns();
     expect(patterns.map((p) => p.pattern)).toEqual([
       "access_control", "home_automation", "home_network", "lighting_control", "motorized_shades", "prewire",
-      "security_modernization", "surveillance", "tv_media", "video_doorbell", "whole_home_audio",
+      "security_modernization", "smart_locks", "surveillance", "tv_media", "video_doorbell", "whole_home_audio",
     ]);
     for (const p of patterns) {
       expect(p.roles.every((r) => r.product_id !== null), p.pattern).toBe(true);
@@ -391,6 +391,16 @@ describe("patterns", () => {
     expect(roles({ requested_changes: ["Add 2 Control4 remotes"], requested_quantities: [{ item: "Control4 remotes", quantity: 2 }] })).toEqual([["automation_remote", 2]]);
     // Naming only the brand still names the system's core.
     expect(roles({ requested_changes: ["Add Control4 to the family room"] }).map(([r]) => r)).toContain("automation_controller");
+  });
+
+  it("prices a smart lock as a lock, not a card-access door", async () => {
+    const patterns = await loadPatterns();
+    const systems = normalizeFunctionalSystems(["smart lock"]);
+    const pattern = selectPattern(systems, patterns)!;
+    expect(pattern.pattern).toBe("smart_locks");
+    const sel = materialize(approvedScope({ functional_systems: systems, requested_changes: ["Add 2 Yale smart locks to the front and back doors"], requested_quantities: [{ item: "smart locks", quantity: 2 }], existing_detectors: "not_provided" }).scope, pattern);
+    expect(sel.lines.map((l) => [l.role, l.quantity])).toEqual([["smart_lock", 2]]);
+    expect(sel.labor?.hours).toBe(3.5);
   });
 
   it("prices a whole system when an add-on names nothing the pattern knows", async () => {

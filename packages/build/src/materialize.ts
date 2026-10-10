@@ -211,7 +211,9 @@ function namedForRoles(named: NamedProduct[], roles: RoleSpec[]): Map<string, Na
   for (const n of named) {
     // The product's own category ("Speakers > Outdoor") says which role it fills, on top of how the request names it.
     const leaf = n.category.split(">").at(-1) ?? "";
-    const scores = roles.map((r) => matchScore(`${n.category} ${n.label} ${n.text}`, r) + matchScore(leaf, r));
+    // A role whose D-Tools categories include the product's outranks any word match short of naming the role itself.
+    const inCategory = (r: RoleSpec) => (r.categories ?? []).some((c) => n.category.toLowerCase().startsWith(c.toLowerCase()));
+    const scores = roles.map((r) => matchScore(`${n.category} ${n.label} ${n.text}`, r) + matchScore(leaf, r) + (inCategory(r) ? 100 : 0));
     const best = Math.max(0, ...scores);
     const role = roles[scores.indexOf(best)];
     if (best > 1 && role) byRole.set(role.role, [...(byRole.get(role.role) ?? []), n]);

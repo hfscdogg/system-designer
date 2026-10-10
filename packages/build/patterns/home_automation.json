@@ -9,6 +9,7 @@
   "roles": [
     {
       "role": "automation_controller",
+      "categories": ["Control Systems > Controllers & Processors"],
       "label": "Control4 CORE 1 controller",
       "model": "C4-CORE1",
       "critical": true,
@@ -32,6 +33,7 @@
     },
     {
       "role": "automation_remote",
+      "categories": ["Control Systems > Handheld Remotes"],
       "label": "Control4 Halo remote",
       "model": "C4-HALO-BL",
       "critical": true,

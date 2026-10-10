@@ -3,18 +3,18 @@
   "basis": "middle half (25th-75th percentile) of 730 accepted D-Tools quotes, priced from their own device lists (add_on)",
   "bands": {
     "*": {
-      "low": 0.68,
-      "high": 1.32,
+      "low": 0.71,
+      "high": 1.29,
       "n": 730
     },
     "tv_media": {
-      "low": 0.71,
-      "high": 1.13,
+      "low": 0.7,
+      "high": 1.12,
       "n": 108
     },
     "home_network": {
-      "low": 0.61,
-      "high": 1.44,
+      "low": 0.72,
+      "high": 1.22,
       "n": 107
     },
     "home_automation": {
@@ -24,17 +24,17 @@
     },
     "home_network+tv_media": {
       "low": 0.8,
-      "high": 1.13,
+      "high": 1.11,
       "n": 48
     },
     "whole_home_audio": {
-      "low": 0.64,
-      "high": 1.03,
+      "low": 0.65,
+      "high": 1,
       "n": 45
     },
     "lighting_control": {
-      "low": 0.62,
-      "high": 2.07,
+      "low": 0.76,
+      "high": 2.14,
       "n": 44
     },
     "surveillance": {
@@ -49,12 +49,12 @@
     },
     "home_network+prewire": {
       "low": 0.88,
-      "high": 2.1,
+      "high": 2.07,
       "n": 25
     },
     "home_network+tv_media+whole_home_audio": {
       "low": 0.93,
-      "high": 1.32,
+      "high": 1.18,
       "n": 21
     },
     "tv_media+whole_home_audio": {
@@ -67,14 +67,9 @@
       "high": 1.08,
       "n": 18
     },
-    "access_control": {
-      "low": 0.13,
-      "high": 0.82,
-      "n": 18
-    },
     "home_network+surveillance": {
-      "low": 0.97,
-      "high": 2.62,
+      "low": 0.87,
+      "high": 2.2,
       "n": 16
     }
   }

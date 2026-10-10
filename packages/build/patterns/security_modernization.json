@@ -9,6 +9,7 @@
   "roles": [
     {
       "role": "security_panel",
+      "categories": ["Security Systems > Control Panels"],
       "label": "Security panel",
       "model": "IQP5017",
       "critical": true,
@@ -31,6 +32,7 @@
     },
     {
       "role": "keypad",
+      "categories": ["Security Systems > Keypads"],
       "label": "Keypad",
       "critical": true,
       "systems": [
@@ -52,6 +54,7 @@
     },
     {
       "role": "door_window_contact",
+      "categories": ["Security Systems > Contacts & Sensors"],
       "label": "Door/window contact",
       "model": "PG9303",
       "count_terms": ["door", "window", "contact"],
@@ -219,6 +222,7 @@
     },
     {
       "role": "thermostat",
+      "categories": ["Control Systems > Thermostats"],
       "label": "Smart thermostat",
       "model": "ADC-T2000-RC",
       "critical": false,

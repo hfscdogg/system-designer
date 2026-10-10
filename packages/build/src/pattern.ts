@@ -9,6 +9,8 @@ import { z } from "zod";
 export const RoleSpecSchema = z
   .object({
     role: z.string().min(1),
+    /** D-Tools categories this role's products come from ("Networking > Switches"): a product the request names by model from one of them fills this role. */
+    categories: z.array(z.string().min(1)).optional(),
     label: z.string().min(1),
     /** Critical roles must be priced or explicitly unresolved; never silently missing. */
     critical: z.boolean(),

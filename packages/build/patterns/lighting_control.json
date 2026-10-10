@@ -9,6 +9,7 @@
   "roles": [
     {
       "role": "lighting_processor",
+      "categories": ["Lighting > Controllers"],
       "label": "Lutron RadioRA 3 processor",
       "model": "RR-PROC3-KIT",
       "critical": true,
@@ -32,6 +33,7 @@
     },
     {
       "role": "smart_dimmer",
+      "categories": ["Lighting > Dimmers", "Lighting > Switches"],
       "label": "Lutron Sunnata dimmer",
       "critical": true,
       "systems": [
@@ -54,6 +56,7 @@
     },
     {
       "role": "scene_keypad",
+      "categories": ["Lighting > Keypads"],
       "label": "Lutron Sunnata 4-button keypad",
       "model": "RRST-W4B-WH",
       "critical": false,

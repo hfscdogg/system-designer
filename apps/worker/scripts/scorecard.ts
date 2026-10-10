@@ -90,6 +90,7 @@ const BUCKETS: Array<[RegExp, string]> = [
   [/^Control Systems/, "home_automation"],
   [/^Lighting/, "lighting_control"],
   [/shade|window treatment/i, "motorized_shades"],
+  [/^Access Control > Door Locks/, "smart_locks"],
   [/^Access Control/, "access_control"],
   [/^Structured Wiring/, "structured_wiring"],
   [/^(Video Conferencing|Microphones)/, "uncovered:conferencing"],

@@ -1,0 +1,85 @@
+{
+  "schema": "architecture_pattern_v1",
+  "pattern": "smart_locks",
+  "version": "2026-10-10.1",
+  "title": "Smart locks",
+  "applies_when_any": [
+    "smart_locks"
+  ],
+  "roles": [
+    {
+      "role": "smart_lock",
+      "categories": ["Access Control > Door Locks"],
+      "label": "Yale Assure touchscreen smart lock (Z-Wave)",
+      "model": "YRD624-ZW2-BSP",
+      "critical": true,
+      "systems": [
+        "smart_locks"
+      ],
+      "retained_match": [
+        "lock",
+        "deadbolt"
+      ],
+      "count_terms": [
+        "lock",
+        "deadbolt"
+      ],
+      "product_id": "ada1f2c7-bb28-4b16-91eb-398abac6c520",
+      "precedent": "livewire_standard",
+      "quantity": {
+        "kind": "minimum",
+        "qty": 1,
+        "verify": "doors to fit, with standard deadbolt prep (bore and backset)"
+      },
+      "location": "Entry doors",
+      "capability": "Keypad and app-controlled deadbolt on the home's Z-Wave controller (Alarm.com or Control4)",
+      "hours_each": 1.5,
+      "escalate_if_unresolved": false
+    }
+  ],
+  "services": [
+    {
+      "category": "installation",
+      "label": "Installation",
+      "product_id": null
+    },
+    {
+      "category": "programming",
+      "label": "Enrollment and user codes",
+      "product_id": null
+    },
+    {
+      "category": "testing",
+      "label": "Testing",
+      "product_id": null
+    }
+  ],
+  "labor": {
+    "labor_type": "07LABOR1MAN",
+    "base_hours": 0.5,
+    "add_on_base_hours": 0.5,
+    "hours_per_device": 1.5,
+    "covers": [
+      "design",
+      "removal",
+      "installation",
+      "programming",
+      "testing",
+      "commissioning",
+      "training",
+      "project_management"
+    ],
+    "basis": "Lock-only Livewire quotes since 2024: about 2 hours for one lock and 1.5 hours for each lock after (visit, swap, enrollment, testing)"
+  },
+  "parts": {
+    "product_id": "141236a5-8780-493e-a20d-106b7f71c5b4",
+    "label": "Installation parts and materials"
+  },
+  "assumptions": [
+    "Doors have standard deadbolt prep; the lock enrolls on the home's existing Z-Wave controller (Alarm.com panel or Control4)."
+  ],
+  "exclusions": [
+    "Door or frame modification, rekeying and locksmith work.",
+    "Commercial card-access doors (priced as access control)."
+  ]
+}
