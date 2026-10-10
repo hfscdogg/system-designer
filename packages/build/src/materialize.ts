@@ -57,6 +57,14 @@ function roleTerms(role: RoleSpec): string[] {
   return [role.label, ...(role.retained_match ?? []), ...(role.mentions ?? [])].map(fold);
 }
 
+/** Brand names say which system, not which device: a "Control4 remote" is a remote, not a Control4 controller. */
+const BRANDS = new Set(["control4", "c4", "lutron", "sonos", "alarm.com"]);
+
+/** The role's terms that name a device, not just its brand. */
+function deviceTerms(role: RoleSpec): string[] {
+  return roleTerms(role).filter((t) => !BRANDS.has(t));
+}
+
 /** How specifically `text` names `role`: a full label beats the longest matching term; 0 when it doesn't. */
 const compact = (s: string) => s.toLowerCase().replace(/[^a-z0-9]/g, "");
 
@@ -72,9 +80,11 @@ function matchScore(text: string, role: RoleSpec): number {
   // The model number printed on the budget is the most specific way to name a device.
   if (role.model && compact(text).includes(compact(role.model))) return 2000 + role.model.length;
   if (t.includes(fold(role.label))) return 1000 + role.label.length;
-  const terms = roleTerms(role).filter((term) => t.includes(term));
+  const terms = deviceTerms(role).filter((term) => t.includes(term));
   const words = (role.count_terms ?? []).map(fold).filter((term) => hasAllWords(t, term));
-  return Math.max(0, ...[...terms, ...words].map((term) => term.length));
+  // A brand alone is the weakest match: any device word for another role wins.
+  const brandOnly = roleTerms(role).some((term) => BRANDS.has(term) && hasWord(t, term)) ? 1 : 0;
+  return Math.max(0, brandOnly, ...[...terms, ...words].map((term) => term.length));
 }
 
 /**
@@ -95,7 +105,12 @@ function statedQuantity(scope: ScopeDraftV1, role: RoleSpec, roles: RoleSpec[]):
 function named(scope: ScopeDraftV1, role: RoleSpec, roles: RoleSpec[]): boolean {
   const changes = fold(scope.requested_changes.join(" | "));
   const byModel = !!role.model && compact(changes).includes(compact(role.model));
-  return byModel || roleTerms(role).some((t) => changes.includes(t)) || (role.count_terms ?? []).some((t) => hasWord(changes, fold(t))) || statedQuantity(scope, role, roles) !== null;
+  const byDevice = (r: RoleSpec, c: string) => deviceTerms(r).some((t) => c.includes(t)) || (r.count_terms ?? []).some((t) => hasWord(c, fold(t)));
+  // A change that names only the brand ("add Control4") names the role; one that also names another device doesn't.
+  const byBrand = scope.requested_changes.map(fold).some(
+    (c) => roleTerms(role).some((t) => BRANDS.has(t) && hasWord(c, t)) && !roles.some((r) => r !== role && byDevice(r, c)),
+  );
+  return byModel || byDevice(role, changes) || byBrand || statedQuantity(scope, role, roles) !== null;
 }
 
 /**

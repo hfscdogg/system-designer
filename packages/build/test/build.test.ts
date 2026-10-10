@@ -129,16 +129,20 @@ describe("patterns", () => {
     expect(normalizeFunctionalSystems(["85 inch TV", "soundbar"])).toEqual(["audio_video"]);
     const tv = selectPattern(["audio_video"], patterns)!;
     expect(tv.pattern).toBe("tv_media");
-    // A mounted, client-supplied TV with a soundbar: 0.5 + 5 + 2 + 0.5 = 8 h.
-    expect(laborHoursFor(tv, [{ role: "tv_mount", quantity: 1 }, { role: "soundbar", quantity: 1 }, { role: "soundbar_mount", quantity: 1 }])).toBe(8);
+    // A mounted, client-supplied TV with a soundbar (hours fitted to accepted quotes): 2 + 2.75 + 3.75 + 0.5 = 9 h.
+    expect(laborHoursFor(tv, [{ role: "tv_mount", quantity: 1 }, { role: "soundbar", quantity: 1 }, { role: "soundbar_mount", quantity: 1 }])).toBe(9);
+    // An add-on visit carries its own setup (2 h for TV work), not the full system setup.
+    expect(laborHoursFor(tv, [{ role: "tv_mount", quantity: 1 }], true)).toBe(5);
     const audio = patterns.find((p) => p.pattern === "whole_home_audio")!;
     expect(audio.roles.find((r) => r.role === "zone_amplifier")).toMatchObject({ critical: true, quantity: { kind: "minimum", qty: 2 } });
     expect(audio.roles.find((r) => r.role === "outdoor_speakers")!.mentions).toContain("patio");
     // Speaker pairs take longer than amps: 1 h setup + 2 amps × 1 + 2 pairs × 3 = 9 h.
     expect(laborHoursFor(audio, [{ role: "zone_amplifier", quantity: 2 }, { role: "in_ceiling_speakers", quantity: 2 }])).toBe(9);
-    // Combined with networking, each role keeps its own rate and the setup hours add: 4 + 2 + 6 + 3 × 0.5 = 13.5.
+    // Combined with networking, each role keeps its own rate and the setup hours add: 4 + 2 + 6 + 3 × 1 = 15.
     const both = selectPattern(["whole_home_audio", "networking"], patterns)!;
-    expect(laborHoursFor(both, [{ role: "zone_amplifier", quantity: 2 }, { role: "in_ceiling_speakers", quantity: 2 }, { role: "mesh_wifi", quantity: 3 }])).toBe(13.5);
+    expect(laborHoursFor(both, [{ role: "zone_amplifier", quantity: 2 }, { role: "in_ceiling_speakers", quantity: 2 }, { role: "mesh_wifi", quantity: 3 }])).toBe(15);
+    // An add-on visit to both carries one visit's setup (networking's 1 h), not each pattern's.
+    expect(laborHoursFor(both, [{ role: "mesh_wifi", quantity: 1 }], true)).toBe(2);
   });
 
   it("prices an add-on as only the devices named, with no setup hours", async () => {
@@ -376,6 +380,17 @@ describe("patterns", () => {
     const cams = patterns.find((p) => p.pattern === "surveillance")!;
     const sel = materialize(approvedScope({ functional_systems: ["security cameras"], requested_changes: ["Install a camera system"], existing_detectors: "not_provided", existing_equipment: { status: "none", retained: [], removed_or_replaced: [] } }).scope, cams);
     expect(sel.lines.find((l) => l.role === "outdoor_camera")?.quantity).toBe(2);
+  });
+
+  it("reads a brand as the system, not the device (\"Control4 SR260 remote\" is a remote)", async () => {
+    const patterns = await loadPatterns();
+    const c4 = patterns.find((p) => p.pattern === "home_automation")!;
+    const roles = (o: object) =>
+      materialize(approvedScope({ functional_systems: ["Control4"], existing_detectors: "not_provided", existing_equipment: { status: "none", retained: [], removed_or_replaced: [] }, ...o }).scope, c4).lines.map((l) => [l.role, l.quantity]);
+    expect(roles({ requested_changes: ["Add a Control4 SR260 remote"] })).toEqual([["automation_remote", 1]]);
+    expect(roles({ requested_changes: ["Add 2 Control4 remotes"], requested_quantities: [{ item: "Control4 remotes", quantity: 2 }] })).toEqual([["automation_remote", 2]]);
+    // Naming only the brand still names the system's core.
+    expect(roles({ requested_changes: ["Add Control4 to the family room"] }).map(([r]) => r)).toContain("automation_controller");
   });
 
   it("prices a whole system when an add-on names nothing the pattern knows", async () => {
