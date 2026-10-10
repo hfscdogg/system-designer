@@ -1,7 +1,7 @@
 {
   "schema": "architecture_pattern_v1",
   "pattern": "security_modernization",
-  "version": "2026-10-08.1",
+  "version": "2026-10-10.1",
   "title": "Security modernization",
   "applies_when_any": [
     "intrusion_security"
@@ -78,6 +78,7 @@
     },
     {
       "role": "motion_detector",
+      "categories": ["Security Systems > Motion Detectors"],
       "label": "Motion detector",
       "model": "PG9914",
       "count_terms": ["motion"],
@@ -105,6 +106,7 @@
     },
     {
       "role": "glass_break",
+      "categories": ["Security Systems > Glass Break"],
       "label": "Glass-break sensor",
       "model": "PG9922",
       "count_terms": ["glass"],
@@ -131,6 +133,7 @@
     },
     {
       "role": "smoke_heat_detector",
+      "categories": ["Security Systems > Smoke Detectors", "Fire Systems > Smoke"],
       "label": "Smoke/heat detector",
       "model": "PG9936",
       "critical": true,
@@ -154,6 +157,7 @@
     },
     {
       "role": "co_detector",
+      "categories": ["Security Systems > CO2 Detectors", "Security Systems > CO Detectors"],
       "label": "Carbon monoxide detector",
       "model": "PG9933",
       "critical": true,
@@ -241,6 +245,63 @@
       },
       "location": "Per HVAC zone",
       "capability": "Thermostat control in the security app",
+      "escalate_if_unresolved": false
+    },
+    {
+      "role": "panel_battery",
+      "categories": [
+        "Security Systems > Battery",
+        "Power Distribution > Batteries"
+      ],
+      "label": "Alarm panel backup battery",
+      "model": "IM-1272F1",
+      "critical": false,
+      "systems": [
+        "intrusion_security"
+      ],
+      "mentions": [
+        "battery",
+        "batteries"
+      ],
+      "product_id": "6cb5623c-72bb-41f3-9728-666ae71407ff",
+      "precedent": "livewire_standard",
+      "quantity": {
+        "kind": "fixed",
+        "qty": 1
+      },
+      "location": "Security panel",
+      "capability": "Replacement 12 V backup battery for the alarm panel",
+      "hours_each": 0.25,
+      "escalate_if_unresolved": false
+    },
+    {
+      "role": "siren",
+      "categories": [
+        "Security Systems > Sirens & Speakers"
+      ],
+      "label": "Alarm.com indoor siren",
+      "model": "ADC-W115C",
+      "critical": false,
+      "systems": [
+        "intrusion_security"
+      ],
+      "mentions": [
+        "siren",
+        "sirens",
+        "sounder",
+        "horn",
+        "strobe"
+      ],
+      "product_id": "444aae73-bf15-4feb-b188-bcce16f4cdd3",
+      "precedent": "livewire_standard",
+      "quantity": {
+        "kind": "minimum",
+        "qty": 1,
+        "verify": "siren locations"
+      },
+      "location": "Whole house",
+      "capability": "Loud local alarm sounder",
+      "hours_each": 0.5,
       "escalate_if_unresolved": false
     }
   ],

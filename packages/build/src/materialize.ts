@@ -105,8 +105,23 @@ function statedQuantity(scope: ScopeDraftV1, role: RoleSpec, roles: RoleSpec[]):
 }
 
 /** Whether the request itself names this role (its changes or a stated count), for add-on pricing. */
+/** The words of a role's terms ("soundbar mount" → soundbar, mount). */
+const termWords = (r: RoleSpec) => new Set([...roleTerms(r), ...(r.count_terms ?? []).map(fold)].flatMap((t) => t.split(/[^a-z0-9.]+/)).filter(Boolean));
+
+/**
+ * The text with this role's words removed where they only describe another
+ * device: "panel battery" is a battery, "soundbar mount" a mount. A word is a
+ * modifier when the next word belongs to another role's terms and not this one's.
+ */
+function withoutModifiers(text: string, role: RoleSpec, roles: RoleSpec[]): string {
+  const own = termWords(role);
+  const others = new Set(roles.filter((r) => r !== role).flatMap((r) => [...termWords(r)]));
+  const words = text.split(/\s+/);
+  return words.map((w, i) => (own.has(w.replace(/[^a-z0-9.]/g, "")) && others.has((words[i + 1] ?? "").replace(/[^a-z0-9.]/g, "").replace(/e?s$/, "")) && !own.has((words[i + 1] ?? "").replace(/[^a-z0-9.]/g, "").replace(/e?s$/, "")) ? "_" : w)).join(" ");
+}
+
 function named(scope: ScopeDraftV1, role: RoleSpec, roles: RoleSpec[]): boolean {
-  const changes = fold(scope.requested_changes.join(" | "));
+  const changes = withoutModifiers(fold(scope.requested_changes.join(" | ")), role, roles);
   const byModel = !!role.model && compact(changes).includes(compact(role.model));
   const byDevice = (r: RoleSpec, c: string) => deviceTerms(r).some((t) => c.includes(t)) || (r.count_terms ?? []).some((t) => hasWord(c, fold(t)));
   // A change that names only the brand ("add Control4") names the role; one that also names another device doesn't.
