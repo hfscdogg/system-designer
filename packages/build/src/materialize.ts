@@ -112,6 +112,19 @@ function namedSpecifically(scope: ScopeDraftV1, role: RoleSpec, roles: RoleSpec[
   );
 }
 
+/**
+ * The request names this role as one thing ("replace the amplifier", "an amp")
+ * and never as several ("amps", "2 amplifiers"). A role whose default is a
+ * minimum of several is then priced as one; "a camera system" is not one camera.
+ */
+function namedAsOne(scope: ScopeDraftV1, role: RoleSpec): boolean {
+  const text = changes(scope).join(" | ");
+  const terms = [...roleTerms(role), ...(role.count_terms ?? []).map(fold)].map(escape);
+  const plural = terms.some((t) => new RegExp(`\\b${t}(s|es)\\b`).test(text) || new RegExp(`\\b(\\d+|two|three|four|five|six|several|multiple)\\s+(?:[\\w-]+\\s+){0,2}${t}`).test(text));
+  if (plural) return false;
+  return terms.some((t) => new RegExp(`\\b(a|an|the|one|single)\\s+(?:[\\w-]+\\s+){0,2}${t}\\b(?!\\s+(system|package|setup|network|zones?))`).test(text));
+}
+
 const MOVE = /^(move|moving|relocate|relocating|reinstall|remount)\b/;
 const NEW_DEVICE = /\b(new|sell|selling|provide[sd]?|supply|supplied|purchase|buy|livewire)\b/;
 const SIZE = /\b(\d{2,3})\s*(?:-\s*)?(?:inch(?:es)?|in\b\.?|"|”|″)/g;
@@ -219,7 +232,7 @@ export function materialize(scope: ScopeDraftV1, pattern: PatternSpec): Selectio
     lines.push({
       role: role.role,
       record_id: variantFor(scope, role)?.product_id ?? role.product_id,
-      quantity: (stated ?? role.quantity.qty) + moved,
+      quantity: (stated ?? (minimum && role.quantity.qty > 1 && namedAsOne(scope, role) ? 1 : role.quantity.qty)) + moved,
       quantity_basis: minimum ? "minimum_to_verify" : "fixed",
       verify: moved && verify ? `${verify}; includes ${moved} for moved existing equipment (confirm wall and power in the new room)` : verify,
       // A single-room scope places devices in that room; otherwise use the pattern's location.

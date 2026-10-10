@@ -336,6 +336,28 @@ describe("patterns", () => {
     expect(noSwitch.unresolved).toEqual([]);
   });
 
+  it("prices one of a device the request names as one thing (pilot: Biscuit Belly)", async () => {
+    const patterns = await loadPatterns();
+    const audio = patterns.find((p) => p.pattern === "whole_home_audio")!;
+    const amps = (o: object) =>
+      materialize(approvedScope({ functional_systems: ["Sonos"], existing_detectors: "not_provided", existing_equipment: { status: "none", retained: [], removed_or_replaced: [] }, ...o }).scope, audio).lines.find((l) => l.role === "zone_amplifier")?.quantity;
+    // "The amplifier" is one amp, still verified on site; without a count the pattern's minimum stands.
+    expect(amps({ requested_changes: ["Replace the amplifier for the existing ceiling speakers"] })).toBe(1);
+    expect(amps({ requested_changes: ["Install an amp in the rack"] })).toBe(1);
+    expect(amps({ requested_changes: ["Sonos in the kitchen, family room and back patio"] })).toBe(2);
+    // Several, or a stated count, are never cut to one.
+    expect(amps({ requested_changes: ["Replace the amps"] })).toBe(2);
+    expect(amps({ requested_changes: ["Install 3 amplifiers"] })).toBe(2);
+    expect(amps({ requested_changes: ["Install the amps"], requested_quantities: [{ item: "Sonos Amp", quantity: 3 }] })).toBe(3);
+  });
+
+  it("does not read \"a camera system\" as one camera", async () => {
+    const patterns = await loadPatterns();
+    const cams = patterns.find((p) => p.pattern === "surveillance")!;
+    const sel = materialize(approvedScope({ functional_systems: ["security cameras"], requested_changes: ["Install a camera system"], existing_detectors: "not_provided", existing_equipment: { status: "none", retained: [], removed_or_replaced: [] } }).scope, cams);
+    expect(sel.lines.find((l) => l.role === "outdoor_camera")?.quantity).toBe(2);
+  });
+
   it("prices a whole system when an add-on names nothing the pattern knows", async () => {
     const patterns = await loadPatterns();
     const net = patterns.find((p) => p.pattern === "home_network")!;

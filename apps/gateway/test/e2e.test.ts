@@ -661,13 +661,25 @@ describe("editing a scope and revising a finished budget", () => {
 });
 
 describe("post-deploy smoke test", () => {
-  const smoke = async (scenarios: SmokeScenario[], extractions = [completeExtraction()]) => {
+  const smoke = async (scenarios: SmokeScenario[], extractions = [completeExtraction()], throttleOnce = false) => {
     const t = await setup(extractions, [{ ...noPatch, requested_quantities: [{ item: "Glass-break sensor", quantity: 4 }] }]);
     await prepareSmoke(t.db, "spaces/S");
+    let throttled = !throttleOnce;
+    const chat = Object.assign(Object.create(t.chat), {
+      post: (...args: Parameters<typeof t.chat.post>) => {
+        if (!throttled) {
+          throttled = true;
+          return Promise.reject(new Error("Quota limit exceeded."));
+        }
+        return t.chat.post(...args);
+      },
+    });
     const run = runSmoke({
       store: t.store,
       workflows: t.workflows,
-      chat: t.chat,
+      chat,
+      retryDelaysMs: [1, 1],
+      paceMs: 0,
       spaceId: "spaces/S",
       release: "sha256:0123456789abcdef",
       scenarios,
@@ -709,6 +721,12 @@ describe("post-deploy smoke test", () => {
     expect(t.texts()).toContain("🧪 Smoke: Smith security (release 0123456789ab)");
     expect(t.texts().some((x) => /^❌ Smoke failed: Smith security, step 2 .*glass_break expected 5, got 4/.test(x))).toBe(true);
     expect(t.texts().at(-1)).toBe("❌ Smoke failed: 2 of 2 jobs (3 budgets built).");
+  });
+
+  it("waits out Chat throttling on its own posts instead of failing", async () => {
+    const { t, run } = await smoke([security(4)], [completeExtraction()], true);
+    expect((await run).failures).toEqual([]);
+    expect(t.texts().at(-1)).toBe("✅ Smoke passed: 1 jobs, 2 budgets.");
   });
 
   it("checks the receipt text", async () => {
