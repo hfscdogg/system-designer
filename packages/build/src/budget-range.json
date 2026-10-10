@@ -3,18 +3,18 @@
   "basis": "middle half (25th-75th percentile) of 742 accepted D-Tools quotes, priced from their own device lists (add_on)",
   "bands": {
     "*": {
-      "low": 0.75,
-      "high": 1.26,
+      "low": 0.78,
+      "high": 1.31,
       "n": 742
     },
     "tv_media": {
-      "low": 0.69,
-      "high": 1.12,
+      "low": 0.74,
+      "high": 1.18,
       "n": 107
     },
     "home_network": {
-      "low": 0.71,
-      "high": 1.08,
+      "low": 0.79,
+      "high": 1.18,
       "n": 101
     },
     "home_automation": {
@@ -23,8 +23,8 @@
       "n": 77
     },
     "home_network+tv_media": {
-      "low": 0.8,
-      "high": 1.1,
+      "low": 0.91,
+      "high": 1.2,
       "n": 46
     },
     "whole_home_audio": {
@@ -43,28 +43,28 @@
       "n": 41
     },
     "prewire": {
-      "low": 0.65,
-      "high": 2.5,
+      "low": 0.61,
+      "high": 1.73,
       "n": 29
     },
     "home_network+prewire": {
-      "low": 0.88,
-      "high": 2.07,
+      "low": 0.95,
+      "high": 2.31,
       "n": 25
     },
     "home_network+surveillance": {
-      "low": 0.95,
-      "high": 1.41,
+      "low": 0.98,
+      "high": 1.46,
       "n": 24
     },
     "tv_media+whole_home_audio": {
-      "low": 0.83,
-      "high": 1.2,
+      "low": 0.87,
+      "high": 1.21,
       "n": 20
     },
     "home_network+tv_media+whole_home_audio": {
-      "low": 0.93,
-      "high": 1.32,
+      "low": 1,
+      "high": 1.4,
       "n": 20
     },
     "security_modernization": {
