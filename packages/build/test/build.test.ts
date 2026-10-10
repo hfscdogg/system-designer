@@ -423,6 +423,18 @@ describe("patterns", () => {
     expect(tvRoles("Add a soundbar mount")).toEqual(["soundbar_mount"]);
   });
 
+  it("prices a recorder as a recorder, and only when asked for", async () => {
+    const patterns = await loadPatterns();
+    const cams = patterns.find((p) => p.pattern === "surveillance")!;
+    const sel = (change: string) =>
+      materialize(approvedScope({ functional_systems: ["video_surveillance"], existing_detectors: "not_provided", existing_equipment: { status: "none", retained: [], removed_or_replaced: [] }, requested_changes: [change] }).scope, cams);
+    const nvr = sel("Add an NVR in the basement rack");
+    expect(nvr.lines.map((l) => l.role)).toEqual(["nvr"]);
+    // A recorder add-on: a half-hour visit plus 2 hours for the recorder.
+    expect(nvr.labor?.hours).toBe(2.5);
+    expect(sel("Add 2 turret cameras by the front door").lines.map((l) => l.role)).not.toContain("nvr");
+  });
+
   it("prices one memory card per camera", async () => {
     const patterns = await loadPatterns();
     const cams = patterns.find((p) => p.pattern === "surveillance")!;
