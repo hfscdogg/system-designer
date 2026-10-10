@@ -423,6 +423,18 @@ describe("patterns", () => {
     expect(tvRoles("Add a soundbar mount")).toEqual(["soundbar_mount"]);
   });
 
+  it("prices a touchscreen and a volume control as themselves, not a new system", async () => {
+    const patterns = await loadPatterns();
+    const roles = (pattern: string, systems: string[], change: string) =>
+      materialize(
+        approvedScope({ functional_systems: systems, existing_detectors: "not_provided", existing_equipment: { status: "none", retained: [], removed_or_replaced: [] }, requested_changes: [change] }).scope,
+        patterns.find((p) => p.pattern === pattern)!,
+      ).lines.map((l) => l.role);
+    expect(roles("home_automation", ["home_automation"], "Add a Control4 touchscreen in the kitchen")).toEqual(["touchscreen"]);
+    expect(roles("whole_home_audio", ["whole_home_audio"], "Add 2 volume controls in the den and kitchen")).toEqual(["volume_control"]);
+    expect(roles("home_automation", ["home_automation"], "Add a Control4 SR260 remote")).not.toContain("touchscreen");
+  });
+
   it("prices a recorder as a recorder, and only when asked for", async () => {
     const patterns = await loadPatterns();
     const cams = patterns.find((p) => p.pattern === "surveillance")!;
