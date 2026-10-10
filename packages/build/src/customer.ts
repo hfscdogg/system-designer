@@ -4,8 +4,25 @@ import type { Proposal } from "./bind.ts";
  * Customer-facing projection (PRD §14.1). Built field by field from an
  * allowlist, so internal cost, margin, unit and extended prices cannot leak.
  */
-/** Design retainer shown in Payment Terms: this share of the budget total (Henry, 2026-10-07). */
+/** Design retainer target: this share of the budget total (Henry, 2026-10-07). */
 export const DESIGN_RETAINER_PCT = 4;
+
+/**
+ * The retainer is collected through a D-Tools quote template with a fixed
+ * price, so it comes in tiers (Henry, 2026-10-10): the largest tier that is
+ * not more than 4% of the budget, and never less than the smallest tier.
+ */
+export const RETAINER_TIERS_CENTS = [10_000, 25_000, 50_000, 100_000, 250_000, 500_000] as const;
+
+export function retainerTier(budgetCents: number): number {
+  const target = (budgetCents * DESIGN_RETAINER_PCT) / 100;
+  return [...RETAINER_TIERS_CENTS].reverse().find((t) => t <= target) ?? RETAINER_TIERS_CENTS[0];
+}
+
+/** The D-Tools quote template Livewire keeps for a retainer tier: "Design Retainer $250". */
+export function retainerTemplateName(cents: number): string {
+  return `Design Retainer $${(cents / 100).toLocaleString("en-US")}`;
+}
 
 export interface CustomerProposal {
   watermark: string;
@@ -46,8 +63,8 @@ export interface CustomerProposal {
     parts_cents: number;
     /** An admin-approved price reduction, shown in the Summary. */
     reduction: { pct: number; cents: number } | null;
-    /** DESIGN_RETAINER_PCT of the total, or of the priced scope while the total is incomplete. */
-    retainer: { pct: number; cents: number };
+    /** The retainer tier for the total (or the priced scope while the total is incomplete), collected through D-Tools. */
+    retainer: { cents: number };
     /** Where similar Livewire jobs landed, shown under the total. */
     likely_range: { low_cents: number; high_cents: number } | null;
   };
@@ -99,10 +116,7 @@ export function customerView(p: Proposal): CustomerProposal {
       total_cents: p.commercial.total_cents,
       parts_cents: p.commercial.parts_cents,
       reduction: p.commercial.discount ? { pct: p.commercial.discount.pct, cents: p.commercial.discount.cents } : null,
-      retainer: {
-        pct: DESIGN_RETAINER_PCT,
-        cents: Math.round(((p.commercial.total_cents ?? p.commercial.subtotal_cents) * DESIGN_RETAINER_PCT) / 100),
-      },
+      retainer: { cents: retainerTier(p.commercial.total_cents ?? p.commercial.subtotal_cents) },
       likely_range: p.commercial.likely_range ? { low_cents: p.commercial.likely_range.low_cents, high_cents: p.commercial.likely_range.high_cents } : null,
     },
   };

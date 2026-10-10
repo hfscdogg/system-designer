@@ -396,7 +396,7 @@ export function createBuildStage(deps: BuildDeps) {
       }
       await deps.postView(
         run,
-        { kind: "budget_actions", runId, text: "Need changes? Tap Revise this budget and say what to change in plain words. I'll rebuild it." },
+        { kind: "budget_actions", runId, text: "Ready to collect the design retainer? Tap Send design retainer and I'll set it up in D-Tools for e-signature. Need changes? Tap Revise this budget and say what to change in plain words." },
         `${runId}:budget_actions`,
       );
       return { ok: true, summary: "PDF posted, held" };

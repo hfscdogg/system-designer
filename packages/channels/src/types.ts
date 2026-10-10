@@ -56,12 +56,12 @@ export type InboundEvent =
       isDirectMessage: boolean;
       sender: { providerUserId: string; email: string | null; displayName: string | null; isHuman: boolean };
       control: ControlAction;
-      /** The receipt (edit, start over) or run (revise, new request) the card belongs to. */
+      /** The receipt (edit, start over) or run (revise, new request, send retainer) the card belongs to. */
       ref: string;
     }
   | { kind: "ignored"; reason: string };
 
-export const CONTROL_ACTIONS = ["edit_scope", "start_over", "revise_budget", "new_request"] as const;
+export const CONTROL_ACTIONS = ["edit_scope", "start_over", "revise_budget", "new_request", "send_retainer"] as const;
 export type ControlAction = (typeof CONTROL_ACTIONS)[number];
 
 export type StepState = "done" | "active" | "pending" | "failed";
@@ -78,7 +78,7 @@ export type View =
       lines: string[];
       approve: { receiptId: string; scopeHash: string } | null;
     }
-  /** Posted under a finished budget: revise it, or start a new request. */
+  /** Posted under a finished budget: send its design retainer, revise it, or start a new request. */
   | { kind: "budget_actions"; runId: string; text: string }
   /**
    * The receipt's next blocking question, with tap-to-answer choices when the

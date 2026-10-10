@@ -22,3 +22,15 @@ describe("likely range", () => {
     expect(BUDGET_RANGES.bands["*"]!.n).toBeGreaterThan(100);
   });
 });
+
+describe("design retainer tier", () => {
+  it("is the largest tier not over 4%, never below $100, named like its D-Tools template", async () => {
+    const { retainerTier, retainerTemplateName } = await import("../src/index.ts");
+    expect(retainerTier(290_000)).toBe(10_000); // 4% = $116
+    expect(retainerTier(700_000)).toBe(25_000); // 4% = $280
+    expect(retainerTier(6_000_000)).toBe(100_000); // 4% = $2,400
+    expect(retainerTier(50_000_000)).toBe(500_000);
+    expect(retainerTier(100_000)).toBe(10_000);
+    expect(retainerTemplateName(100_000)).toBe("Design Retainer $1,000");
+  });
+});

@@ -81,6 +81,8 @@ export interface RunActivities {
   requestMarginApproval(a: { runId: string; exceptionId: string; reason: string }): Promise<void>;
   /** A decision already committed in the database (its signal may have been lost). */
   findMarginDecision(a: { runId: string }): Promise<MarginDecision | null>;
+  /** Create the budget's design-retainer opportunity in D-Tools (the one D-Tools write), and tell the requester. */
+  createRetainer(a: { runId: string; tap: string }): Promise<void>;
 }
 
 export interface RunRuntime {

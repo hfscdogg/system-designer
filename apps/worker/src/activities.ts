@@ -15,9 +15,10 @@ import {
 import type { ChannelAdapter, View } from "@sd/channels";
 import type { ClarificationInterpreter, ScopeExtractor } from "@sd/llm";
 import { formatUsd, type PatternSpec, type Proposal } from "@sd/build";
-import type { DToolsReader } from "@sd/dtools";
+import type { DToolsReader, DToolsWriter } from "@sd/dtools";
 import { IntegrityError, threadOf, type RunRecord, type Store } from "@sd/store";
 import { createBuildStage } from "./build-activities.ts";
+import { createRetainer } from "./retainer.ts";
 import { statusView } from "./progress.ts";
 import type { ExtractOutcome, RunActivities } from "./workflows/logic.ts";
 
@@ -27,6 +28,8 @@ export interface ActivityDeps {
   extractor: ScopeExtractor;
   interpreter: ClarificationInterpreter;
   dtools: DToolsReader;
+  /** The one approved D-Tools write (retainer opportunities); null where it is not configured. */
+  dtoolsWriter?: DToolsWriter | null;
   patterns: PatternSpec[];
   /** HTML → PDF (Chromium in production). */
   renderPdf: (html: string) => Promise<Uint8Array>;
@@ -296,6 +299,13 @@ export function createActivities(deps: ActivityDeps): RunActivities {
         await adapterFor(run).post(threadOf(run), { kind: "text", text }, `${runId}:blocked`);
       }
     },
+
+    createRetainer: ({ runId, tap }) =>
+      createRetainer(
+        { store, dtools: deps.dtools, writer: deps.dtoolsWriter ?? null, notify: (run, text, key) => adapterFor(run).post(threadOf(run), { kind: "text", text }, key).then(() => undefined) },
+        runId,
+        tap,
+      ),
 
     buildStage: createBuildStage({
       store,

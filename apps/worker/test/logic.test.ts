@@ -18,6 +18,7 @@ function fakeActs(overrides: Partial<RunActivities> = {}): RunActivities & { cal
     buildStage: async ({ stage }) => (calls.push(`stage:${stage}`), { ok: true, summary: stage }),
     requestMarginApproval: async ({ exceptionId }) => void calls.push(`margin_request:${exceptionId}`),
     findMarginDecision: async () => null,
+    createRetainer: async ({ runId }) => void calls.push(`retainer:${runId}`),
     ...overrides,
   };
   return Object.assign(acts, { calls });

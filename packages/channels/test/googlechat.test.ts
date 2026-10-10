@@ -363,7 +363,7 @@ describe("question cards", () => {
 });
 
 describe("conversation controls", () => {
-  it("puts Approve, Edit and Start over on an approvable receipt, and Revise / New request under a budget", () => {
+  it("puts Approve, Edit and Start over on an approvable receipt, and Send retainer / Revise / New request under a budget", () => {
     const receipt: View = { kind: "receipt", receiptId: "R-X-1", version: 1, status: "AWAITING_APPROVAL", lines: ["x"], approve: { receiptId: "R-X-1", scopeHash: "sha256:h" } };
     const buttons = (body: any) => body.cardsV2[0].card.sections.flatMap((s: any) => s.widgets).flatMap((w: any) => w.buttonList?.buttons ?? []);
     const params = (b: any) => Object.fromEntries(b.onClick.action.parameters.map((p: any) => [p.key, p.value]));
@@ -371,7 +371,7 @@ describe("conversation controls", () => {
     expect(r.map((b: any) => b.text)).toEqual(["Approve", "Edit", "Start over"]);
     expect(params(r[1])).toEqual({ action: "conversation_control", control: "edit_scope", ref: "R-X-1" });
     const a = buttons(renderGoogleChat({ kind: "budget_actions", runId: "run_1", text: "Need changes?" }));
-    expect(a.map((b: any) => [b.text, params(b).control])).toEqual([["Revise this budget", "revise_budget"], ["New request", "new_request"]]);
+    expect(a.map((b: any) => [b.text, params(b).control])).toEqual([["Send design retainer", "send_retainer"], ["Revise this budget", "revise_budget"], ["New request", "new_request"]]);
   });
 
   it("parses a control click and ignores unknown controls", () => {

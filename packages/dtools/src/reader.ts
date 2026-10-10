@@ -1,8 +1,9 @@
 import { sha256Hex } from "@sd/core";
 
 /**
- * Read-only D-Tools Cloud access (PRD §11.1). This package contains no write
- * code: the transport can only issue GET requests.
+ * Read-only D-Tools Cloud access (PRD §11.1): this transport can only issue GET
+ * requests. The one approved write, creating a design-retainer opportunity,
+ * lives apart in writer.ts.
  */
 export interface DToolsRead {
   endpoint: string;
@@ -18,6 +19,10 @@ export interface DToolsReader {
   getProduct(id: string): Promise<DToolsRead>;
   /** One page (1-based) of the product catalog, for finding products a request names by model. */
   listProducts?(page: number, pageSize?: number): Promise<DToolsRead>;
+  /** Opportunities whose name or number matches `search` (for finding a retainer already created). */
+  findOpportunities?(search: string): Promise<DToolsRead>;
+  getOpportunity?(id: string): Promise<DToolsRead>;
+  getQuote?(id: string): Promise<DToolsRead>;
 }
 
 export class DToolsReadError extends Error {
@@ -70,6 +75,9 @@ export function httpDToolsReader(cfg: DToolsHttpConfig): DToolsReader {
   return {
     getProduct: (id) => get("Products/GetProduct", { id }),
     listProducts: (page, pageSize = 500) => get("Products/GetProducts", { page: String(page), pageSize: String(pageSize) }),
+    findOpportunities: (search) => get("Opportunities/GetOpportunities", { search, includeArchived: "true", pageSize: "50" }),
+    getOpportunity: (id) => get("Opportunities/GetOpportunity", { id }),
+    getQuote: (id) => get("Quotes/GetQuote", { id }),
   };
 }
 

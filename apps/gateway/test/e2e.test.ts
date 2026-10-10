@@ -4,7 +4,7 @@ import type { ClarificationInterpreter, ScopeExtractor } from "@sd/llm";
 import { createActivities, InlineWorkflows } from "@sd/worker";
 import { completeExtraction, noPatch } from "../../../packages/core/test/fixtures.ts";
 import { TEST_POLICY, testStore } from "../../../packages/store/test/helpers.ts";
-import { recordedDToolsReader } from "@sd/dtools";
+import { recordedDToolsReader, recordingDToolsWriter, type DToolsWriter } from "@sd/dtools";
 import type { PatternSpec } from "@sd/build";
 import { CATALOG, testPattern } from "../../../packages/build/test/fixtures.ts";
 import { htmlToPdf, preflightPdf } from "@sd/render";
@@ -79,6 +79,7 @@ interface BuildOptions {
   dtools?: DToolsReader & { calls: string[] };
   patterns?: PatternSpec[];
   policy?: boolean | Record<string, unknown>;
+  writer?: DToolsWriter;
 }
 
 async function setup(extractions: unknown[] = [], patches: unknown[] = [], build: BuildOptions = {}) {
@@ -100,6 +101,7 @@ async function setup(extractions: unknown[] = [], patches: unknown[] = [], build
     extractor,
     interpreter,
     dtools,
+    dtoolsWriter: build.writer ?? null,
     patterns: build.patterns ?? [testPattern()],
     renderPdf: (html) => htmlToPdf(html),
     // Only the panel has a reachable image; everything else must show IMAGE PENDING.
@@ -602,6 +604,41 @@ describe("editing a scope and revising a finished budget", () => {
     expect((await t.send(controlClick("start_over", receipt!.receiptId))).body).toEqual({ text: "Cleared. Send the request again whenever you're ready." });
     const [run] = await t.store.listRunsForPerson("zack");
     expect(run!.state).toBe("STALE");
+  });
+
+  it("sends the design retainer: one D-Tools opportunity from the tier's template, read back and posted", async () => {
+    const writer = recordingDToolsWriter();
+    const json = (endpoint: string, query: Record<string, string>, value: unknown) => {
+      const body = new TextEncoder().encode(JSON.stringify(value));
+      return { endpoint, query, status: 200, body, sha256: "x", fetchedAt: "2026-10-10T12:00:00.000Z" };
+    };
+    const base = recordedDToolsReader(CATALOG);
+    const dtools = Object.assign(base, {
+      findOpportunities: async (search: string) => json("Opportunities/GetOpportunities", { search }, { opportunities: writer.created.filter((o) => o.name.includes(search)) }),
+      getOpportunity: async (id: string) => json("Opportunities/GetOpportunity", { id }, { id, number: "P-9001", name: writer.created.find((o) => o.id === id)!.name, quoteIds: ["q-1"] }),
+      getQuote: async (id: string) => json("Quotes/GetQuote", { id }, { id, price: 100 }),
+    });
+    const t = await setup([completeExtraction()], [], { writer, dtools });
+    await t.send(chatMessage("Smith security upgrade"));
+    const [first] = t.receipts();
+    await t.send(click(first!.receiptId, first!.approve!.scopeHash));
+    const [run] = await t.store.listRunsForPerson("zack");
+    expect(run!.state).toBe("READY_HELD");
+
+    expect((await t.send(controlClick("send_retainer", run!.id, "users/henry"))).body).toEqual({ text: "Only the person who made this request can send its retainer." });
+    expect((await t.send(controlClick("send_retainer", run!.id))).body).toMatchObject({ text: expect.stringContaining("Setting up the design retainer") });
+    expect(writer.created).toEqual([
+      expect.objectContaining({ quoteTemplate: "Design Retainer $100", clientName: expect.any(String), name: expect.stringContaining(`SD-${run!.id.slice(4, 12)}`) }),
+    ]);
+    expect(t.texts().at(-1)).toMatch(/Design retainer \(\$100\.00\) is ready as D-Tools opportunity P-9001/);
+    expect(t.texts().at(-1)).not.toContain("⚠️");
+
+    // A second tap re-posts the same opportunity instead of creating another.
+    const posted = t.texts().length;
+    await t.send(controlClick("send_retainer", run!.id));
+    expect(writer.created).toHaveLength(1);
+    expect(t.texts()).toHaveLength(posted + 1);
+    expect(t.texts().at(-1)).toContain("P-9001");
   });
 
   it("revises a finished budget from its approved scope: Revision 2 receipt, -rev2 PDF, old budget superseded", async () => {

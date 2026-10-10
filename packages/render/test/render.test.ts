@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest";
 import { PDFDocument } from "pdf-lib";
-import { customerView, formatUsd, type CustomerProposal } from "@sd/build";
+import { customerView, formatUsd, retainerTier, type CustomerProposal } from "@sd/build";
 import { sha256Hex } from "@sd/core";
 import { recordedDToolsReader } from "@sd/dtools";
 import { admitProduct, bind, compile, materialize, patternRecordIds, type AdmittedProduct } from "@sd/build";
@@ -55,11 +55,11 @@ describe("PDF + preflight", () => {
     expect(r.pages).toBeGreaterThanOrEqual(1);
   }, 60_000);
 
-  it("looks like a D-Tools proposal: presenter, priced lines, summary and a 4% design retainer", async () => {
+  it("looks like a D-Tools proposal: presenter, priced lines, summary and a tiered design retainer", async () => {
     const c = await customer();
     // 4% of the total, or of the priced scope while the total is incomplete (tax TBD here).
     expect(c.commercial.total_cents).toBeNull();
-    expect(c.commercial.retainer).toEqual({ pct: 4, cents: Math.round(c.commercial.subtotal_cents * 0.04) });
+    expect(c.commercial.retainer).toEqual({ cents: retainerTier(c.commercial.subtotal_cents) });
     const html = renderProposalHtml(c, await loadBrand(), {}, { ...meta, presenter: { name: "Henry Clifford", email: "henry@getlivewire.com" } });
     const pdf = await htmlToPdf(html);
     const pdfjs = await import("pdfjs-dist/legacy/build/pdf.mjs");
@@ -70,7 +70,7 @@ describe("PDF + preflight", () => {
     for (const s of ["Henry Clifford", "henry@getlivewire.com", "Project Number", "Why Livewire?", "System Proposal", "Your Custom Quote:", "ITEM QTY", "Installation Labor", "90 Day Warranty", "Summary", "Product + Labor", "Shipping & Handling/Parts", "Looking for Financing or ACH Options?", "Terms & Conditions"]) {
       expect(text, s).toContain(s);
     }
-    expect(text).toContain(`Design Retainer (4%) ${formatUsd(c.commercial.retainer.cents)}`);
+    expect(text).toContain(`Design Retainer ${formatUsd(c.commercial.retainer.cents)}`);
     expect(text).toMatch(/10\/05\/2026 Smith Family Security Modernization Budget Page 1 of \d/);
     // Like Livewire's current proposals: quantities per line, prices only as area totals.
     expect(text).not.toMatch(/UNIT PRICE/);
