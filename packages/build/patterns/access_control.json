@@ -10,6 +10,7 @@
     {
       "role": "access_controller",
       "label": "Alarm.com access control panel",
+      "model": "ADC-AC-LP1502-PSE",
       "critical": true,
       "systems": [
         "access_control"
@@ -28,6 +29,7 @@
     {
       "role": "door_reader",
       "label": "HID keypad card reader",
+      "model": "20KTKS-00-000000",
       "critical": true,
       "systems": [
         "access_control"
@@ -50,6 +52,7 @@
     {
       "role": "door_strike",
       "label": "HES electric strike",
+      "model": "8000C-12/24D-630",
       "count_terms": ["strike"],
       "critical": true,
       "systems": [
@@ -70,6 +73,7 @@
     {
       "role": "door_position",
       "label": "Door position contact",
+      "model": "947-75WH",
       "critical": true,
       "systems": [
         "access_control"

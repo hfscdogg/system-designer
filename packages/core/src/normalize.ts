@@ -76,6 +76,11 @@ function systemHits(item: string): string[] {
   return matchAll(FUNCTIONAL_SYSTEMS, CAMERA_ITEM.test(t) ? t.replace(CAMERA_FEATURES, " ") : t);
 }
 
+/** The canonical systems a piece of text talks about ("Is the Halo remote compatible with Control4?" → home_automation). */
+export function systemsMentioned(text: string): string[] {
+  return systemHits(text);
+}
+
 export function normalizeFunctionalSystems(items: string[]): string[] {
   const mapped = items.map((item) => {
     const hits = systemHits(item);

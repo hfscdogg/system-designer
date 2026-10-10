@@ -10,6 +10,7 @@
     {
       "role": "lighting_processor",
       "label": "Lutron RadioRA 3 processor",
+      "model": "RR-PROC3-KIT",
       "critical": true,
       "systems": [
         "lighting_control"
@@ -54,6 +55,7 @@
     {
       "role": "scene_keypad",
       "label": "Lutron Sunnata 4-button keypad",
+      "model": "RRST-W4B-WH",
       "critical": false,
       "systems": [
         "lighting_control"

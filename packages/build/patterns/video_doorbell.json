@@ -10,6 +10,7 @@
     {
       "role": "doorbell_camera",
       "label": "Alarm.com video doorbell",
+      "model": "ADC-VDB775",
       "critical": true,
       "systems": [
         "video_doorbell"

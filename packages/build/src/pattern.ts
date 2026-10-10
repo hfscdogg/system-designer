@@ -20,6 +20,8 @@ export const RoleSpecSchema = z
     existing_detectors: z.array(z.enum(EXISTING_DETECTORS)).min(1).optional(),
     /** Terms that identify this role in the retained-equipment list. */
     retained_match: z.array(z.string()).optional(),
+    /** The D-Tools model of the role's product, so a rep can name it as printed on the budget ("1 WSSATM1-B2"). */
+    model: z.string().min(1).optional(),
     /** Extra terms that identify this role in a stated count ("3 doors" → door/window contacts). */
     count_terms: z.array(z.string()).optional(),
     /**

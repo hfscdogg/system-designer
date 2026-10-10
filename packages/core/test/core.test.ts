@@ -12,6 +12,7 @@ import {
   normalizeExtraction,
   describeScopeChanges,
   isAddOnRequest,
+  systemsMentioned,
   normalizeFunctionalSystems,
   normalizeServiceCategories,
   parseApprovalText,
@@ -98,6 +99,13 @@ describe("revision changes", () => {
     const after = normalizeExtraction(completeExtraction({ client: "Monica Greene", requested_quantities: [{ item: "eero", quantity: 4 }], excluded_scope: ["Painting"] })).scope;
     expect(describeScopeChanges(before, after)).toEqual(["Client: Smith Family → Monica Greene", "eero: 3 → 4", "Excluded added: Painting"]);
     expect(describeScopeChanges(before, structuredClone(before))).toEqual([]);
+  });
+});
+
+describe("systems a sentence mentions", () => {
+  it("finds the systems an open question is about", () => {
+    expect(systemsMentioned("Which existing remotes are being consolidated into the Halo remote and are they compatible with Control4?")).toEqual(["home_automation"]);
+    expect(systemsMentioned("Is the existing soundbar compatible with the fitness room setup?")).toEqual(["audio_video"]);
   });
 });
 

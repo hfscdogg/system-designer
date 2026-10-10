@@ -10,6 +10,7 @@
     {
       "role": "security_panel",
       "label": "Security panel",
+      "model": "IQP5017",
       "critical": true,
       "systems": [
         "intrusion_security",
@@ -52,6 +53,7 @@
     {
       "role": "door_window_contact",
       "label": "Door/window contact",
+      "model": "PG9303",
       "count_terms": ["door", "window", "contact"],
       "critical": true,
       "systems": [
@@ -74,6 +76,7 @@
     {
       "role": "motion_detector",
       "label": "Motion detector",
+      "model": "PG9914",
       "count_terms": ["motion"],
       "critical": false,
       "systems": [
@@ -100,6 +103,7 @@
     {
       "role": "glass_break",
       "label": "Glass-break sensor",
+      "model": "PG9922",
       "count_terms": ["glass"],
       "critical": false,
       "systems": [
@@ -125,6 +129,7 @@
     {
       "role": "smoke_heat_detector",
       "label": "Smoke/heat detector",
+      "model": "PG9936",
       "critical": true,
       "systems": [
         "fire_detection"
@@ -147,6 +152,7 @@
     {
       "role": "co_detector",
       "label": "Carbon monoxide detector",
+      "model": "PG9933",
       "critical": true,
       "systems": [
         "co_detection"
@@ -169,6 +175,7 @@
     {
       "role": "panel_345_radio",
       "label": "345 MHz radio card",
+      "model": "QC0005-840",
       "critical": true,
       "systems": [
         "fire_detection",
@@ -190,6 +197,7 @@
     {
       "role": "detector_listener",
       "label": "Smoke/CO detector listener",
+      "model": "2GIG-FF-345",
       "critical": true,
       "systems": [
         "fire_detection",
@@ -212,6 +220,7 @@
     {
       "role": "thermostat",
       "label": "Smart thermostat",
+      "model": "ADC-T2000-RC",
       "critical": false,
       "systems": [
         "climate_control"

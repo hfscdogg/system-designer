@@ -47,17 +47,33 @@ function hasWord(text: string, term: string): boolean {
   return new RegExp(`\\b${escape(term)}(s|es)?\\b`).test(text);
 }
 
+/** Every word of a multi-word term appears in the text, in any order: "mount for the soundbar" names a "soundbar mount". */
+function hasAllWords(text: string, term: string): boolean {
+  return term.split(/\s+/).every((w) => hasWord(text, w));
+}
+
 /** Terms that identify a role in the request: its label, retained-equipment terms and mention terms. */
 function roleTerms(role: RoleSpec): string[] {
   return [role.label, ...(role.retained_match ?? []), ...(role.mentions ?? [])].map(fold);
 }
 
 /** How specifically `text` names `role`: a full label beats the longest matching term; 0 when it doesn't. */
+const compact = (s: string) => s.toLowerCase().replace(/[^a-z0-9]/g, "");
+
+/** The request names this role's model anywhere in its changes or stated counts. */
+function modelNamed(scope: ScopeDraftV1, role: RoleSpec): boolean {
+  if (!role.model) return false;
+  const m = compact(role.model);
+  return [...scope.requested_changes, ...scope.requested_quantities.map((q) => q.item)].some((x) => compact(x).includes(m));
+}
+
 function matchScore(text: string, role: RoleSpec): number {
   const t = fold(text);
+  // The model number printed on the budget is the most specific way to name a device.
+  if (role.model && compact(text).includes(compact(role.model))) return 2000 + role.model.length;
   if (t.includes(fold(role.label))) return 1000 + role.label.length;
   const terms = roleTerms(role).filter((term) => t.includes(term));
-  const words = (role.count_terms ?? []).map(fold).filter((term) => hasWord(t, term));
+  const words = (role.count_terms ?? []).map(fold).filter((term) => hasAllWords(t, term));
   return Math.max(0, ...[...terms, ...words].map((term) => term.length));
 }
 
@@ -78,7 +94,8 @@ function statedQuantity(scope: ScopeDraftV1, role: RoleSpec, roles: RoleSpec[]):
 /** Whether the request itself names this role (its changes or a stated count), for add-on pricing. */
 function named(scope: ScopeDraftV1, role: RoleSpec, roles: RoleSpec[]): boolean {
   const changes = fold(scope.requested_changes.join(" | "));
-  return roleTerms(role).some((t) => changes.includes(t)) || (role.count_terms ?? []).some((t) => hasWord(changes, fold(t))) || statedQuantity(scope, role, roles) !== null;
+  const byModel = !!role.model && compact(changes).includes(compact(role.model));
+  return byModel || roleTerms(role).some((t) => changes.includes(t)) || (role.count_terms ?? []).some((t) => hasWord(changes, fold(t))) || statedQuantity(scope, role, roles) !== null;
 }
 
 /**
@@ -115,8 +132,12 @@ function movedCount(scope: ScopeDraftV1, terms: string[]): number {
 
 /** Moved items that need a mount in the new room: not ones the request says already have their own mount. */
 function movedNeedingMount(scope: ScopeDraftV1, terms: string[]): number {
-  const ownMount = /\b(its own|own|existing|current|keeps? (its|the)) (wall |tv )?mounts?\b/;
-  return moveChanges(scope).filter((c) => !ownMount.test(c) && terms.some((t) => c.includes(fold(t)))).length;
+  const names = (c: string) => terms.some((t) => c.includes(fold(t)));
+  // "The existing TV has its own wall mount", in any change or clause, means no new mount for it.
+  const ownMount = /\b(its own|own|existing|current|keeps? (its|the)) (wall |tv |soundbar )?mounts?\b/;
+  const clauses = changes(scope).flatMap((c) => c.split(/[;.]|\bbut\b/));
+  if (clauses.some((c) => ownMount.test(c) && names(c))) return 0;
+  return moveChanges(scope).filter(names).length;
 }
 
 const FILLER = new Set(["the", "a", "an", "any", "all", "existing", "new", "livewire", "of", "and"]);
@@ -129,6 +150,7 @@ const FILLER = new Set(["the", "a", "an", "any", "all", "existing", "new", "live
 function excluded(scope: ScopeDraftV1, role: RoleSpec): boolean {
   const terms = [...roleTerms(role), ...(role.count_terms ?? []).map(fold)];
   return scope.excluded_scope.some((raw) => {
+    if (role.model && compact(raw) === compact(role.model)) return true;
     const item = fold(raw);
     const hit = terms.filter((t) => hasWord(item, t));
     if (!hit.length) return false;
@@ -164,7 +186,7 @@ export function materialize(scope: ScopeDraftV1, pattern: PatternSpec): Selectio
     // In an add-on, a role is priced when the request names it or names its own system (smoke detection alongside sensors).
     const ownSystemRequested = role.systems.some((s) => scope.functional_systems.includes(s) && !pattern.applies_when_any.includes(s));
     if (addOn && !named(scope, role, pattern.roles) && !ownSystemRequested) continue;
-    if (role.mentions && !mentioned(scope, role.mentions)) continue;
+    if (role.mentions && !mentioned(scope, role.mentions) && !modelNamed(scope, role)) continue;
     if (role.existing_detectors && !(role.existing_detectors as string[]).includes(scope.existing_detectors)) continue;
     if (excluded(scope, role)) {
       removedRoles.add(role.role);

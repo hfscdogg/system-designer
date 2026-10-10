@@ -21,6 +21,13 @@ export interface RenderOptions {
  * fallbackText (used for notifications and clients without cards): sending it
  * as text as well would show every card twice.
  */
+/** The receipt lines a rep checks before approving: who, where, what, and what a revision changed. */
+const SUMMARY = /^(Client|Property|Systems|Budget type|Stated quantities|Discount|Note: Revision|Note: Changed):/;
+
+export function receiptSummary(lines: string[]): string[] {
+  return lines.filter((l) => SUMMARY.test(l) || l.startsWith("Note: Revision ")).map((l) => l.replace(/^Note: /, ""));
+}
+
 function controlButton(text: string, control: string, ref: string, opts: RenderOptions) {
   return {
     text,
@@ -174,7 +181,12 @@ export function renderGoogleChat(view: View, opts: RenderOptions = {}): Record<s
     }
     case "receipt": {
       // Lines are rendered verbatim and in order; the plain-text fallback carries the same lines.
-      const sections: unknown[] = [{ widgets: [{ textParagraph: { text: view.lines.map(escape).join("<br>") } }] }];
+      const full = { textParagraph: { text: view.lines.map(escape).join("<br>") } };
+      // An approvable receipt leads with what matters and its buttons, so they are on screen
+      // without scrolling on a phone; the full receipt, verbatim, is one tap away.
+      const sections: unknown[] = view.approve
+        ? [{ widgets: [{ textParagraph: { text: receiptSummary(view.lines).map(escape).join("<br>") } }] }]
+        : [{ widgets: [full] }];
       if (view.approve) {
         sections.push({
           widgets: [
@@ -202,6 +214,7 @@ export function renderGoogleChat(view: View, opts: RenderOptions = {}): Record<s
           ],
         });
       }
+      if (view.approve) sections.push({ header: "Full receipt", collapsible: true, uncollapsibleWidgetsCount: 0, widgets: [full] });
       return {
         fallbackText: view.lines.join("\n"),
         cardsV2: [

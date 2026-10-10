@@ -77,6 +77,17 @@ describe("renderGoogleChat", () => {
     expect(json).toContain('"value":"sha256:abc"');
   });
 
+  it("leads an approvable receipt with a summary and its buttons, and keeps every line in a collapsed full receipt", () => {
+    const lines = ["Scope receipt R-X-1 (version 1)", "Status: AWAITING_APPROVAL", "Client: Monica Green", "Systems: audio_video", "Budget type: complete system (assumed)", "Note: Changed: tv mount: 2 → 1", "Scope hash: sha256:abc", "To approve: Approve scope R-X-1"];
+    const body = renderGoogleChat({ ...receipt, lines } as View) as any;
+    const sections = body.cardsV2[0].card.sections;
+    expect(sections[0].widgets[0].textParagraph.text.split("<br>")).toEqual(["Client: Monica Green", "Systems: audio_video", "Budget type: complete system (assumed)", "Changed: tv mount: 2 → 1"]);
+    expect(sections[1].widgets[0].buttonList.buttons.map((b: any) => b.text)).toEqual(["Approve", "Edit", "Start over"]);
+    expect(sections[2]).toMatchObject({ header: "Full receipt", collapsible: true, uncollapsibleWidgetsCount: 0 });
+    expect(sections[2].widgets[0].textParagraph.text.split("<br>")).toEqual(lines);
+    expect(body.fallbackText).toBe(lines.join("\n"));
+  });
+
   it("omits the approve button when the receipt is blocked", () => {
     const body = renderGoogleChat({ ...receipt, status: "NEEDS_CLARIFICATION", approve: null });
     expect(JSON.stringify(body)).not.toContain("approve_scope");
