@@ -23,6 +23,15 @@ export interface PreflightResult {
 
 const FORBIDDEN = [/\bcosts?\b/i, /\bmargins?\b/i, /\bmarkups?\b/i, /\bcommissions?\b/i, /\bsignature\b/i, /\baccept(ance|ed)?\b/i, /\bsign here\b/i];
 
+/** Text the document prints verbatim from data, longest first, whitespace-collapsed as the PDF text is. */
+function dataStrings(c: CustomerProposal): string[] {
+  const items = c.sections.flatMap((sec) => sec.items.flatMap((i) => [i.manufacturer, i.model, i.description, i.quantity_note ?? ""]));
+  return [c.client, c.property, c.project_type, c.title, ...items, ...c.labor_lines.map((l) => l.description), ...c.exclusions, ...c.remaining_verification, ...c.allowances.map((a) => a.note)]
+    .map((x) => x.replace(/\s+/g, " ").trim())
+    .filter((x) => x.length > 0)
+    .sort((a, b) => b.length - a.length);
+}
+
 const count = (haystack: string, needle: string) => haystack.split(needle).length - 1;
 
 export async function preflightPdf(bytes: Uint8Array, expected: PreflightExpectation): Promise<PreflightResult> {
@@ -62,7 +71,13 @@ export async function preflightPdf(bytes: Uint8Array, expected: PreflightExpecta
   }
 
   const all = pageTexts.join(" ");
-  for (const re of FORBIDDEN) if (re.test(all)) failures.push(`PDF contains forbidden wording (${re.source})`);
+  // The wording rules are for Livewire's own document text (no acceptance block, no internal terms). Words inside
+  // data printed verbatim (product descriptions, the requester's scope and open items) are not: "accepts 4 inputs".
+  const ownText = dataStrings(expected.customer).reduce((text, d) => text.split(d).join(" "), all);
+  for (const re of FORBIDDEN) {
+    const hit = re.exec(ownText);
+    if (hit) failures.push(`PDF contains forbidden wording "${hit[0]}" (${re.source}) near "${ownText.slice(Math.max(0, hit.index - 40), hit.index + 40).trim()}"`);
+  }
 
   // Totals reconcile with the validated customer view.
   const c = expected.customer.commercial;

@@ -98,6 +98,20 @@ function named(scope: ScopeDraftV1, role: RoleSpec, roles: RoleSpec[]): boolean 
   return byModel || roleTerms(role).some((t) => changes.includes(t)) || (role.count_terms ?? []).some((t) => hasWord(changes, fold(t))) || statedQuantity(scope, role, roles) !== null;
 }
 
+/**
+ * Whether the request names this role itself (its label, count terms or mention
+ * terms, or a stated count), not just its kind of equipment: "floodlight
+ * cameras" names the floodlight camera, not the turret.
+ */
+function namedSpecifically(scope: ScopeDraftV1, role: RoleSpec, roles: RoleSpec[]): boolean {
+  const changes = fold(scope.requested_changes.join(" | "));
+  return (
+    [role.label, ...(role.mentions ?? [])].some((t) => changes.includes(fold(t))) ||
+    (role.count_terms ?? []).some((t) => hasWord(changes, fold(t))) ||
+    statedQuantity(scope, role, roles) !== null
+  );
+}
+
 const MOVE = /^(move|moving|relocate|relocating|reinstall|remount)\b/;
 const NEW_DEVICE = /\b(new|sell|selling|provide[sd]?|supply|supplied|purchase|buy|livewire)\b/;
 const SIZE = /\b(\d{2,3})\s*(?:-\s*)?(?:inch(?:es)?|in\b\.?|"|”|″)/g;
@@ -164,8 +178,11 @@ export function materialize(scope: ScopeDraftV1, pattern: PatternSpec): Selectio
   const addOnRequested = isAddOnRequest(scope);
   const addOn = addOnRequested && candidates.some((r) => named(scope, r, pattern.roles));
 
+  // In a group of alternatives (turret vs floodlight cameras), naming any one prices only the ones named.
+  const namedGroups = new Set(candidates.filter((r) => r.alternative_group && namedSpecifically(scope, r, pattern.roles)).map((r) => r.alternative_group!));
   const removedRoles = new Set<string>();
   for (const role of candidates) {
+    if (role.alternative_group && namedGroups.has(role.alternative_group) && !namedSpecifically(scope, role, pattern.roles)) continue;
     // In an add-on, a role is priced when the request names it or names its own system (smoke detection alongside sensors).
     const ownSystemRequested = role.systems.some((s) => scope.functional_systems.includes(s) && !pattern.applies_when_any.includes(s));
     if (addOn && !named(scope, role, pattern.roles) && !ownSystemRequested) continue;
