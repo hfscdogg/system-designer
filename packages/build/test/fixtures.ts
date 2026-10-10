@@ -66,6 +66,8 @@ export function testPattern(overrides: Partial<Record<keyof typeof IDS, string |
     smoke_heat_detector: "smoke", co_detector: "co", panel_345_radio: "radio", detector_listener: "listener",
     thermostat: "thermostat", video_doorbell: "doorbell",
   };
+  // The pipeline tests price the core security roles; optional service roles (battery, siren) stay out of the fixture.
+  base.roles = base.roles.filter((r: { role: string }) => r.role in map);
   for (const r of base.roles) r.product_id = id(map[r.role]!);
   for (const s of base.services) s.product_id = s.category === "installation" ? id("install") : s.category === "programming" ? id("programming") : null;
   if (base.parts) {

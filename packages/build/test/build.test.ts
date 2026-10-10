@@ -407,6 +407,22 @@ describe("patterns", () => {
     expect(core.labor?.hours).toBeGreaterThan(0);
   });
 
+  it("prices a panel battery or a siren as just that, not a new alarm system", async () => {
+    const patterns = await loadPatterns();
+    const sec = patterns.find((p) => p.pattern === "security_modernization")!;
+    const roles = (change: string) =>
+      materialize(approvedScope({ functional_systems: ["intrusion_security"], existing_detectors: "not_provided", existing_equipment: { status: "none", retained: [], removed_or_replaced: [] }, requested_changes: [change] }).scope, sec).lines.map((l) => l.role);
+    expect(roles("Replace the alarm panel battery")).toEqual(["panel_battery"]);
+    expect(roles("Add a siren in the upstairs hall")).toEqual(["siren"]);
+    // A plain security request is unchanged: no battery or siren unless asked.
+    expect(roles("Install a new alarm system")).not.toContain("panel_battery");
+    // A device word that only describes another device is not a request for it: a soundbar mount is a mount.
+    const tv = patterns.find((p) => p.pattern === "tv_media")!;
+    const tvRoles = (change: string) =>
+      materialize(approvedScope({ functional_systems: ["audio_video"], existing_detectors: "not_provided", existing_equipment: { status: "none", retained: [], removed_or_replaced: [] }, requested_changes: [change] }).scope, tv).lines.map((l) => l.role);
+    expect(tvRoles("Add a soundbar mount")).toEqual(["soundbar_mount"]);
+  });
+
   it("prices one memory card per camera", async () => {
     const patterns = await loadPatterns();
     const cams = patterns.find((p) => p.pattern === "surveillance")!;

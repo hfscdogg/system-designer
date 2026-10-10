@@ -76,6 +76,8 @@ const NAMED = process.env.SD_SCORECARD_NAMED !== "0";
 
 /** D-Tools category → the system our patterns price, "accessory" (neutral) or "uncovered:<kind>". First match wins. */
 const BUCKETS: Array<[RegExp, string]> = [
+  // A vendor's lump-sum custom quote (Lutron LU-CUST, Logik7): designed and priced outside Livewire, like work sent to DMI.
+  [/^Custom Quote/, "uncovered:vendor_custom_quote"],
   [/^(Wire and Cable|Interconnect Cables|Uncategorized|Power Distribution|Warranties|Equipment Racks|Parts|Labor)/, "accessory"],
   [/^Mounts > (Accessories|Flush Wall|Projector|Speaker)/, "accessory"],
   [/^Speakers > (Accessories|Speaker Brackets|Back Boxes)/, "accessory"],
@@ -83,8 +85,8 @@ const BUCKETS: Array<[RegExp, string]> = [
   [/^Display Devices > (TVs|Outdoor TVs|Accessories)|^Mounts > TV Mounts|^Speakers > (Soundbars|Subwoofers)|^A\/V Sources|^Amplifiers > Subwoofer/, "audio_video"],
   [/^Speakers > (In-Ceiling|In-Wall|Outdoor|Invisible|Surface|Bookshelf|Landscape)|^Amplifiers|^Distributed Audio/, "whole_home_audio"],
   [/^Networking|^Power Protection/, "networking"],
-  [/^Surveillance/, "video_surveillance"],
   [/doorbell/i, "video_doorbell"],
+  [/^Surveillance/, "video_surveillance"],
   [/^Security Systems/, "intrusion_security"],
   [/Thermostat/, "uncovered:thermostats"],
   [/^Control Systems/, "home_automation"],
@@ -116,8 +118,14 @@ const UNCATEGORIZED: Array<[RegExp, string]> = [
   [/\beero\b/i, "Networking > Wireless Access Points"],
   [/\bYRD\d|\block\b/i, "Access Control > Door Locks"],
 ];
+const CUSTOM_QUOTE = /(^|[\s-])CUST\d*\b|\bcustom (quote|system|package)\b/i;
 const categoryOf = (i: { category: string | null; name: string | null; model: string | null }) =>
-  /^Uncategorized/.test(i.category ?? "") ? (UNCATEGORIZED.find(([re]) => re.test(`${i.name ?? ""} ${i.model ?? ""}`))?.[1] ?? i.category) : i.category;
+  CUSTOM_QUOTE.test(`${i.model ?? ""} ${i.name ?? ""}`)
+    ? "Custom Quote"
+    : // Alarm.com video doorbells are filed as cameras; a rep asks for a doorbell.
+      /\bADC-VDB(?!A-?\d*-?(WMK|MNT))/i.test(`${i.model ?? ""} ${i.name ?? ""}`) && !/Mounts|Brackets/.test(i.category ?? "")
+      ? "Surveillance > Video Doorbells"
+    : /^Uncategorized/.test(i.category ?? "") ? (UNCATEGORIZED.find(([re]) => re.test(`${i.name ?? ""} ${i.model ?? ""}`))?.[1] ?? i.category) : i.category;
 
 const billable = (i: Item) => i.isBillable && !i.isOptional && !i.alternateSetId && !i.isClientSupplied;
 
