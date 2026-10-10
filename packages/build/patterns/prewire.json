@@ -1,7 +1,7 @@
 {
   "schema": "architecture_pattern_v1",
   "pattern": "prewire",
-  "version": "2026-10-08.1",
+  "version": "2026-10-10.1",
   "title": "Prewire and structured wiring",
   "applies_when_any": ["structured_wiring"],
   "roles": [
@@ -17,7 +17,7 @@
     { "category": "installation", "label": "Trim-out", "product_id": null },
     { "category": "testing", "label": "Cable testing and labeling", "product_id": null }
   ],
-  "labor": { "labor_type": "07LABOR1MAN", "base_hours": 1, "hours_per_device": 1, "covers": ["design", "prewire", "installation", "testing", "commissioning", "project_management"], "basis": "Livewire packages since 2025: Cat6 Run 1 hour per drop (30 ft), Cat6 Retro 2 hours (75 ft); enclosure set and home-run termination about 2 hours; coax and speaker drops about 0.75 hours each in new construction" },
+  "labor": { "labor_type": "07LABOR1MAN", "base_hours": 1, "add_on_base_hours": 1, "hours_per_device": 1, "covers": ["design", "prewire", "installation", "testing", "commissioning", "project_management"], "basis": "Livewire packages since 2025: Cat6 Run 1 hour per drop (30 ft), Cat6 Retro 2 hours (75 ft); enclosure set and home-run termination about 2 hours; coax and speaker drops about 0.75 hours each in new construction" },
   "parts": { "product_id": "141236a5-8780-493e-a20d-106b7f71c5b4", "label": "Installation parts and materials" },
   "assumptions": [
     "New construction or open walls: cables are run before drywall.",
