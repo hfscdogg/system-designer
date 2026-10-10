@@ -70,6 +70,8 @@ export const LaborSpecSchema = z
     labor_type: z.string().min(1),
     base_hours: z.number().min(0),
     hours_per_device: z.number().min(0),
+    /** Setup hours on an add-on visit (no system setup, but travel, testing and handover); 0 when absent. */
+    add_on_base_hours: z.number().min(0).optional(),
     /** Service categories this estimate includes; they are not priced separately. */
     covers: z.array(z.string()).min(1),
     /** Where the numbers come from, kept with the pattern for review. */
@@ -124,8 +126,8 @@ export function laborHoursFor(pattern: PatternSpec, lines: Array<{ role: string;
   const spec = pattern.labor!;
   const rate = (role: string) => pattern.roles.find((r) => r.role === role)?.hours_each ?? spec.hours_per_device;
   const extraHours = extras.reduce((h, id) => h + (pattern.labor_extras?.find((x) => x.id === id)?.hours ?? 0), 0);
-  // An add-on visit has no system setup (base hours), only the devices, with an hourly minimum.
-  const raw = lines.reduce((h, l) => h + l.quantity * rate(l.role), (addOn ? 0 : spec.base_hours) + extraHours);
+  // An add-on visit has no system setup (base hours), only its own visit setup and the devices, with an hourly minimum.
+  const raw = lines.reduce((h, l) => h + l.quantity * rate(l.role), (addOn ? (spec.add_on_base_hours ?? 0) : spec.base_hours) + extraHours);
   const hours = addOn ? Math.max(ADD_ON_MIN_HOURS, raw) : raw;
   return Math.ceil(Math.round(hours * 1000) / 1000 * 2) / 2;
 }
@@ -168,6 +170,8 @@ export function combinePatterns(ps: PatternSpec[]): PatternSpec | null {
           labor: {
             ...first,
             base_hours: labors.reduce((sum, l) => sum + l!.base_hours, 0),
+            // One visit: the largest add-on setup, not the sum.
+            add_on_base_hours: Math.max(0, ...labors.map((l) => l!.add_on_base_hours ?? 0)),
             covers: uniq(labors.flatMap((l) => l!.covers)),
             basis: labors.map((l, i) => `${ps[i]!.title}: ${l!.basis}`).join(" | "),
           },

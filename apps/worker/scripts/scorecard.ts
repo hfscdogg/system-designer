@@ -69,6 +69,7 @@ const BUCKETS: Array<[RegExp, string]> = [
   [/^Surveillance/, "video_surveillance"],
   [/doorbell/i, "video_doorbell"],
   [/^Security Systems/, "intrusion_security"],
+  [/Thermostat/, "uncovered:thermostats"],
   [/^Control Systems/, "home_automation"],
   [/^Lighting/, "lighting_control"],
   [/shade|window treatment/i, "motorized_shades"],
@@ -91,14 +92,23 @@ function actual(q: Quote) {
   let equipment = 0;
   let taxable = 0;
   let labor = 0;
+  let hours = 0;
   for (const i of q.items.filter(billable)) {
     if (i.type === "Product") {
       const v = (i.unitPrice ?? 0) * i.quantity;
       equipment += v;
       if (i.isTaxable) taxable += v;
     }
-    if (i.unitLaborPrice) labor += i.unitLaborPrice * i.quantity;
-    else for (const li of i.laborItems ?? []) if (li.isBillable) labor += (li.price ?? 0) * i.quantity;
+    if (i.unitLaborPrice) {
+      labor += i.unitLaborPrice * i.quantity;
+      hours += ((i.unitLaborTime ?? 0) * i.quantity) / 3600;
+    } else {
+      for (const li of i.laborItems ?? []) {
+        if (!li.isBillable) continue;
+        labor += (li.price ?? 0) * i.quantity;
+        hours += ((li.time ?? 0) * i.quantity) / 3600;
+      }
+    }
   }
   let adjustments = 0;
   let adjTaxable = 0;
@@ -110,7 +120,7 @@ function actual(q: Quote) {
   }
   const rate = q.taxes.find((t) => t.id === q.taxSettings?.taxId)?.rate ?? 0;
   const tax = q.isExemptFromTax ? 0 : (taxable + adjTaxable) * rate;
-  return { equipment, labor, rebuilt: equipment + labor + adjustments + tax, price: q.price };
+  return { equipment, labor, hours, rebuilt: equipment + labor + adjustments + tax, price: q.price };
 }
 
 const quotes: Quote[] = JSON.parse(readFileSync(join(DATA, "quotes.json"), "utf8"))
@@ -129,7 +139,8 @@ for (const p of patterns) {
     if (a.ok) catalog.set(id, a.product);
   }
 }
-const priced = new Set(patterns.flatMap((p) => [...p.applies_when_any, ...p.roles.flatMap((r) => r.systems)]));
+// Systems a pattern can price on their own (a thermostat role inside the security pattern doesn't make thermostat jobs coverable).
+const priced = new Set(patterns.flatMap((p) => p.applies_when_any));
 
 function price(systems: string[], items: Item[]) {
   // The device counts a rep would type: each quoted device, by its category and name.
@@ -163,12 +174,21 @@ function price(systems: string[], items: Item[]) {
   } as unknown as ScopeDraftV1;
   const pattern = selectPattern(systems, patterns);
   if (!pattern) return { error: `no pattern for ${systems.join(", ")}` };
-  const compiled = compile(materialize(scope, pattern), catalog, pattern);
+  const selection = materialize(scope, pattern);
+  const compiled = compile(selection, catalog, pattern);
   if (!compiled.ok) return { error: compiled.errors.join("; ").slice(0, 200) };
   const p = bind(compiled.draft, { runId: "sc", receiptId: "sc", approvalId: "sc", scopeHash: hashCanonical(scope), scope, policy, releaseId: "scorecard" });
   const c = p.commercial;
   const tax = c.tax.status === "calculated" ? c.tax.cents : 0;
-  return { pattern: pattern.pattern, total: (c.total_cents ?? c.subtotal_cents + tax) / 100, equipment: c.equipment_cents / 100, labor: (c.labor_cents + c.parts_cents) / 100 };
+  return {
+    pattern: pattern.pattern,
+    total: (c.total_cents ?? c.subtotal_cents + tax) / 100,
+    equipment: c.equipment_cents / 100,
+    labor: (c.labor_cents + c.parts_cents) / 100,
+    hours: selection.labor?.hours ?? 0,
+    add_on: selection.add_on,
+    lines: selection.lines.map((l) => ({ role: l.role, quantity: l.quantity })),
+  };
 }
 
 const rows = [];
@@ -193,6 +213,7 @@ for (const q of quotes) {
     uncovered_kinds: uncoveredKinds,
     uncovered_share: countedTotal > 0 ? Math.round((uncovered / countedTotal) * 100) : null,
     ours,
+    actual_hours: Math.round(a.hours * 100) / 100,
     error_pct: ours && "total" in ours ? Math.round((ours.total / a.price - 1) * 100) : null,
     equipment_error_pct: ours && "total" in ours && a.equipment > 0 ? Math.round((ours.equipment / a.equipment - 1) * 100) : null,
     labor_error_pct: ours && "total" in ours && a.labor > 0 ? Math.round((ours.labor / a.labor - 1) * 100) : null,
