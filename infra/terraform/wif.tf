@@ -44,6 +44,13 @@ resource "google_project_iam_member" "deployer_run" {
   member  = "serviceAccount:${google_service_account.deployer.email}"
 }
 
+# Read-only: the deploy prints the smoke-test job's per-job results into the CI log.
+resource "google_project_iam_member" "deployer_logs" {
+  project = var.project_id
+  role    = "roles/logging.viewer"
+  member  = "serviceAccount:${google_service_account.deployer.email}"
+}
+
 # The deployer may run services and jobs as the runtime accounts, and nothing more.
 resource "google_service_account_iam_member" "deployer_act_as" {
   for_each           = local.runtime_accounts
