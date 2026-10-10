@@ -4,6 +4,7 @@ export * from "./catalog.ts";
 export * from "./pattern.ts";
 export * from "./materialize.ts";
 export * from "./named.ts";
+export * from "./range.ts";
 export * from "./compile.ts";
 export * from "./bind.ts";
 export * from "./customer.ts";

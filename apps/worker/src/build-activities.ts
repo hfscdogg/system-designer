@@ -277,6 +277,7 @@ export function createBuildStage(deps: BuildDeps) {
       const summary = [
         `Proposal validated for ${proposal.client}.`,
         `${c.label}: ${formatUsd(c.subtotal_cents)}${c.total_cents !== null ? ` (total ${formatUsd(c.total_cents)})` : ""}; tax ${c.tax.status === "calculated" ? formatUsd(c.tax.cents) : "TBD"}.`,
+        c.likely_range ? `Likely range: ${formatUsd(c.likely_range.low_cents)} – ${formatUsd(c.likely_range.high_cents)} (middle half of ${c.likely_range.jobs} similar Livewire jobs).` : null,
         proposal.allowances.length ? `Allowances (TBD): ${proposal.allowances.map((x) => x.label).join(", ")}.` : null,
         proposal.remaining_verification.length ? `To verify: ${proposal.remaining_verification.join("; ")}.` : null,
       ].filter(Boolean);

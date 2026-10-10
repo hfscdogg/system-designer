@@ -282,3 +282,20 @@ for (const [k, rs] of group(unc, (r) => (r.uncovered_kinds.length ? r.uncovered_
   console.log(`  ${k.padEnd(48)} n ${String(rs.length).padStart(4)}  ${pct(money(rs), money(design)).padStart(4)} of revenue`);
 }
 console.log("\npricing errors:", [...new Set(cov.map((r) => r.ours && "error" in r.ours ? r.ours.error.slice(0, 90) : null).filter(Boolean))].slice(0, 8));
+
+// ---- likely-range bands (packages/build/src/budget-range.json) ----
+// Where the middle half of accepted jobs landed relative to our price for the same device list, per pattern with enough history.
+const RANGE_OUT = process.env.SD_SCORECARD_RANGE_OUT;
+if (RANGE_OUT) {
+  const quantile = (xs: number[], p: number) => [...xs].sort((x, y) => x - y)[Math.min(xs.length - 1, Math.floor(xs.length * p))]!;
+  const pricedRows = cov.filter((r) => r.ours && "total" in r.ours && r.ours.total > 0);
+  const band = (rs: typeof pricedRows) => {
+    const ratios = rs.map((r) => r.price / (r.ours as { total: number }).total);
+    return { low: Math.round(quantile(ratios, 0.25) * 100) / 100, high: Math.round(quantile(ratios, 0.75) * 100) / 100, n: rs.length };
+  };
+  const bands: Record<string, ReturnType<typeof band>> = { "*": band(pricedRows) };
+  for (const [k, rs] of group(pricedRows, (r) => (r.ours as { pattern: string }).pattern)) if (rs.length >= 15) bands[k] = band(rs);
+  const basis = `middle half (25th-75th percentile) of ${pricedRows.length} accepted D-Tools quotes, priced from their own device lists (${MODE})`;
+  writeFileSync(RANGE_OUT, JSON.stringify({ schema: "budget_range_v1", basis, bands }, null, 2) + "\n");
+  console.log(`\nwrote ${Object.keys(bands).length} range bands to ${RANGE_OUT}`);
+}
