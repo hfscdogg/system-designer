@@ -258,6 +258,22 @@ describe("patterns", () => {
     expect(keptRoles.get("tv_mount")).toBe(1);
   });
 
+  it("takes a count for a device named by the model number printed on the budget", async () => {
+    const patterns = await loadPatterns();
+    const tv = patterns.find((p) => p.pattern === "tv_media")!;
+    const scope = approvedScope({
+      functional_systems: ["TV", "soundbar"],
+      requested_changes: ["Sell a new 75-inch OLED TV with a Sonos Arc Ultra soundbar", "Move the existing TV and soundbar to the fitness room"],
+      requested_quantities: [{ item: "WSSATM1-B2", quantity: 1 }],
+      existing_equipment: { status: "described", retained: ["TV", "soundbar"], removed_or_replaced: [] },
+      existing_detectors: "not_provided",
+    }).scope;
+    const roles = new Map(materialize(scope, tv).lines.map((l) => [l.role, l.quantity]));
+    // The stated count replaces the extra mount for the moved soundbar; the TV mount still gets one.
+    expect(roles.get("soundbar_mount")).toBe(1);
+    expect(roles.get("tv_mount")).toBe(2);
+  });
+
   it("still asks to field-test existing equipment that is only kept", async () => {
     const patterns = await loadPatterns();
     const tv = patterns.find((p) => p.pattern === "tv_media")!;

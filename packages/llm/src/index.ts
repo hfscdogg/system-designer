@@ -50,7 +50,7 @@ Return only the fields the answer supplies or changes, as "updates". Each update
 Rules:
 - For list fields, value_json is the complete updated list (existing items plus or minus the changes).
 - To remove a device ("remove the Halo remote", "no in-ceiling speakers"), add it to excluded_scope by name, and remove only the phrases about that device from requested_changes and requested_quantities. Keep every other request as it is: removing the Halo remote does not remove "Apple TV remote controlling everything". If nothing is left for a system (for example no Control4 at all), remove that system from functional_systems.
-- A count the answer states ("only 1 TV mount") goes in requested_quantities with the device's name.
+- A count the answer states ("only 1 TV mount") goes in requested_quantities with the device's name. A device named by its model number ("only need 1 WSSATM1-B2") keeps the model number as the item name.
 - For property, give {"line1","city","region","postal_code"} with only the components the answer states; use null for the others.
 - "unknown", "TBD", "not sure" are valid explicit answers: budget {"status":"unknown","amount_usd":null}, target_installation_date "unknown", existing_equipment status "unknown". If the size is said to be unknown set size_is_unknown true.
 - market: "residential" or "commercial" when the answer says which.

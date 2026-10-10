@@ -5,6 +5,7 @@ import {
   buildReceipt,
   computeBlockers,
   describeScopeChanges,
+  systemsMentioned,
   hashCanonical,
   normalizeExtraction,
   validateClarificationPatch,
@@ -82,6 +83,11 @@ export function createActivities(deps: ActivityDeps): RunActivities {
     revised.unresolved_questions = revised.unresolved_questions.filter((q) => !removed.some((x) => q.toLowerCase().includes(x)));
     const outcome = await validateModelScope(revised, model, runId, "revision_applied");
     if (!outcome.ok) return outcome;
+    // So do open questions about a system the revision dropped (no Control4 → no question about the Halo remote).
+    const droppedSystems = base.functional_systems.filter((x) => !outcome.extraction.functional_systems.includes(x));
+    outcome.extraction.unresolved_questions = outcome.extraction.unresolved_questions.filter(
+      (q) => !systemsMentioned(q).some((x) => droppedSystems.includes(x)),
+    );
     const changed = describeScopeChanges(base, outcome.extraction);
     return {
       ...outcome,

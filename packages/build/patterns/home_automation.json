@@ -10,6 +10,7 @@
     {
       "role": "automation_controller",
       "label": "Control4 CORE 1 controller",
+      "model": "C4-CORE1",
       "critical": true,
       "systems": [
         "home_automation"
@@ -32,6 +33,7 @@
     {
       "role": "automation_remote",
       "label": "Control4 Halo remote",
+      "model": "C4-HALO-BL",
       "critical": true,
       "systems": [
         "home_automation"

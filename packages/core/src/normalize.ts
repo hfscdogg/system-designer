@@ -62,6 +62,11 @@ function matchAll(table: Array<[string, RegExp[]]>, text: string): string[] {
   return table.filter(([, patterns]) => patterns.some((p) => p.test(t))).map(([c]) => c);
 }
 
+/** The canonical systems a piece of text talks about ("Is the Halo remote compatible with Control4?" → home_automation). */
+export function systemsMentioned(text: string): string[] {
+  return matchAll(FUNCTIONAL_SYSTEMS, text);
+}
+
 export function normalizeFunctionalSystems(items: string[]): string[] {
   const mapped = items.map((item) => {
     const hits = matchAll(FUNCTIONAL_SYSTEMS, item);
