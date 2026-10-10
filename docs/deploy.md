@@ -90,6 +90,17 @@ Google Chat accepts file uploads only from a user, not from the app, so the PDF 
 1. In the Workspace Admin console → Security → Access and data control → API controls → Manage domain-wide delegation, add each worker's client ID (its unique ID, printed by the bootstrap script) with only `https://www.googleapis.com/auth/chat.messages.create`.
 2. Set the GitHub variable `GOOGLE_CHAT_UPLOAD_MODE=delegated`, then redeploy. `GOOGLE_CHAT_DELEGATED_USER` is optional: it's used only when a request has no sender email.
 
+## Conversation smoke test (staging)
+
+After each staging deploy, the `sd-smoke-staging` job plays a scripted conversation through the real staging system: a Green-style TV job, then plain-language revisions ("the existing soundbar keeps its own mount", "only need 1 TV mount", "remove the eeros"). It approves each receipt and checks the quantities on each finished budget. A wrong quantity, a run that fails, or a question it can't answer stops the deploy before production. The script is `SMOKE_SCRIPT` in `apps/gateway/src/smoke.ts`.
+
+The bot posts every scripted line, its real replies, the PDFs and a ✅/❌ result into a dedicated Chat space. One-time setup:
+1. In Google Chat, create a space (e.g. "System Designer smoke") and add the System Designer app to it.
+2. Copy the space ID from the space's URL (`https://chat.google.com/room/AAAA…` → `spaces/AAAA…`).
+3. In GitHub → Settings → Secrets and variables → Actions → Variables, add `SMOKE_SPACE_ID=spaces/AAAA…`. With delegated PDF upload, also add `SMOKE_USER_EMAIL` set to a member of that space; the PDFs are posted as that person.
+
+Without `SMOKE_SPACE_ID` the step is skipped. Each run costs a few Claude calls and stays in staging; nothing goes to customers or D-Tools.
+
 ## Rollback
 
 Run **CI** manually on `main` (Actions → CI → Run workflow) with `rollback_image` set to an earlier `…@sha256:…` reference, from a previous run's `release-*.txt`. It goes through the same staging → approval → production path. Runs already in flight stay pinned to the release they started on.

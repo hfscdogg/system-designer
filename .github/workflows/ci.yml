@@ -134,6 +134,8 @@ jobs:
           WORKER_ID_TOKEN: ${{ steps.auth.outputs.id_token }}
           ANTHROPIC_FEDERATION_RULE_ID: ${{ vars.ANTHROPIC_FEDERATION_RULE_ID_STAGING }}
           ANTHROPIC_SERVICE_ACCOUNT_ID: ${{ vars.ANTHROPIC_SERVICE_ACCOUNT_ID_STAGING }}
+          SMOKE_SPACE_ID: ${{ vars.SMOKE_SPACE_ID }}
+          SMOKE_USER_EMAIL: ${{ vars.SMOKE_USER_EMAIL }}
       - uses: actions/upload-artifact@v4
         with:
           name: release-staging
