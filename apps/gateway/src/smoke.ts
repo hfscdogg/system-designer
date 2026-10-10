@@ -109,8 +109,9 @@ export const SMOKE_SCENARIOS: SmokeScenario[] = [
     // The correction was ignored: same price, and in-ceiling speakers were added.
     name: "Biscuit Belly (amp)",
     steps: [
-      { say: `Biscuit Belly restaurant, ${ADDRESS}. Commercial. Replace the amplifier for the existing ceiling speakers.`, pattern: "whole_home_audio", atLeast: { zone_amplifier: 1 } },
-      { say: "Revise: no new speakers, just the amp", pattern: "whole_home_audio", expect: { in_ceiling_speakers: 0 }, atLeast: { zone_amplifier: 1 } },
+      // "The amplifier" is one amp (two put it under the commercial margin floor).
+      { say: `Biscuit Belly restaurant, ${ADDRESS}. Commercial. Replace the amplifier for the existing ceiling speakers.`, pattern: "whole_home_audio", expect: { zone_amplifier: 1 } },
+      { say: "Revise: no new speakers, just the amp", pattern: "whole_home_audio", expect: { in_ceiling_speakers: 0, zone_amplifier: 1 } },
     ],
   },
 ];
@@ -131,6 +132,9 @@ export interface SmokeDeps {
    */
   email?: string;
   scenarios?: SmokeScenario[];
+  /** Waits before retrying a throttled Chat post, and between the job's own posts. */
+  retryDelaysMs?: number[];
+  paceMs?: number;
   /** Per-step wait limit. */
   timeoutMs?: number;
   pollMs?: number;
@@ -154,9 +158,29 @@ export class SmokeFailure extends Error {
   override name = "SmokeFailure";
 }
 
+const THROTTLED = /quota|rate|429|resource.?exhausted/i;
+
+/** Chat throttles bursts of posts into one space; the job's own posts wait and retry instead of failing the run. */
+function patientChat(chat: ChannelAdapter, delays: number[], log: (m: string) => void): ChannelAdapter["post"] {
+  return async (thread, view, key) => {
+    for (let attempt = 0; ; attempt++) {
+      try {
+        return await chat.post(thread, view, key);
+      } catch (err) {
+        const msg = err instanceof Error ? err.message : String(err);
+        if (!THROTTLED.test(msg) || attempt >= delays.length) throw new SmokeFailure(`posting to Chat failed: ${msg}`);
+        log(`Chat throttled (${msg}); retrying in ${delays[attempt]! / 1000}s`);
+        await new Promise((r) => setTimeout(r, delays[attempt]));
+      }
+    }
+  };
+}
+
 export async function runSmoke(deps: SmokeDeps): Promise<{ runs: string[]; failures: string[] }> {
   const scenarios = deps.scenarios ?? SMOKE_SCENARIOS;
   const log = deps.log ?? ((m: string) => console.log(m));
+  const post = patientChat(deps.chat, deps.retryDelaysMs ?? [5000, 15000, 30000], log);
+  const pace = () => new Promise((r) => setTimeout(r, deps.paceMs ?? 1000));
   const stamp = Date.now().toString(36);
   let n = 0;
   const now = () => new Date().toISOString();
@@ -183,14 +207,15 @@ export async function runSmoke(deps: SmokeDeps): Promise<{ runs: string[]; failu
   let budgets = 0;
   for (const [j, scenario] of scenarios.entries()) {
     // Each job gets its own thread, so its revisions read top to bottom and stay with it.
-    const opened = await deps.chat.post(
+    const opened = await post(
       { platform: "google_chat", spaceId: deps.spaceId, threadId: deps.spaceId },
       { kind: "text", text: `🧪 Smoke: ${scenario.name} (release ${deps.release.slice(7, 19)})` },
       `smoke-${stamp}-open-${j}`,
     );
     const thread: ThreadRef = { platform: "google_chat", spaceId: deps.spaceId, threadId: opened.threadId ?? `${deps.spaceId}/threads/smoke-${stamp}-${j}` };
     const say = async (text: string) => {
-      await deps.chat.post(thread, { kind: "text", text: `🧪 User says: ${text}` }, `smoke-${stamp}-say-${++n}`);
+      await pace();
+      await post(thread, { kind: "text", text: `🧪 User says: ${text}` }, `smoke-${stamp}-say-${++n}`);
       return send({
         type: "MESSAGE",
         eventTime: now(),
@@ -258,20 +283,20 @@ export async function runSmoke(deps: SmokeDeps): Promise<{ runs: string[]; failu
         if (wrong.length) throw new SmokeFailure(`${step}: ${wrong.join("; ")}`);
         log(`${step}: ok (${selection?.pattern}: ${[...qty].map(([r, q]) => `${r} ${q}`).join(", ")})`);
       }
-      await deps.chat.post(thread, { kind: "text", text: `✅ ${scenario.name}: passed.` }, `smoke-${stamp}-pass-${j}`);
+      await post(thread, { kind: "text", text: `✅ ${scenario.name}: passed.` }, `smoke-${stamp}-pass-${j}`);
     } catch (err) {
       // Record it and go on, so one deploy shows everything that is wrong.
       const msg = err instanceof Error ? err.message : String(err);
       failures.push(msg);
       log(`FAILED ${msg}`);
-      await deps.chat.post(thread, { kind: "text", text: `❌ Smoke failed: ${msg}` }, `smoke-${stamp}-fail-${j}`).catch(() => {});
+      await post(thread, { kind: "text", text: `❌ Smoke failed: ${msg}` }, `smoke-${stamp}-fail-${j}`).catch(() => {});
     }
   }
 
   const summary = failures.length
     ? `❌ Smoke failed: ${failures.length} of ${scenarios.length} jobs (${budgets} budgets built).`
     : `✅ Smoke passed: ${scenarios.length} jobs, ${budgets} budgets.`;
-  await deps.chat.post(
+  await post(
     { platform: "google_chat", spaceId: deps.spaceId, threadId: deps.spaceId },
     { kind: "text", text: summary },
     `smoke-${stamp}-summary`,
