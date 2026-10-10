@@ -112,6 +112,10 @@ describe("systems a sentence mentions", () => {
 describe("Control4 remotes", () => {
   it("reads Halo remotes as Control4, not lighting", () => {
     expect(normalizeFunctionalSystems(["Halo remotes"])).toEqual(["home_automation"]);
+    // An amp is music through the house; electrical amps ("20 amp circuit") are not.
+    expect(normalizeFunctionalSystems(["amplifier"])).toEqual(["whole_home_audio"]);
+    expect(normalizeFunctionalSystems(["Sonos Amp"])).toEqual(["whole_home_audio"]);
+    expect(normalizeFunctionalSystems(["20 amp outdoor circuit"])).toEqual(["20 amp outdoor circuit"]);
   });
   it("reads a Sonos soundbar as TV sound, not whole-home audio", () => {
     expect(normalizeFunctionalSystems(["Sonos Arc Ultra soundbar"])).toEqual(["audio_video"]);

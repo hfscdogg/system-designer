@@ -16,7 +16,7 @@ const FUNCTIONAL_SYSTEMS: Array<[canonical: string, patterns: RegExp[]]> = [
   ["video_doorbell", [/\b(video )?door ?bell\b/]],
   ["video_surveillance", [/\b((?<!door ?bell )cameras?|cctv|surveillance|nvr)\b/]],
   // Music through the house is its own system (Sonos amps and architectural speakers); TVs and theaters are audio_video.
-  ["whole_home_audio", [/\b(sonos|whole[- ](home|house) (audio|music)|distributed audio|multi[- ]room (audio|music)|background music|(in|on)[- ](ceiling|wall) speakers?|ceiling speakers?|outdoor speakers?|landscape speakers?|patio speakers?|speakers?|music)\b/]],
+  ["whole_home_audio", [/\b(sonos|whole[- ](home|house) (audio|music)|distributed audio|multi[- ]room (audio|music)|background music|(in|on)[- ](ceiling|wall) speakers?|ceiling speakers?|outdoor speakers?|landscape speakers?|patio speakers?|speakers?|music|sonos amps?|(?<!\d ?)amps?|amplifiers?)\b/]],
   // Bare "video" is a TV; "video doorbell" and "video cameras" are their own systems.
   ["audio_video", [/\b(tvs?|television|home theater|theatre|media room|audio[/ -]?video|a\/v|av|soundbar|surround( sound)?|video(?! ?(door ?bell|surveillance|cameras?|security)))\b/]],
   // New-construction cabling; listed before networking so "network drops" are wiring, not Wi-Fi.
