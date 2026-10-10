@@ -49,6 +49,8 @@ export const RoleSpecSchema = z
     location: z.string().min(1),
     /** What this role contributes, shown as capability evidence. */
     capability: z.string().min(1),
+    /** How many units the standard item holds (a speaker pair is 2). A product the request names instead is sold each, so it takes hours_each per unit. */
+    units_per_item: z.number().int().min(2).optional(),
     /** Labor hours per unit of this role, when it differs from the pattern's per-device rate (a speaker pair takes longer than an amp). */
     hours_each: z.number().min(0).optional(),
     /** Life-safety and similar roles escalate to Zack when unresolved. */
@@ -126,12 +128,18 @@ export function laborHours(spec: LaborSpec, devices: number): number {
 /** Minimum labor for an add-on visit, matching the hourly service-call minimum on Livewire quotes. */
 export const ADD_ON_MIN_HOURS = 1;
 
-export function laborHoursFor(pattern: PatternSpec, lines: Array<{ role: string; quantity: number }>, addOn = false, extras: string[] = []): number {
+export function laborHoursFor(pattern: PatternSpec, lines: Array<{ role: string; quantity: number; record_id?: string }>, addOn = false, extras: string[] = []): number {
   const spec = pattern.labor!;
-  const rate = (role: string) => pattern.roles.find((r) => r.role === role)?.hours_each ?? spec.hours_per_device;
+  const rate = (line: { role: string; record_id?: string }) => {
+    const role = pattern.roles.find((r) => r.role === line.role);
+    const each = role?.hours_each ?? spec.hours_per_device;
+    // A named product in place of a multi-unit standard (one speaker, not a pair) takes that standard's hours per unit.
+    const substitute = !!role?.units_per_item && !!line.record_id && line.record_id !== role.product_id && !role.variants?.some((v) => v.product_id === line.record_id);
+    return substitute ? each / role!.units_per_item! : each;
+  };
   const extraHours = extras.reduce((h, id) => h + (pattern.labor_extras?.find((x) => x.id === id)?.hours ?? 0), 0);
   // An add-on visit has no system setup (base hours), only its own visit setup and the devices, with an hourly minimum.
-  const raw = lines.reduce((h, l) => h + l.quantity * rate(l.role), (addOn ? (spec.add_on_base_hours ?? 0) : spec.base_hours) + extraHours);
+  const raw = lines.reduce((h, l) => h + l.quantity * rate(l), (addOn ? (spec.add_on_base_hours ?? 0) : spec.base_hours) + extraHours);
   // Devices sold without install time (a Control4 remote, paired remotely) carry no visit and no minimum.
   const hours = addOn && raw > 0 ? Math.max(ADD_ON_MIN_HOURS, raw) : raw;
   return Math.ceil(Math.round(hours * 1000) / 1000 * 2) / 2;

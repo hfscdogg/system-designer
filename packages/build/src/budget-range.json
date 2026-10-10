@@ -3,8 +3,8 @@
   "basis": "middle half (25th-75th percentile) of 742 accepted D-Tools quotes, priced from their own device lists (add_on)",
   "bands": {
     "*": {
-      "low": 0.74,
-      "high": 1.25,
+      "low": 0.75,
+      "high": 1.26,
       "n": 742
     },
     "tv_media": {
@@ -28,8 +28,8 @@
       "n": 46
     },
     "whole_home_audio": {
-      "low": 0.65,
-      "high": 1,
+      "low": 0.74,
+      "high": 1.04,
       "n": 44
     },
     "lighting_control": {
@@ -58,13 +58,13 @@
       "n": 24
     },
     "tv_media+whole_home_audio": {
-      "low": 0.79,
-      "high": 1.16,
+      "low": 0.83,
+      "high": 1.2,
       "n": 20
     },
     "home_network+tv_media+whole_home_audio": {
       "low": 0.93,
-      "high": 1.25,
+      "high": 1.32,
       "n": 20
     },
     "security_modernization": {

@@ -87,6 +87,9 @@ describe("a named product's own words", () => {
     }).scope;
     const sel = materialize(scope, audio, findNamedProducts(scope, index));
     expect(sel.lines.map((l) => [l.role, l.record_id, l.quantity])).toEqual([["outdoor_speakers", OUT, 2]]);
+    // Two speakers sold each are one pair's install time, not two pairs'.
+    const pair = audio.roles.find((r) => r.role === "outdoor_speakers")!.hours_each!;
+    expect(sel.labor?.hours).toBe(Math.max(1, Math.ceil(((audio.labor!.add_on_base_hours ?? 0) + pair) * 2) / 2));
   });
 });
 
