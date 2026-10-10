@@ -100,8 +100,11 @@ export type View =
 
 export interface ChannelAdapter {
   readonly platform: string;
-  /** Post into a thread. Same idempotencyKey => same message, never a duplicate. */
-  post(thread: ThreadRef, view: View, idempotencyKey: string): Promise<{ messageId: string }>;
+  /**
+   * Post into a thread. Same idempotencyKey => same message, never a duplicate.
+   * threadId is the thread the message landed in, when the provider reports it.
+   */
+  post(thread: ThreadRef, view: View, idempotencyKey: string): Promise<{ messageId: string; threadId?: string }>;
   /** Replace a message the app posted (used for the live status card). */
   update(messageId: string, view: View): Promise<void>;
   /** Post a file into a thread. Same idempotencyKey => same message. */

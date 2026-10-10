@@ -5,6 +5,9 @@
 #
 # Expects env: GCP_PROJECT_ID GCP_PROJECT_NUMBER GCP_REGION GCP_SQL_INSTANCE TEMPORAL_ADDRESS TEMPORAL_NAMESPACE LLM_MODEL
 #              GOOGLE_CHAT_UPLOAD_MODE [GOOGLE_CHAT_DELEGATED_USER]
+#              [SMOKE_SPACE_ID]: staging only; a Chat space with the app in it. When set, a scripted
+#              conversation runs through the deployed staging system and a wrong budget stops the deploy.
+#              [SMOKE_USER_EMAIL]: a member of that space; delegated PDF uploads post as this person.
 #              ANTHROPIC_ORGANIZATION_ID ANTHROPIC_FEDERATION_RULE_ID ANTHROPIC_SERVICE_ACCOUNT_ID [ANTHROPIC_WORKSPACE_ID]
 #              (Claude API access is keyless: Workload Identity Federation from the worker's Google identity.)
 #              WORKER_ID_TOKEN: Google ID token with audience sd-worker-<env>, for the worker health check
@@ -106,6 +109,20 @@ GW_HEALTH="$(curl -fsS "${GATEWAY_URL}/health")"
 [[ "$(jq -r .release <<<"${GW_HEALTH}")" == "${DIGEST}" ]] || { echo "gateway serves the wrong release: ${GW_HEALTH}" >&2; exit 1; }
 CODE="$(curl -s -o /dev/null -w '%{http_code}' -X POST -H 'content-type: application/json' -d '{}' "${GATEWAY_URL}/chat/google")"
 [[ "${CODE}" == "401" ]] || { echo "unauthenticated Chat request returned ${CODE}, expected 401" >&2; exit 1; }
+
+if [[ "${ENV_NAME}" == "staging" && -n "${SMOKE_SPACE_ID:-}" ]]; then
+  log "conversation smoke test in ${SMOKE_SPACE_ID}"
+  gcloud run jobs deploy "sd-smoke-${ENV_NAME}" --region "${REGION}" --image "${IMAGE}" \
+    --command node --args apps/gateway/src/admin.ts,smoke \
+    --service-account "${WORKER_SA}" --set-cloudsql-instances "${GCP_SQL_INSTANCE}" \
+    --set-env-vars "${COMMON_ENV},SMOKE_SPACE_ID=${SMOKE_SPACE_ID},SMOKE_USER_EMAIL=${SMOKE_USER_EMAIL:-},GOOGLE_CHAT_UPLOAD_MODE=${GOOGLE_CHAT_UPLOAD_MODE},GOOGLE_CHAT_DELEGATED_USER=${GOOGLE_CHAT_DELEGATED_USER:-},WORKER_SERVICE_ACCOUNT=${WORKER_SA}" \
+    --set-secrets "${DB_SECRET},TEMPORAL_API_KEY=temporal-api-key:latest" \
+    --task-timeout 45m --max-retries 0 --quiet
+  gcloud run jobs execute "sd-smoke-${ENV_NAME}" --region "${REGION}" --wait \
+    || { echo "conversation smoke test failed; see the sd-smoke-${ENV_NAME} job logs and the smoke Chat space" >&2; exit 1; }
+else
+  log "conversation smoke test skipped (staging only, needs SMOKE_SPACE_ID)"
+fi
 
 log "retire drained worker builds"
 for svc in $(gcloud run services list --region "${REGION}" --filter "metadata.labels.sd-env=${ENV_NAME} AND metadata.labels.sd-role=worker" --format 'value(metadata.name)'); do

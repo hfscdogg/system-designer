@@ -13,6 +13,7 @@ import type { DToolsReader } from "@sd/dtools";
 
 const PIXEL = Uint8Array.from(atob("iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mNkYAAAAAYAAjCB0C8AAAAASUVORK5CYII="), (ch) => ch.charCodeAt(0));
 import { handleGoogleChat, type GatewayDeps } from "../src/handler.ts";
+import { prepareSmoke, runSmoke, SMOKE_PERSON } from "../src/smoke.ts";
 
 const SPACE = "spaces/A";
 const THREAD = "spaces/A/threads/T";
@@ -656,5 +657,46 @@ describe("editing a scope and revising a finished budget", () => {
     const newest = (await t.store.listRunsForPerson("zack"))[0]!;
     expect(newest.parent_run_id).toBeNull();
     expect(t.receipts().at(-1)!.lines).toContain("Client: Jones Family");
+  });
+});
+
+describe("post-deploy smoke test", () => {
+  const smoke = async (expectRevised: number) => {
+    const t = await setup([completeExtraction()], [{ ...noPatch, requested_quantities: [{ item: "Glass-break sensor", quantity: 4 }] }]);
+    await prepareSmoke(t.db, "spaces/S");
+    const run = runSmoke({
+      store: t.store,
+      workflows: t.workflows,
+      chat: t.chat,
+      spaceId: "spaces/S",
+      release: "sha256:test",
+      script: [
+        { say: "Smith security upgrade", expect: { security_panel: 1 } },
+        { say: "Revise: make it 4 glass breaks", expect: { glass_break: expectRevised, security_panel: 1 } },
+      ],
+      pollMs: 1,
+      settle: (id) => t.workflows.settled(id),
+      log: () => {},
+    });
+    return { t, run };
+  };
+
+  it("plays the script as the smoke user, approves each receipt and checks the finished quantities", async () => {
+    const { t, run } = await smoke(4);
+    const { runs } = await run;
+    expect(runs).toHaveLength(2);
+    const [revised, original] = await t.store.listRunsForPerson(SMOKE_PERSON.id);
+    expect(revised).toMatchObject({ id: runs[1], parent_run_id: runs[0], state: "READY_HELD", space_id: "spaces/S" });
+    expect(original!.state).toBe("SUPERSEDED");
+    // The scripted lines, the real replies and the result all land in the smoke space.
+    expect(t.texts()).toContain("🧪 User says: Revise: make it 4 glass breaks");
+    expect(t.texts().at(-1)).toBe("✅ Smoke passed: 2 steps.");
+    expect(t.chat.files.map((f) => f.file.filename)).toHaveLength(2);
+  });
+
+  it("fails, and says so in the space, when a budget's quantity is wrong", async () => {
+    const { t, run } = await smoke(5);
+    await expect(run).rejects.toThrow(/step 2 .*glass_break expected 5, got 4/);
+    expect(t.texts().at(-1)).toMatch(/^❌ Smoke failed: step 2/);
   });
 });

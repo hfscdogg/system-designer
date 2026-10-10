@@ -171,9 +171,9 @@ export class GoogleChatAdapter implements ChannelAdapter {
       // DM conversations are keyed by space (threadId === spaceId) and post without a thread.
       data: thread.threadId === thread.spaceId ? renderGoogleChat(view, this.render) : { ...renderGoogleChat(view, this.render), thread: { name: thread.threadId } },
     });
-    const name = (res.data as { name?: string }).name;
-    if (!name) throw new Error("Google Chat did not return a message name");
-    return { messageId: name };
+    const data = res.data as { name?: string; thread?: { name?: string } };
+    if (!data.name) throw new Error("Google Chat did not return a message name");
+    return { messageId: data.name, threadId: data.thread?.name };
   }
 
   async update(messageId: string, view: View) {

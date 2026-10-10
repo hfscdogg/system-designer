@@ -10,6 +10,7 @@
  *   node apps/gateway/src/admin.ts set-policy henry policy.json "Pilot margin and tax rules"   # admin only
  *   node apps/gateway/src/admin.ts show-policy
  *   node apps/gateway/src/admin.ts reconcile        # start workflows for saved runs that have none (hourly job)
+ *   node apps/gateway/src/admin.ts smoke spaces/AAAA  # scripted conversation through the deployed system (sd-smoke-<env> job)
  *
  * DMs with an active person are always allowed; shared spaces must be allowed explicitly.
  */
@@ -17,7 +18,8 @@ import { readFile } from "node:fs/promises";
 import pg from "pg";
 import { CommercialPolicySchema } from "@sd/build";
 import { allowSpace, deactivatePerson, MemoryBlobStore, migrate, pgDb, Store, upsertPerson } from "@sd/store";
-import { reconcileRuns, temporalClient, temporalSettings, TemporalWorkflows } from "@sd/worker";
+import { productionAdapters, productionStore, reconcileRuns, temporalClient, temporalSettings, TemporalWorkflows } from "@sd/worker";
+import { prepareSmoke, runSmoke } from "./smoke.ts";
 
 async function main() {
   const [command, ...args] = process.argv.slice(2);
@@ -83,8 +85,30 @@ async function main() {
         if (result.failed.length) process.exitCode = 1;
         break;
       }
+      case "smoke": {
+        const spaceId = args[0] ?? process.env.SMOKE_SPACE_ID;
+        if (!spaceId) throw new Error("usage: smoke <spaces/ID> (or set SMOKE_SPACE_ID)");
+        await prepareSmoke(db, spaceId);
+        const { store, pool: storePool } = productionStore();
+        const client = await temporalClient(temporalSettings());
+        try {
+          const { runs } = await runSmoke({
+            store,
+            workflows: new TemporalWorkflows(client),
+            chat: productionAdapters().google_chat!,
+            spaceId,
+            release: store.releaseId,
+            email: process.env.SMOKE_USER_EMAIL || process.env.GOOGLE_CHAT_DELEGATED_USER || undefined,
+          });
+          console.log(`smoke passed: ${runs.join(", ")}`);
+        } finally {
+          await client.connection.close();
+          await storePool.end();
+        }
+        break;
+      }
       default:
-        throw new Error("commands: migrate | pending | add-person | allow-space | deactivate | set-policy | show-policy | reconcile");
+        throw new Error("commands: migrate | pending | add-person | allow-space | deactivate | set-policy | show-policy | reconcile | smoke");
     }
   } finally {
     await pool.end();
