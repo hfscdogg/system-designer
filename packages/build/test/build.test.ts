@@ -274,6 +274,33 @@ describe("patterns", () => {
     expect(roles.get("tv_mount")).toBe(2);
   });
 
+  it("takes a mount count or an own-mount note in plain language", async () => {
+    const patterns = await loadPatterns();
+    const tv = patterns.find((p) => p.pattern === "tv_media")!;
+    const base = {
+      functional_systems: ["TV", "soundbar"],
+      existing_equipment: { status: "described" as const, retained: ["TV", "soundbar"], removed_or_replaced: [] },
+      existing_detectors: "not_provided" as const,
+    };
+    const changes = ["Sell a new 75-inch OLED TV with a Sonos Arc Ultra soundbar", "Move the existing TV and soundbar to the fitness room"];
+    const roles = (extra: object) => new Map(materialize(approvedScope({ ...base, requested_changes: changes, ...extra }).scope, tv).lines.map((l) => [l.role, l.quantity]));
+
+    // "Only need 1 mount for the soundbar": the words in any order name the soundbar mount, not the TV mount.
+    const counted = roles({ requested_quantities: [{ item: "mount for the soundbar", quantity: 1 }] });
+    expect(counted.get("soundbar_mount")).toBe(1);
+    expect(counted.get("tv_mount")).toBe(2);
+
+    // A stated TV mount count still goes to the TV mount.
+    const tvCount = roles({ requested_quantities: [{ item: "tv mount", quantity: 1 }] });
+    expect(tvCount.get("tv_mount")).toBe(1);
+    expect(tvCount.get("soundbar_mount")).toBe(2);
+
+    // "The existing soundbar has its own mount" as its own change: the moved soundbar needs no new mount.
+    const own = roles({ requested_changes: [...changes, "The existing soundbar has its own mount"] });
+    expect(own.get("soundbar_mount")).toBe(1);
+    expect(own.get("tv_mount")).toBe(2);
+  });
+
   it("still asks to field-test existing equipment that is only kept", async () => {
     const patterns = await loadPatterns();
     const tv = patterns.find((p) => p.pattern === "tv_media")!;

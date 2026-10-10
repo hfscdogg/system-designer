@@ -47,6 +47,11 @@ function hasWord(text: string, term: string): boolean {
   return new RegExp(`\\b${escape(term)}(s|es)?\\b`).test(text);
 }
 
+/** Every word of a multi-word term appears in the text, in any order: "mount for the soundbar" names a "soundbar mount". */
+function hasAllWords(text: string, term: string): boolean {
+  return term.split(/\s+/).every((w) => hasWord(text, w));
+}
+
 /** Terms that identify a role in the request: its label, retained-equipment terms and mention terms. */
 function roleTerms(role: RoleSpec): string[] {
   return [role.label, ...(role.retained_match ?? []), ...(role.mentions ?? [])].map(fold);
@@ -68,7 +73,7 @@ function matchScore(text: string, role: RoleSpec): number {
   if (role.model && compact(text).includes(compact(role.model))) return 2000 + role.model.length;
   if (t.includes(fold(role.label))) return 1000 + role.label.length;
   const terms = roleTerms(role).filter((term) => t.includes(term));
-  const words = (role.count_terms ?? []).map(fold).filter((term) => hasWord(t, term));
+  const words = (role.count_terms ?? []).map(fold).filter((term) => hasAllWords(t, term));
   return Math.max(0, ...[...terms, ...words].map((term) => term.length));
 }
 
@@ -113,8 +118,12 @@ function movedCount(scope: ScopeDraftV1, terms: string[]): number {
 
 /** Moved items that need a mount in the new room: not ones the request says already have their own mount. */
 function movedNeedingMount(scope: ScopeDraftV1, terms: string[]): number {
-  const ownMount = /\b(its own|own|existing|current|keeps? (its|the)) (wall |tv )?mounts?\b/;
-  return moveChanges(scope).filter((c) => !ownMount.test(c) && terms.some((t) => c.includes(fold(t)))).length;
+  const names = (c: string) => terms.some((t) => c.includes(fold(t)));
+  // "The existing TV has its own wall mount", in any change or clause, means no new mount for it.
+  const ownMount = /\b(its own|own|existing|current|keeps? (its|the)) (wall |tv |soundbar )?mounts?\b/;
+  const clauses = changes(scope).flatMap((c) => c.split(/[;.]|\bbut\b/));
+  if (clauses.some((c) => ownMount.test(c) && names(c))) return 0;
+  return moveChanges(scope).filter(names).length;
 }
 
 const FILLER = new Set(["the", "a", "an", "any", "all", "existing", "new", "livewire", "of", "and"]);
