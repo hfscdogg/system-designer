@@ -341,6 +341,18 @@ export function materialize(original: ScopeDraftV1, pattern: PatternSpec, namedP
     });
   }
 
+  // Roles counted from others (a card per camera) take those roles' priced units, unless the request stated their own count.
+  for (const line of lines) {
+    const role = pattern.roles.find((r) => r.role === line.role);
+    if (!role?.quantity_follows || statedQuantity(scope, role, pattern.roles) !== null || line.requested_model) continue;
+    const units = lines.filter((l) => role.quantity_follows!.includes(l.role)).reduce((n, l) => n + l.quantity, 0);
+    if (units > 0) {
+      line.quantity = units;
+      line.quantity_basis = "fixed";
+      line.verify = null;
+    }
+  }
+
   const devices = lines.reduce((n, l) => n + l.quantity, 0);
   // Labor-only allowances the request mentions (framing a niche), priced as hours at the pattern's labor rate.
   const extras = (pattern.labor_extras ?? []).filter((x) => mentioned(scope, x.mentions)).map((x) => x.id);

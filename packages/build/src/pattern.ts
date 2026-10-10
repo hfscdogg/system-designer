@@ -31,6 +31,8 @@ export const RoleSpecSchema = z
      * When a request names any role in the group, only the named ones are priced.
      */
     alternative_group: z.string().optional(),
+    /** Priced one for each unit of these roles when the request states no count of its own (a memory card per camera). */
+    quantity_follows: z.array(z.string()).optional(),
     /** One more of this role for each existing item the request moves that matches these terms (a mount per moved TV). */
     per_moved: z.array(z.string()).optional(),
     /** Alternative approved records chosen by the size the request names ("75-inch" → the 77" model). */

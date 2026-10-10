@@ -393,6 +393,15 @@ describe("patterns", () => {
     expect(roles({ requested_changes: ["Add Control4 to the family room"] }).map(([r]) => r)).toContain("automation_controller");
   });
 
+  it("prices one memory card per camera", async () => {
+    const patterns = await loadPatterns();
+    const cams = patterns.find((p) => p.pattern === "surveillance")!;
+    const sel = (o: object) => materialize(approvedScope({ functional_systems: ["video_surveillance"], existing_detectors: "not_provided", ...o }).scope, cams);
+    const qty = (s: ReturnType<typeof sel>) => Object.fromEntries(s.lines.map((l) => [l.role, l.quantity]));
+    expect(qty(sel({ requested_changes: ["Add 3 floodlight cameras"], requested_quantities: [{ item: "floodlight cameras", quantity: 3 }] }))).toMatchObject({ floodlight_camera: 3, camera_storage: 3 });
+    expect(qty(sel({ requested_changes: ["Add 1 turret camera by the front door"], requested_quantities: [{ item: "turret camera", quantity: 1 }] }))).toMatchObject({ outdoor_camera: 1, camera_storage: 1 });
+  });
+
   it("prices a smart lock as a lock, not a card-access door", async () => {
     const patterns = await loadPatterns();
     const systems = normalizeFunctionalSystems(["smart lock"]);
