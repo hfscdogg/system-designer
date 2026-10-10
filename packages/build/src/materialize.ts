@@ -153,6 +153,7 @@ function movedNeedingMount(scope: ScopeDraftV1, terms: string[]): number {
   return moveChanges(scope).filter(names).length;
 }
 
+const DEVICE_NOUNS = ["access", "point", "node", "unit", "device", "system", "network", "equipment"];
 const FILLER = new Set(["the", "a", "an", "any", "all", "existing", "new", "livewire", "of", "and"]);
 
 /**
@@ -167,7 +168,9 @@ function excluded(scope: ScopeDraftV1, role: RoleSpec): boolean {
     const item = fold(raw);
     const hit = terms.filter((t) => hasWord(item, t));
     if (!hit.length) return false;
-    const covered = new Set(hit.flatMap((t) => t.split(/[\s/-]+/)));
+    // Once the item names the role, the role's own words ("eero Pro 7 mesh Wi-Fi") and generic device
+    // nouns ("access points", "system") don't count against it: "eero access points" removes the eeros.
+    const covered = new Set([...terms.flatMap((t) => t.split(/[\s/-]+/)), ...DEVICE_NOUNS]);
     const rest = item.split(/[\s/-]+/).filter((w) => w && !FILLER.has(w) && !covered.has(w) && !covered.has(w.replace(/e?s$/, "")));
     return rest.length <= 1;
   });

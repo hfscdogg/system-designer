@@ -258,6 +258,26 @@ describe("patterns", () => {
     expect(keptRoles.get("tv_mount")).toBe(1);
   });
 
+  it("removes a device however the removal is worded (Green: \"remove the eeros\")", async () => {
+    const patterns = await loadPatterns();
+    const net = patterns.find((p) => p.pattern === "home_network")!;
+    const eeros = (excluded: string) =>
+      materialize(
+        approvedScope({
+          functional_systems: ["eero network", "TV"],
+          requested_changes: ["Add 3 eero access points"],
+          requested_quantities: [{ item: "eero access points", quantity: 3 }],
+          excluded_scope: [excluded],
+          existing_detectors: "not_provided",
+        }).scope,
+        net,
+      ).lines.some((l) => l.role === "mesh_wifi");
+    for (const item of ["eeros", "the eero", "eero access points", "eero mesh network", "the eero system", "eero Wi-Fi access points"]) expect(eeros(item), item).toBe(false);
+    // Naming something else, or the device plus unrelated words, removes nothing.
+    expect(eeros("Control4")).toBe(true);
+    expect(eeros("eero install in the garage attic")).toBe(true);
+  });
+
   it("takes a count for a device named by the model number printed on the budget", async () => {
     const patterns = await loadPatterns();
     const tv = patterns.find((p) => p.pattern === "tv_media")!;
