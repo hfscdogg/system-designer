@@ -58,3 +58,34 @@ describe("products the request names by model", () => {
     expect(materialize(scope, pattern, findNamedProducts(scope, index))).toEqual(materialize(scope, pattern));
   });
 });
+
+describe("several named products in one role", () => {
+  it("prices each on its own line at its own count", () => {
+    const KP3 = "56565656-5656-4656-8656-565656565656";
+    const index = catalogIndex([...ENTRIES, { id: KP3, name: "Qolsys IQ Keypad Touch", brand: "Qolsys", model: "IQKP3-TS", category: "Security > Keypads" }]);
+    const scope = scopeWith({
+      requested_changes: ["Add Qolsys IQKP2-PG keypads and an IQKP3-TS touch keypad"],
+      requested_quantities: [{ item: "Qolsys IQKP2-PG keypad", quantity: 2 }],
+    });
+    const lines = materialize(scope, testPattern(), findNamedProducts(scope, index)).lines.filter((l) => l.role === "keypad");
+    expect(lines.map((l) => [l.record_id, l.quantity])).toEqual([[KP2, 2], [KP3, 1]]);
+  });
+});
+
+describe("a named product's own words", () => {
+  it("fill the role its category names, and name no other role", async () => {
+    const { loadPatterns } = await import("../src/index.ts");
+    const audio = (await loadPatterns()).find((p) => p.pattern === "whole_home_audio")!;
+    const OUT = "78787878-7878-4878-8878-787878787878";
+    const index = catalogIndex([{ id: OUT, name: "Klipsch Professional PRO-650T-RK", brand: "Klipsch", model: "PRO-650T-RK", category: "Speakers > Outdoor" }]);
+    const scope = approvedScope({
+      functional_systems: ["whole_home_audio"],
+      existing_detectors: "not_provided",
+      existing_equipment: { status: "none", retained: [], removed_or_replaced: [] },
+      requested_changes: ["Add Outdoor Klipsch Professional PRO-650T-RK speakers"],
+      requested_quantities: [{ item: "Outdoor Klipsch Professional PRO-650T-RK speakers", quantity: 2 }],
+    }).scope;
+    const sel = materialize(scope, audio, findNamedProducts(scope, index));
+    expect(sel.lines.map((l) => [l.role, l.record_id, l.quantity])).toEqual([["outdoor_speakers", OUT, 2]]);
+  });
+});

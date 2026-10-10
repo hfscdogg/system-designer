@@ -203,17 +203,45 @@ function variantFor(scope: ScopeDraftV1, role: RoleSpec) {
 /**
  * The role each named catalog product fills: the role its category, name and the
  * request's words match best. A product that fits no role is left out (the
- * pattern's standard prices that job), and a role takes the first product named.
+ * pattern's standard prices that job). Several products can fill one role
+ * ("a Samsung QN65 and a Sony XR-77"): each is priced on its own line.
  */
-function namedForRoles(named: NamedProduct[], roles: RoleSpec[]): Map<string, NamedProduct> {
-  const byRole = new Map<string, NamedProduct>();
+function namedForRoles(named: NamedProduct[], roles: RoleSpec[]): Map<string, NamedProduct[]> {
+  const byRole = new Map<string, NamedProduct[]>();
   for (const n of named) {
-    const scores = roles.map((r) => matchScore(`${n.category} ${n.label} ${n.text}`, r));
+    // The product's own category ("Speakers > Outdoor") says which role it fills, on top of how the request names it.
+    const leaf = n.category.split(">").at(-1) ?? "";
+    const scores = roles.map((r) => matchScore(`${n.category} ${n.label} ${n.text}`, r) + matchScore(leaf, r));
     const best = Math.max(0, ...scores);
     const role = roles[scores.indexOf(best)];
-    if (best > 1 && role && !byRole.has(role.role)) byRole.set(role.role, n);
+    if (best > 1 && role) byRole.set(role.role, [...(byRole.get(role.role) ?? []), n]);
   }
   return byRole;
+}
+
+/**
+ * The request with each named product's own words (its name, model and category)
+ * taken out, so they name no other role: "Sonos Amp (Stereo 2-Channel)" doesn't
+ * also ask for the Sonos Port that "stereo" names. Other words still count
+ * ("a Samsung QN65Q80C and a mount" still names the mount).
+ */
+function withoutNamedWords(scope: ScopeDraftV1, named: NamedProduct[]): ScopeDraftV1 {
+  if (!named.length) return scope;
+  const strip = (text: string) => {
+    const own = named.filter((n) => compact(text).includes(compact(n.model)));
+    if (!own.length) return text;
+    const words = new Set(own.flatMap((n) => `${n.label} ${n.model} ${n.category}`.toLowerCase().split(/[^a-z0-9]+/)).filter(Boolean));
+    return text
+      .split(/\s+/)
+      .filter((w) => w && !words.has(w.toLowerCase().replace(/[^a-z0-9]/g, "")) && !own.some((n) => compact(w) && compact(n.model).includes(compact(w)) && compact(w).length > 2))
+      .join(" ");
+  };
+  const meaningful = (t: string) => /[a-z]{3,}/i.test(t.replace(/\b(add|install|replace|new|and|the|with|for)\b/gi, ""));
+  return {
+    ...scope,
+    requested_changes: scope.requested_changes.map(strip).filter(meaningful),
+    requested_quantities: scope.requested_quantities.map((q) => ({ ...q, item: strip(q.item) })).filter((q) => meaningful(q.item)),
+  };
 }
 
 /** A stated count whose item names this product by model ("2 AN-620-SW-R-24-POE"). */
@@ -223,19 +251,21 @@ function statedForProduct(scope: ScopeDraftV1, n: NamedProduct | undefined): num
   return scope.requested_quantities.find((q) => compact(q.item).includes(m))?.quantity ?? null;
 }
 
-export function materialize(scope: ScopeDraftV1, pattern: PatternSpec, namedProducts: NamedProduct[] = []): Selection {
+export function materialize(original: ScopeDraftV1, pattern: PatternSpec, namedProducts: NamedProduct[] = []): Selection {
   const lines: SelectionLine[] = [];
   const allowances: Selection["allowances"] = [];
   const unresolved: Selection["unresolved"] = [];
   const included: RoleSpec[] = [];
   const blockedRoles = new Set<string>();
 
-  const candidates = pattern.roles.filter((role) => role.systems.some((s) => scope.functional_systems.includes(s)));
-  // Products the request names by model are priced in the role they fill, and name that role.
+  const candidates = pattern.roles.filter((role) => role.systems.some((s) => original.functional_systems.includes(s)));
+  // Products the request names by model are priced in the role they fill, and name that role. Their words name nothing else.
   const requested = namedForRoles(namedProducts, candidates);
+  const priced = [...requested.values()].flat();
+  const scope = withoutNamedWords(original, priced);
   const names = (r: RoleSpec) => requested.has(r.role) || named(scope, r, pattern.roles);
   // An add-on prices only the devices the request names. A pattern it names nothing from (e.g. "add Wi-Fi") is priced whole.
-  const addOnRequested = isAddOnRequest(scope);
+  const addOnRequested = isAddOnRequest(original);
   const addOn = addOnRequested && candidates.some(names);
 
   // In a group of alternatives (turret vs floodlight cameras), naming any one prices only the ones named.
@@ -245,7 +275,8 @@ export function materialize(scope: ScopeDraftV1, pattern: PatternSpec, namedProd
     if (role.alternative_group && namedGroups.has(role.alternative_group) && !namedSpecifically(scope, role, pattern.roles)) continue;
     // In an add-on, a role is priced when the request names it or names its own system (smoke detection alongside sensors).
     const ownSystemRequested = role.systems.some((s) => scope.functional_systems.includes(s) && !pattern.applies_when_any.includes(s));
-    const product = requested.get(role.role);
+    const products = requested.get(role.role) ?? [];
+    const product = products[0];
     if (addOn && !names(role) && !ownSystemRequested) continue;
     if (role.mentions && !mentioned(scope, role.mentions) && !modelNamed(scope, role) && !product) continue;
     if (role.existing_detectors && !(role.existing_detectors as string[]).includes(scope.existing_detectors)) continue;
@@ -272,11 +303,29 @@ export function materialize(scope: ScopeDraftV1, pattern: PatternSpec, namedProd
       continue;
     }
     // A count the requester stated is used as written; otherwise the pattern's quantity (a minimum is verified on site).
-    const stated = statedQuantity(scope, role, pattern.roles) ?? statedForProduct(scope, product);
+    const stated = product ? (statedForProduct(original, product) ?? statedQuantity(scope, role, pattern.roles)) : statedQuantity(scope, role, pattern.roles);
     const minimum = stated === null && role.quantity.kind === "minimum";
     // Each existing item the request moves needs its own mount (and the mount's install labor) in the new room.
     const moved = stated === null && role.per_moved ? movedNeedingMount(scope, role.per_moved) : 0;
     const verify = minimum && role.quantity.kind === "minimum" ? role.quantity.verify : null;
+    const location = scope.room_types.length === 1 ? scope.room_types[0]! : role.location;
+    if (products.length > 1) {
+      // Each named product is its own line, at the count stated for its model (one when none is).
+      for (const n of products) {
+        const qty = statedForProduct(original, n);
+        lines.push({
+          role: role.role,
+          record_id: n.record_id,
+          quantity: qty ?? 1,
+          quantity_basis: "fixed",
+          verify: null,
+          location,
+          precedent: role.precedent,
+          ...(n.record_id !== role.product_id ? { requested_model: n.model } : {}),
+        });
+      }
+      continue;
+    }
     lines.push({
       role: role.role,
       record_id: product?.record_id ?? variantFor(scope, role)?.product_id ?? role.product_id!,
@@ -284,7 +333,7 @@ export function materialize(scope: ScopeDraftV1, pattern: PatternSpec, namedProd
       quantity_basis: minimum ? "minimum_to_verify" : "fixed",
       verify: moved && verify ? `${verify}; includes ${moved} for moved existing equipment (confirm wall and power in the new room)` : verify,
       // A single-room scope places devices in that room; otherwise use the pattern's location.
-      location: scope.room_types.length === 1 ? scope.room_types[0]! : role.location,
+      location,
       precedent: role.precedent,
       ...(product && product.record_id !== role.product_id ? { requested_model: product.model } : {}),
     });

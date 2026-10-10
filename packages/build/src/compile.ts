@@ -123,6 +123,8 @@ export function compile(raw: unknown, catalog: Map<string, AdmittedProduct>, pat
 
   const roles = new Map(pattern.roles.map((r) => [r.role, r]));
   const seenRoles = new Set<string>();
+  const standardRoles = new Set<string>();
+  const requestedRecords = new Set<string>();
   const lines: DraftLine[] = [];
   for (const line of sel.lines) {
     const role = roles.get(line.role);
@@ -130,7 +132,12 @@ export function compile(raw: unknown, catalog: Map<string, AdmittedProduct>, pat
       errors.push(`role ${line.role} is not in the pattern`);
       continue;
     }
-    if (seenRoles.has(line.role)) errors.push(`role ${line.role} appears twice`);
+    // A role's standard (or variant) appears once; separate products the request named by model add their own lines.
+    if (!line.requested_model) {
+      if (standardRoles.has(line.role)) errors.push(`role ${line.role} appears twice`);
+      standardRoles.add(line.role);
+    } else if (requestedRecords.has(`${line.role}:${line.record_id}`)) errors.push(`role ${line.role} names ${line.record_id} twice`);
+    else requestedRecords.add(`${line.role}:${line.record_id}`);
     seenRoles.add(line.role);
     const variant = role.variants?.find((v) => v.product_id === line.record_id);
     const product = catalog.get(line.record_id);
