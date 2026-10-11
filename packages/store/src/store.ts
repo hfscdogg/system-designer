@@ -388,6 +388,21 @@ export class Store {
     return res.rows;
   }
 
+  /**
+   * Runs whose design retainer went to D-Tools within `maxAgeDays` and whose
+   * real quote has not been recorded as accepted yet: the final-quote follow-up checks these.
+   */
+  async runsAwaitingFinalQuote(maxAgeDays: number): Promise<string[]> {
+    const res = await this.db.query<{ run_id: string }>(
+      `SELECT a.run_id FROM artifacts a
+        WHERE a.stage = 'retainer' AND a.name = 'opportunity' AND a.created_at > now() - make_interval(days => $1)
+          AND NOT EXISTS (SELECT 1 FROM artifacts b WHERE b.run_id = a.run_id AND b.stage = 'outcome' AND b.name LIKE 'final_quote-accepted-%')
+        ORDER BY a.created_at`,
+      [maxAgeDays],
+    );
+    return res.rows.map((r) => r.run_id);
+  }
+
   /** A run in this thread that is past approval and still building. */
   async findBuildingRun(t: ThreadRef): Promise<RunRecord | null> {
     const res = await this.db.query<RunRecord>(
