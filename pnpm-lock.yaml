@@ -32,6 +32,9 @@ importers:
       '@sd/core':
         specifier: workspace:*
         version: link:../../packages/core
+      '@sd/dtools':
+        specifier: workspace:*
+        version: link:../../packages/dtools
       '@sd/llm':
         specifier: workspace:*
         version: link:../../packages/llm
@@ -48,9 +51,6 @@ importers:
         specifier: ^8.23.1
         version: 8.23.1
     devDependencies:
-      '@sd/dtools':
-        specifier: workspace:*
-        version: link:../../packages/dtools
       '@sd/render':
         specifier: workspace:*
         version: link:../../packages/render
