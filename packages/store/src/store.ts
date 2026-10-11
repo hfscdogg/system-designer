@@ -136,6 +136,31 @@ export const threadOf = (r: { platform: string; space_id: string; thread_id: str
   threadId: r.thread_id,
 });
 
+export interface RunReportRow {
+  run_id: string;
+  created_at: string;
+  requester: string;
+  space_id: string;
+  revision: number;
+  parent_run_id: string | null;
+  /** The message that started the run, verbatim. */
+  request: string;
+  /** The requester's later messages in the thread while the run was open (answers, edits). */
+  later_messages: string[];
+  state: string;
+  pattern: string | null;
+  client: string | null;
+  subtotal_usd: number | null;
+  total_usd: number | null;
+  likely_low_usd: number | null;
+  likely_high_usd: number | null;
+  retainer_usd: number | null;
+  /** The D-Tools retainer opportunity, when "Send design retainer" was tapped. */
+  retainer_opportunity: string | null;
+  pdf_sha256: string | null;
+  last_error: string | null;
+}
+
 export class Store {
   private readonly db: Db;
   private readonly blobs: BlobStore;
@@ -655,6 +680,61 @@ export class Store {
       [runId],
     );
     return res.rows;
+  }
+
+  /**
+   * One row per run since `since`: what was asked, what was built, and what
+   * happened next. Read-only; for the pilot review and audits.
+   */
+  async runReport(since: Date, personId?: string): Promise<RunReportRow[]> {
+    const runs = await this.db.query<{
+      id: string; person_id: string; display_name: string; space_id: string; thread_id: string; state: string; last_error: string | null;
+      parent_run_id: string | null; revision: number; created_at: Date; updated_at: Date; request: string;
+    }>(
+      `SELECT r.id, r.person_id, p.display_name, r.space_id, r.thread_id, r.state, r.last_error, r.parent_run_id, r.revision,
+              r.created_at, r.updated_at, i.text AS request
+         FROM runs r JOIN persons p ON p.id = r.person_id JOIN intake_messages i ON i.id = r.intake_id
+        WHERE r.created_at >= $1 AND ($2::text IS NULL OR r.person_id = $2)
+        ORDER BY r.created_at`,
+      [since, personId ?? null],
+    );
+    const rows: RunReportRow[] = [];
+    for (const r of runs.rows) {
+      // Later messages from the requester in the thread while this run was open (answers, edits).
+      const later = await this.db.query<{ text: string }>(
+        `SELECT text FROM intake_messages
+          WHERE space_id = $1 AND thread_id = $2 AND person_id = $3 AND captured_at > $4 AND captured_at <= $5
+          ORDER BY captured_at`,
+        [r.space_id, r.thread_id, r.person_id, r.created_at, r.updated_at],
+      );
+      const view = await this.readArtifact<{ client?: string; commercial?: { subtotal_cents?: number; total_cents?: number | null; likely_range?: { low_cents: number; high_cents: number } | null; retainer?: { cents: number } } }>(r.id, "validate", "customer_view");
+      const pattern = await this.readArtifact<{ pattern?: string }>(r.id, "prebuild", "pattern");
+      const retainer = await this.readArtifact<{ number?: string | null; opportunity_id?: string }>(r.id, "retainer", "opportunity");
+      const pdf = (await this.listArtifacts(r.id)).find((a) => a.stage === "render" && a.name === "pdf");
+      const c = view?.commercial;
+      rows.push({
+        run_id: r.id,
+        created_at: r.created_at.toISOString(),
+        requester: r.display_name,
+        space_id: r.space_id,
+        revision: r.revision,
+        parent_run_id: r.parent_run_id,
+        request: r.request,
+        later_messages: later.rows.map((m) => m.text),
+        state: r.state,
+        pattern: pattern?.pattern ?? null,
+        client: view?.client ?? null,
+        subtotal_usd: c?.subtotal_cents != null ? c.subtotal_cents / 100 : null,
+        total_usd: c?.total_cents != null ? c.total_cents / 100 : null,
+        likely_low_usd: c?.likely_range ? c.likely_range.low_cents / 100 : null,
+        likely_high_usd: c?.likely_range ? c.likely_range.high_cents / 100 : null,
+        retainer_usd: c?.retainer ? c.retainer.cents / 100 : null,
+        retainer_opportunity: retainer ? (retainer.number ?? retainer.opportunity_id ?? null) : null,
+        pdf_sha256: pdf?.sha256 ?? null,
+        last_error: r.last_error,
+      });
+    }
+    return rows;
   }
 
   async catalogEvidence(runId: string): Promise<Array<{ record_id: string; sha256: string; admitted: boolean }>> {
