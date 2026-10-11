@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest";
 import { PDFDocument } from "pdf-lib";
-import { customerView, formatUsd, retainerTier, type CustomerProposal } from "@sd/build";
+import { customerView, formatUsd, retainerCents, type CustomerProposal } from "@sd/build";
 import { sha256Hex } from "@sd/core";
 import { recordedDToolsReader } from "@sd/dtools";
 import { admitProduct, bind, compile, materialize, patternRecordIds, type AdmittedProduct } from "@sd/build";
@@ -55,11 +55,11 @@ describe("PDF + preflight", () => {
     expect(r.pages).toBeGreaterThanOrEqual(1);
   }, 60_000);
 
-  it("looks like a D-Tools proposal: presenter, priced lines, summary and a tiered design retainer", async () => {
+  it("looks like a D-Tools proposal: presenter, priced lines, summary and a design retainer", async () => {
     const c = await customer();
     // 4% of the total, or of the priced scope while the total is incomplete (tax TBD here).
     expect(c.commercial.total_cents).toBeNull();
-    expect(c.commercial.retainer).toEqual({ cents: retainerTier(c.commercial.subtotal_cents) });
+    expect(c.commercial.retainer).toEqual({ cents: retainerCents(c.commercial) });
     const html = renderProposalHtml(c, await loadBrand(), {}, { ...meta, presenter: { name: "Henry Clifford", email: "henry@getlivewire.com" } });
     const pdf = await htmlToPdf(html);
     const pdfjs = await import("pdfjs-dist/legacy/build/pdf.mjs");

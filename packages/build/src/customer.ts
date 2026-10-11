@@ -4,25 +4,25 @@ import type { Proposal } from "./bind.ts";
  * Customer-facing projection (PRD §14.1). Built field by field from an
  * allowlist, so internal cost, margin, unit and extended prices cannot leak.
  */
-/** Design retainer target: this share of the budget total (Henry, 2026-10-07). */
+/** Design retainer: this share of the low estimate (Henry, 2026-10-07; low end 2026-10-11). */
 export const DESIGN_RETAINER_PCT = 4;
+const RETAINER_MIN_CENTS = 10_000;
 
 /**
- * The retainer is collected through a D-Tools quote template with a fixed
- * price, so it comes in tiers (Henry, 2026-10-10): the largest tier that is
- * not more than 4% of the budget, and never less than the smallest tier.
+ * 4% of the likely range's low end (the budget total, or the priced scope while
+ * tax is unknown, when no range is shown), to the whole dollar, never under $100.
  */
-export const RETAINER_TIERS_CENTS = [10_000, 25_000, 50_000, 100_000, 250_000, 500_000] as const;
-
-export function retainerTier(budgetCents: number): number {
-  const target = (budgetCents * DESIGN_RETAINER_PCT) / 100;
-  return [...RETAINER_TIERS_CENTS].reverse().find((t) => t <= target) ?? RETAINER_TIERS_CENTS[0];
+export function retainerCents(c: { likely_range: { low_cents: number } | null; total_cents: number | null; subtotal_cents: number }): number {
+  const basis = c.likely_range?.low_cents ?? c.total_cents ?? c.subtotal_cents;
+  return Math.max(RETAINER_MIN_CENTS, Math.round((basis * DESIGN_RETAINER_PCT) / 100 / 100) * 100);
 }
 
-/** The D-Tools quote template Livewire keeps for a retainer tier: "Design Retainer $250". */
-export function retainerTemplateName(cents: number): string {
-  return `Design Retainer $${(cents / 100).toLocaleString("en-US")}`;
-}
+/**
+ * The D-Tools quote template the retainer opportunity is created from. D-Tools'
+ * API can only name a template, not set a price, so the rep types the amount
+ * into its one "Design Retainer" line before sending it (Henry, 2026-10-11).
+ */
+export const RETAINER_TEMPLATE = "Design Retainer";
 
 export interface CustomerProposal {
   watermark: string;
@@ -63,7 +63,7 @@ export interface CustomerProposal {
     parts_cents: number;
     /** An admin-approved price reduction, shown in the Summary. */
     reduction: { pct: number; cents: number } | null;
-    /** The retainer tier for the total (or the priced scope while the total is incomplete), collected through D-Tools. */
+    /** The design retainer (see retainerCents), collected through D-Tools. */
     retainer: { cents: number };
     /** Where similar Livewire jobs landed, shown under the total. */
     likely_range: { low_cents: number; high_cents: number } | null;
@@ -116,7 +116,7 @@ export function customerView(p: Proposal): CustomerProposal {
       total_cents: p.commercial.total_cents,
       parts_cents: p.commercial.parts_cents,
       reduction: p.commercial.discount ? { pct: p.commercial.discount.pct, cents: p.commercial.discount.cents } : null,
-      retainer: { cents: retainerTier(p.commercial.total_cents ?? p.commercial.subtotal_cents) },
+      retainer: { cents: retainerCents(p.commercial) },
       likely_range: p.commercial.likely_range ? { low_cents: p.commercial.likely_range.low_cents, high_cents: p.commercial.likely_range.high_cents } : null,
     },
   };

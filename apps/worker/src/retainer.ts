@@ -1,11 +1,12 @@
-import { formatUsd, retainerTemplateName, type CustomerProposal } from "@sd/build";
+import { DESIGN_RETAINER_PCT, formatUsd, RETAINER_TEMPLATE, type CustomerProposal } from "@sd/build";
 import type { DToolsReader, DToolsWriter } from "@sd/dtools";
 import type { RunRecord, Store } from "@sd/store";
 
 /**
- * "Send design retainer": create a D-Tools opportunity from the retainer
- * template for this budget's tier, so the rep sends it for e-signature and
- * payment from D-Tools. Idempotent per budget: the opportunity is recorded as
+ * "Send design retainer": create a D-Tools opportunity from the "Design
+ * Retainer" quote template. D-Tools' API can't set a quote's price, so the reply
+ * tells the rep the amount to type into its line before sending it for
+ * e-signature and payment. Idempotent per budget: the opportunity is recorded as
  * the run's retainer/opportunity artifact, and an opportunity already created
  * under this budget's reference is found by name before anything is created.
  */
@@ -24,6 +25,8 @@ export interface RetainerRecord {
   retainer_cents: number;
   /** The draft quote's price as D-Tools reports it; null when it could not be read. */
   quote_price_cents: number | null;
+  /** What the amount is 4% of, for the reply ("the low estimate, $14,075.00"). */
+  basis?: string;
 }
 
 const json = (read: { body: Uint8Array }) => JSON.parse(new TextDecoder().decode(read.body)) as Record<string, unknown>;
@@ -46,7 +49,7 @@ export async function createRetainer(deps: RetainerDeps, runId: string, tap: str
   const view = await store.readArtifact<CustomerProposal>(runId, "validate", "customer_view");
   if (!view) throw new Error(`run ${runId} has no customer view`);
   const cents = view.commercial.retainer.cents;
-  const template = retainerTemplateName(cents);
+  const template = RETAINER_TEMPLATE;
   const ref = `SD-${runId.slice(4, 12)}`;
   const name = `Design Retainer · ${view.client} · ${ref}`;
 
@@ -70,6 +73,8 @@ export async function createRetainer(deps: RetainerDeps, runId: string, tap: str
     const price = json(await deps.dtools.getQuote(quoteId)).price;
     quotePrice = typeof price === "number" ? Math.round(price * 100) : null;
   }
+  const c = view.commercial;
+  const basis = c.likely_range ? `the low estimate, ${formatUsd(c.likely_range.low_cents)}` : `the budget, ${formatUsd(c.total_cents ?? c.subtotal_cents)}`;
   const record: RetainerRecord = {
     opportunity_id: id,
     number: typeof opp.number === "string" ? opp.number : null,
@@ -77,18 +82,18 @@ export async function createRetainer(deps: RetainerDeps, runId: string, tap: str
     quote_template: template,
     retainer_cents: cents,
     quote_price_cents: quotePrice,
+    basis,
   };
   await store.publishArtifact(runId, "retainer", "opportunity", record);
   await say(ready(record), "ready");
 }
 
 function ready(r: RetainerRecord): string {
+  const amount = formatUsd(r.retainer_cents);
   const where = `D-Tools opportunity ${r.number ?? r.opportunity_id} "${r.name}"`;
-  const check =
-    r.quote_price_cents === r.retainer_cents
-      ? ""
-      : r.quote_price_cents === null
-        ? `\n⚠️ D-Tools made no quote from the "${r.quote_template}" template. Check that the template exists, then add the retainer quote by hand.`
-        : `\n⚠️ Its quote is ${formatUsd(r.quote_price_cents)}, not ${formatUsd(r.retainer_cents)}. Check the "${r.quote_template}" template before sending.`;
-  return `Design retainer (${formatUsd(r.retainer_cents)}) is ready as ${where}. Open it in D-Tools, review, and send the quote for e-signature; the client signs and pays the retainer there.${check}`;
+  const of = r.basis ? ` (${DESIGN_RETAINER_PCT}% of ${r.basis})` : "";
+  if (r.quote_price_cents === null) {
+    return `Design retainer: ${amount}${of}. It's set up as ${where}, but D-Tools made no quote from the "${r.quote_template}" template.\n⚠️ Check that the template exists, then add a Design Retainer quote for ${amount} by hand and send it for e-signature.`;
+  }
+  return `Design retainer: ${amount}${of}. It's ready as ${where}. Open it, set the Design Retainer line to ${amount}, then send the quote for e-signature; the client signs and pays the retainer there.`;
 }

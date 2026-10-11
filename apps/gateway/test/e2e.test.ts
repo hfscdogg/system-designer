@@ -608,15 +608,15 @@ describe("editing a scope and revising a finished budget", () => {
     expect(run!.state).toBe("STALE");
   });
 
-  it("sends the design retainer: one D-Tools opportunity from the tier's template, read back and posted", async () => {
+  it("sends the design retainer: one D-Tools opportunity from the Design Retainer template, with the amount to type", async () => {
     const writer = recordingDToolsWriter();
     const json = (endpoint: string, query: Record<string, string>, value: unknown) => {
       const body = new TextEncoder().encode(JSON.stringify(value));
       return { endpoint, query, status: 200, body, sha256: "x", fetchedAt: "2026-10-10T12:00:00.000Z" };
     };
     const base = recordedDToolsReader(CATALOG);
-    // The retainer quote the template makes; the rep's real quote is added under the same opportunity later.
-    const quotes: Record<string, Record<string, unknown>> = { "q-1": { id: "q-1", name: "Design Retainer $100", price: 100, state: "Design Development" } };
+    // The retainer quote the template makes (the rep types its amount); the real quote is added under the same opportunity later.
+    const quotes: Record<string, Record<string, unknown>> = { "q-1": { id: "q-1", name: "Design Retainer", price: 0, state: "Design Development" } };
     const dtools = Object.assign(base, {
       findOpportunities: async (search: string) => json("Opportunities/GetOpportunities", { search }, { opportunities: writer.created.filter((o) => o.name.includes(search)) }),
       getOpportunity: async (id: string) => json("Opportunities/GetOpportunity", { id }, { id, number: "P-9001", name: writer.created.find((o) => o.id === id)!.name, quoteIds: Object.keys(quotes) }),
@@ -632,9 +632,9 @@ describe("editing a scope and revising a finished budget", () => {
     expect((await t.send(controlClick("send_retainer", run!.id, "users/henry"))).body).toEqual({ text: "Only the person who made this request can send its retainer." });
     expect((await t.send(controlClick("send_retainer", run!.id))).body).toMatchObject({ text: expect.stringContaining("Setting up the design retainer") });
     expect(writer.created).toEqual([
-      expect.objectContaining({ quoteTemplate: "Design Retainer $100", clientName: expect.any(String), name: expect.stringContaining(`SD-${run!.id.slice(4, 12)}`) }),
+      expect.objectContaining({ quoteTemplate: "Design Retainer", clientName: expect.any(String), name: expect.stringContaining(`SD-${run!.id.slice(4, 12)}`) }),
     ]);
-    expect(t.texts().at(-1)).toMatch(/Design retainer \(\$100\.00\) is ready as D-Tools opportunity P-9001/);
+    expect(t.texts().at(-1)).toMatch(/^Design retainer: \$100\.00 \(4% of the (low estimate|budget), \$[\d,.]+\)\. It's ready as D-Tools opportunity P-9001 .* set the Design Retainer line to \$100\.00, then send the quote for e-signature/);
     expect(t.texts().at(-1)).not.toContain("⚠️");
 
     // A second tap re-posts the same opportunity instead of creating another.
