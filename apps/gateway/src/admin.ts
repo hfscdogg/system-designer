@@ -11,7 +11,8 @@
  *   node apps/gateway/src/admin.ts show-policy
  *   node apps/gateway/src/admin.ts reconcile        # start workflows for saved runs that have none (hourly job)
  *   node apps/gateway/src/admin.ts smoke spaces/AAAA  # scripted conversation through the deployed system (sd-smoke-<env> job)
- *   node apps/gateway/src/admin.ts runs --since 2026-10-10 [--person zack] > runs.csv   # every request and its result
+ *   node apps/gateway/src/admin.ts runs --since 2026-10-10 [--person zack] > runs.csv   # every request, its result, edits and score
+ *   node apps/gateway/src/admin.ts learn --since 2026-10-10 [--person zack]            # what reps changed, for tuning patterns
  *
  * DMs with an active person are always allowed; shared spaces must be allowed explicitly.
  */
@@ -19,8 +20,9 @@ import { readFile } from "node:fs/promises";
 import pg from "pg";
 import { CommercialPolicySchema } from "@sd/build";
 import { allowSpace, deactivatePerson, MemoryBlobStore, migrate, pgDb, Store, upsertPerson } from "@sd/store";
-import { runsCsv } from "./report.ts";
-import { productionAdapters, productionStore, reconcileRuns, temporalClient, temporalSettings, TemporalWorkflows } from "@sd/worker";
+import { httpDToolsReader } from "@sd/dtools";
+import { learnReport, runsCsv, scoreRuns } from "./report.ts";
+import { followUpFinalQuotes, productionAdapters, productionStore, reconcileRuns, temporalClient, temporalSettings, TemporalWorkflows } from "@sd/worker";
 import { prepareSmoke, runSmoke } from "./smoke.ts";
 
 async function main() {
@@ -85,16 +87,29 @@ async function main() {
         console.log(JSON.stringify(result));
         await client.connection.close();
         if (result.failed.length) process.exitCode = 1;
+        // Read the real quotes reps built under retainer opportunities (read-only). A D-Tools outage
+        // is logged per run and doesn't fail the job; the next pass retries.
+        if (process.env.DTOOLS_API_KEY && process.env.DTOOLS_BASIC_AUTH) {
+          const { store: blobStore, pool: storePool } = productionStore();
+          try {
+            const dtools = httpDToolsReader({ apiKey: process.env.DTOOLS_API_KEY, basicAuth: process.env.DTOOLS_BASIC_AUTH });
+            console.log(JSON.stringify({ final_quotes: await followUpFinalQuotes(blobStore, dtools) }));
+          } finally {
+            await storePool.end();
+          }
+        }
         break;
       }
-      case "runs": {
-        // Every run since a date as CSV: the request, what was built, and what happened next.
+      case "runs":
+      case "learn": {
+        // Every run since a date as CSV (the request, what was built, what changed, its score), or what reps changed most.
         const sinceArg = args[args.indexOf("--since") + 1];
         const person = args.includes("--person") ? args[args.indexOf("--person") + 1] : undefined;
-        if (!args.includes("--since") || !sinceArg || Number.isNaN(Date.parse(sinceArg))) throw new Error("usage: runs --since YYYY-MM-DD [--person <id>]");
+        if (!args.includes("--since") || !sinceArg || Number.isNaN(Date.parse(sinceArg))) throw new Error(`usage: ${command} --since YYYY-MM-DD [--person <id>]`);
         const { store, pool: storePool } = productionStore();
         try {
-          process.stdout.write(runsCsv(await store.runReport(new Date(sinceArg), person)));
+          const rows = await scoreRuns(store, await store.runReport(new Date(sinceArg), person), new Date());
+          process.stdout.write(command === "runs" ? runsCsv(rows) : learnReport(rows));
         } finally {
           await storePool.end();
         }
@@ -123,7 +138,7 @@ async function main() {
         break;
       }
       default:
-        throw new Error("commands: migrate | pending | add-person | allow-space | deactivate | set-policy | show-policy | reconcile | runs | smoke");
+        throw new Error("commands: migrate | pending | add-person | allow-space | deactivate | set-policy | show-policy | reconcile | runs | learn | smoke");
     }
   } finally {
     await pool.end();

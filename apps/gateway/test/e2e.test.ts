@@ -1,7 +1,7 @@
 import { beforeEach, describe, expect, it } from "vitest";
 import { FakeChannelAdapter, type View } from "@sd/channels";
 import type { ClarificationInterpreter, ScopeExtractor } from "@sd/llm";
-import { createActivities, InlineWorkflows } from "@sd/worker";
+import { createActivities, followUpFinalQuotes, InlineWorkflows, readFinalQuote } from "@sd/worker";
 import { completeExtraction, noPatch } from "../../../packages/core/test/fixtures.ts";
 import { TEST_POLICY, testStore } from "../../../packages/store/test/helpers.ts";
 import { recordedDToolsReader, recordingDToolsWriter, type DToolsWriter } from "@sd/dtools";
@@ -13,7 +13,7 @@ import type { DToolsReader } from "@sd/dtools";
 
 const PIXEL = Uint8Array.from(atob("iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mNkYAAAAAYAAjCB0C8AAAAASUVORK5CYII="), (ch) => ch.charCodeAt(0));
 import { handleGoogleChat, type GatewayDeps } from "../src/handler.ts";
-import { runsCsv } from "../src/report.ts";
+import { learnReport, runsCsv, scoreRuns } from "../src/report.ts";
 import { prepareSmoke, runSmoke, SMOKE_PERSON, SMOKE_SCENARIOS, type SmokeScenario } from "../src/smoke.ts";
 
 const SPACE = "spaces/A";
@@ -614,10 +614,12 @@ describe("editing a scope and revising a finished budget", () => {
       return { endpoint, query, status: 200, body, sha256: "x", fetchedAt: "2026-10-10T12:00:00.000Z" };
     };
     const base = recordedDToolsReader(CATALOG);
+    // The retainer quote the template makes; the rep's real quote is added under the same opportunity later.
+    const quotes: Record<string, Record<string, unknown>> = { "q-1": { id: "q-1", name: "Design Retainer $100", price: 100, state: "Design Development" } };
     const dtools = Object.assign(base, {
       findOpportunities: async (search: string) => json("Opportunities/GetOpportunities", { search }, { opportunities: writer.created.filter((o) => o.name.includes(search)) }),
-      getOpportunity: async (id: string) => json("Opportunities/GetOpportunity", { id }, { id, number: "P-9001", name: writer.created.find((o) => o.id === id)!.name, quoteIds: ["q-1"] }),
-      getQuote: async (id: string) => json("Quotes/GetQuote", { id }, { id, price: 100 }),
+      getOpportunity: async (id: string) => json("Opportunities/GetOpportunity", { id }, { id, number: "P-9001", name: writer.created.find((o) => o.id === id)!.name, quoteIds: Object.keys(quotes) }),
+      getQuote: async (id: string) => json("Quotes/GetQuote", { id }, quotes[id]),
     });
     const t = await setup([completeExtraction()], [], { writer, dtools });
     await t.send(chatMessage("Smith security upgrade"));
@@ -651,10 +653,40 @@ describe("editing a scope and revising a finished budget", () => {
       retainer_usd: 100,
       pdf_sha256: expect.stringMatching(/^[0-9a-f]{64}$/),
     });
-    expect(row!.total_usd ?? row!.subtotal_usd).toBeGreaterThan(0);
-    const csv = runsCsv([row!]);
-    expect(csv.split("\n")[0]).toContain("request,later_messages,state");
+    const ours = row!.total_usd ?? row!.subtotal_usd!;
+    expect(ours).toBeGreaterThan(0);
+    // Left as built and the retainer sent: 5 stars.
+    const [scored] = await scoreRuns(t.store, [row!], new Date());
+    expect(scored).toMatchObject({ changes: null, stars: 5, why: "left as built; retainer sent", final_quote_usd: null });
+    const csv = runsCsv([scored!]);
+    expect(csv.split("\n")[0]).toContain("request,later_messages,changes,state");
+    expect(csv.split("\n")[0]).toContain("final_quote_usd,final_quote_diff_pct,stars,why");
     expect(csv).toContain('"Smith security upgrade"');
+
+    // The rep builds the real quote under the retainer's opportunity. A draft isn't final; once presented it is recorded.
+    quotes["q-2"] = { id: "q-2", number: "32501", name: "Quote", version: 1, price: ours * 2, state: "Design Development", items: [] };
+    expect(await followUpFinalQuotes(t.store, dtools)).toEqual({ checked: 1, recorded: 0, failed: [] });
+    quotes["q-2"] = {
+      ...quotes["q-2"],
+      state: "Presented",
+      price: ours * 2,
+      items: [
+        { type: "Product", quantity: 4, isBillable: true, system: "Security System", unitLaborTime: 1800 },
+        { type: "Labor", quantity: 2, isBillable: true, system: "Security System", unitLaborTime: 3600 },
+      ],
+    };
+    expect(await followUpFinalQuotes(t.store, dtools)).toEqual({ checked: 1, recorded: 1, failed: [] });
+    expect(await followUpFinalQuotes(t.store, dtools)).toEqual({ checked: 1, recorded: 0, failed: [] });
+    expect(await readFinalQuote(t.store, run!.id)).toMatchObject({ state: "Presented", number: "32501", equipment_by_system: { "Security System": 4 }, labor_hours: 4 });
+    // Ours was half the real quote: more than 20% off caps the score at 3.
+    const [missed] = await scoreRuns(t.store, await t.store.runReport(new Date("2000-01-01")), new Date());
+    expect(missed).toMatchObject({ stars: 3, final_quote_usd: ours * 2, final_quote_diff_pct: -50, why: "left as built; ours -50% vs presented quote 32501" });
+    // The client accepts a revised quote close to ours: within 20% keeps the 5, and accepted ends the follow-up.
+    quotes["q-2"] = { ...quotes["q-2"], version: 2, price: ours * 1.1, state: "Accepted", acceptedDate: "2026-10-20T15:00:00" };
+    expect(await followUpFinalQuotes(t.store, dtools)).toEqual({ checked: 1, recorded: 1, failed: [] });
+    expect(await followUpFinalQuotes(t.store, dtools)).toEqual({ checked: 0, recorded: 0, failed: [] });
+    const [hit] = await scoreRuns(t.store, await t.store.runReport(new Date("2000-01-01")), new Date());
+    expect(hit).toMatchObject({ stars: 5, final_quote_diff_pct: -9.1 });
     // The model's raw reply is kept with what it was given.
     const replies = (await t.store.listArtifacts(run!.id)).filter((a) => a.stage === "model");
     expect(replies.map((a) => a.name)).toEqual([expect.stringMatching(/^extraction-[0-9a-f]{16}$/)]);
@@ -691,6 +723,15 @@ describe("editing a scope and revising a finished budget", () => {
     expect(t.chat.files.map((f) => f.file.filename)).toEqual(["Livewire-UNASSIGNED-conceptual-budget.pdf", "Livewire-UNASSIGNED-conceptual-budget-rev2.pdf"]);
     // A superseded budget can't be revised again; the newest one can.
     expect((await t.send(controlClick("revise_budget", original!.id))).body).toEqual({ text: "That budget was already revised. Use the newest one." });
+
+    // The run log shows what the revision changed and scores the thread on its newest version.
+    const scored = await scoreRuns(t.store, await t.store.runReport(new Date("2000-01-01")), new Date());
+    expect(scored.map((r) => [r.run_id, r.stars, r.why])).toEqual([
+      [original!.id, null, "revised (see the newer version)"],
+      [revision.id, null, expect.stringMatching(/^1 (small edit|edit changed the scope), total moved [\d.]+%; retainer not sent yet$/)],
+    ]);
+    expect(scored[1]!.changes).toMatch(/glass_break/);
+    expect(learnReport(scored)).toContain("Quantities reps changed most");
   });
 
   it("treats a message starting with \"revise\" as a revision of the latest budget, and anything else as a new request", async () => {

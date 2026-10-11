@@ -9,3 +9,4 @@ export * from "./compile.ts";
 export * from "./bind.ts";
 export * from "./customer.ts";
 export * from "./validate.ts";
+export * from "./outcome.ts";
