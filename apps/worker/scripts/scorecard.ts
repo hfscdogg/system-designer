@@ -118,6 +118,7 @@ const UNCATEGORIZED: Array<[RegExp, string]> = [
   [/\beero\b/i, "Networking > Wireless Access Points"],
   [/\bYRD\d|\block\b/i, "Access Control > Door Locks"],
 ];
+const PRODUCT_SALE = /\bemployee\b|\bcash\s*(and|&)\s*carry\b|\b(parts|speakers|equipment|product) only\b|\bdrop[- ]?ship\b|\breplacement\b|\bwarranty\b|\brma\b/i;
 const CUSTOM_QUOTE = /(^|[\s-])CUST\d*\b|\bcustom (quote|system|package)\b/i;
 const categoryOf = (i: { category: string | null; name: string | null; model: string | null }) =>
   CUSTOM_QUOTE.test(`${i.model ?? ""} ${i.name ?? ""}`)
@@ -259,8 +260,10 @@ for (const q of quotes) {
   const uncovered = counted.filter(([b]) => b.startsWith("uncovered")).reduce((n, [, v]) => n + v, 0);
   const systems = counted.filter(([b, v]) => !b.startsWith("uncovered") && countedTotal > 0 && v / countedTotal >= 0.1).map(([b]) => b).sort();
   const uncoveredKinds = counted.filter(([b, v]) => b.startsWith("uncovered") && countedTotal > 0 && v / countedTotal >= 0.1).map(([b]) => b.slice(10));
+  // A product sale with no install (employee purchase, cash and carry, parts only, drop ship, replacement part) is not a design job.
+  const productSale = a.hours === 0 && PRODUCT_SALE.test(q.name ?? "");
   const kind =
-    a.equipment <= 0 ? "labor_or_service_only" : countedTotal <= 0 ? "accessories_only" : uncovered / countedTotal > 0.2 ? "uncovered" : systems.every((s) => priced.has(s)) && systems.length ? "coverable" : "uncovered";
+    productSale ? "product_sale" : a.equipment <= 0 ? "labor_or_service_only" : countedTotal <= 0 ? "accessories_only" : uncovered / countedTotal > 0.2 ? "uncovered" : systems.every((s) => priced.has(s)) && systems.length ? "coverable" : "uncovered";
   const explainable = a.price > 0 && Math.abs(a.rebuilt - a.price) <= Math.max(1, 0.02 * a.price);
   const ours = kind === "coverable" && explainable ? await price(systems, q.items.filter(billable)) : null;
   rows.push({
@@ -284,7 +287,8 @@ writeFileSync(OUT, JSON.stringify(rows, null, 2));
 const pct = (n: number, d: number) => (d ? `${Math.round((n / d) * 100)}%` : "-");
 const money = (rs: typeof rows) => rs.reduce((n, r) => n + r.price, 0);
 const all = rows;
-const design = rows.filter((r) => r.kind !== "labor_or_service_only" && r.kind !== "accessories_only");
+const design = rows.filter((r) => r.kind !== "labor_or_service_only" && r.kind !== "accessories_only" && r.kind !== "product_sale");
+console.log(`product sales with no install (employee, cash and carry, parts only, drop ship, replacement): ${rows.filter((r) => r.kind === "product_sale").length}`);
 const cov = design.filter((r) => r.kind === "coverable");
 console.log(`accepted quotes: ${all.length}; with equipment to design: ${design.length} (${pct(design.length, all.length)})`);
 console.log(`coverable today: ${cov.length} of ${design.length} jobs (${pct(cov.length, design.length)}), ${pct(money(cov), money(design))} of revenue`);
