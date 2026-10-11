@@ -94,8 +94,8 @@ export function normalizeFunctionalSystems(items: string[]): string[] {
   return uniqSorted(
     mapped.flatMap(({ item, hits }) => {
       if (hits.length) return hits;
-      // Bare "audio" is the TV's sound when a TV is in scope, otherwise music through the house.
-      if (/^audio( systems?)?$/.test(fold(item))) return [hasAv ? "audio_video" : "whole_home_audio"];
+      // Bare "audio" ("commercial audio", "restaurant audio system") is the TV's sound when a TV is in scope, otherwise music through the house.
+      if (/^((commercial|residential|business|restaurant|retail|office|bar|store|home|house) )?audio( systems?)?$/.test(fold(item))) return [hasAv ? "audio_video" : "whole_home_audio"];
       return [fold(item)];
     }),
   );
