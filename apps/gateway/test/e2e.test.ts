@@ -14,6 +14,7 @@ import type { DToolsReader } from "@sd/dtools";
 const PIXEL = Uint8Array.from(atob("iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mNkYAAAAAYAAjCB0C8AAAAASUVORK5CYII="), (ch) => ch.charCodeAt(0));
 import { handleGoogleChat, type GatewayDeps } from "../src/handler.ts";
 import { learnReport, runsCsv, scoreRuns } from "../src/report.ts";
+import { exportRunlog, type RunlogRow } from "../src/runlog-export.ts";
 import { prepareSmoke, runSmoke, SMOKE_PERSON, SMOKE_SCENARIOS, type SmokeScenario } from "../src/smoke.ts";
 
 const SPACE = "spaces/A";
@@ -687,6 +688,12 @@ describe("editing a scope and revising a finished budget", () => {
     expect(await followUpFinalQuotes(t.store, dtools)).toEqual({ checked: 0, recorded: 0, failed: [] });
     const [hit] = await scoreRuns(t.store, await t.store.runReport(new Date("2000-01-01")), new Date());
     expect(hit).toMatchObject({ stars: 5, final_quote_diff_pct: -9.1 });
+
+    // The same scored log is copied to BigQuery, minus the internal diff.
+    const exported: RunlogRow[][] = [];
+    expect(await exportRunlog(t.store, { replace: async (rows) => void exported.push(rows) }, new Date())).toBe(1);
+    expect(exported[0]![0]).toMatchObject({ run_id: run!.id, request: "Smith security upgrade", stars: 5, later_messages: [], exported_at: expect.any(String) });
+    expect(exported[0]![0]).not.toHaveProperty("diff");
     // The model's raw reply is kept with what it was given.
     const replies = (await t.store.listArtifacts(run!.id)).filter((a) => a.stage === "model");
     expect(replies.map((a) => a.name)).toEqual([expect.stringMatching(/^extraction-[0-9a-f]{16}$/)]);

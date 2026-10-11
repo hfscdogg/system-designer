@@ -1,6 +1,7 @@
 locals {
   services = [
     "artifactregistry.googleapis.com",
+    "bigquery.googleapis.com",
     "chat.googleapis.com",
     "cloudscheduler.googleapis.com",
     "iam.googleapis.com",

@@ -9,7 +9,7 @@
  *   node apps/gateway/src/admin.ts deactivate zack
  *   node apps/gateway/src/admin.ts set-policy henry policy.json "Pilot margin and tax rules"   # admin only
  *   node apps/gateway/src/admin.ts show-policy
- *   node apps/gateway/src/admin.ts reconcile        # start workflows for saved runs that have none (hourly job)
+ *   node apps/gateway/src/admin.ts reconcile        # hourly: start missing workflows, read real quotes, copy the run log to BigQuery (RUNLOG_DATASET)
  *   node apps/gateway/src/admin.ts smoke spaces/AAAA  # scripted conversation through the deployed system (sd-smoke-<env> job)
  *   node apps/gateway/src/admin.ts runs --since 2026-10-10 [--person zack] > runs.csv   # every request, its result, edits and score
  *   node apps/gateway/src/admin.ts learn --since 2026-10-10 [--person zack]            # what reps changed, for tuning patterns
@@ -23,6 +23,7 @@ import { allowSpace, deactivatePerson, MemoryBlobStore, migrate, pgDb, Store, up
 import { httpDToolsReader } from "@sd/dtools";
 import { learnReport, runsCsv, scoreRuns } from "./report.ts";
 import { followUpFinalQuotes, productionAdapters, productionStore, reconcileRuns, temporalClient, temporalSettings, TemporalWorkflows } from "@sd/worker";
+import { bigQueryRunlogSink, exportRunlog } from "./runlog-export.ts";
 import { prepareSmoke, runSmoke } from "./smoke.ts";
 
 async function main() {
@@ -87,16 +88,24 @@ async function main() {
         console.log(JSON.stringify(result));
         await client.connection.close();
         if (result.failed.length) process.exitCode = 1;
-        // Read the real quotes reps built under retainer opportunities (read-only). A D-Tools outage
-        // is logged per run and doesn't fail the job; the next pass retries.
-        if (process.env.DTOOLS_API_KEY && process.env.DTOOLS_BASIC_AUTH) {
-          const { store: blobStore, pool: storePool } = productionStore();
-          try {
+        const { store: blobStore, pool: storePool } = productionStore();
+        try {
+          // Read the real quotes reps built under retainer opportunities (read-only). A D-Tools outage
+          // is logged per run and doesn't fail the job; the next pass retries.
+          if (process.env.DTOOLS_API_KEY && process.env.DTOOLS_BASIC_AUTH) {
             const dtools = httpDToolsReader({ apiKey: process.env.DTOOLS_API_KEY, basicAuth: process.env.DTOOLS_BASIC_AUTH });
             console.log(JSON.stringify({ final_quotes: await followUpFinalQuotes(blobStore, dtools) }));
-          } finally {
-            await storePool.end();
           }
+          // Copy the scored run log to BigQuery for read-only questions. Best effort: the next pass replaces it.
+          if (process.env.RUNLOG_DATASET) {
+            try {
+              console.log(`runlog: ${await exportRunlog(blobStore, bigQueryRunlogSink(process.env.RUNLOG_DATASET), new Date())} rows`);
+            } catch (err) {
+              console.error(`runlog export failed: ${err instanceof Error ? err.message : err}`);
+            }
+          }
+        } finally {
+          await storePool.end();
         }
         break;
       }
