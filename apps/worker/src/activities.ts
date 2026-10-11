@@ -61,6 +61,15 @@ export function createActivities(deps: ActivityDeps): RunActivities {
     }
   }
 
+  /**
+   * Keep the model's raw reply and what it was given, so every prompt and its result can be audited.
+   * Named by content, so a retried call adds its own record and a repeat adds nothing.
+   */
+  async function recordModelReply(runId: string, kind: string, input: Record<string, unknown>, raw: unknown, model: string): Promise<void> {
+    const record = { kind, model, input, raw };
+    await store.publishArtifact(runId, "model", `${kind}-${hashCanonical(record).replace(/^sha256:/, "").slice(0, 16)}`, record);
+  }
+
   async function validateModelScope(raw: unknown, model: string, runId: string, kind: string): Promise<ExtractOutcome> {
     return validateScope(raw, runId, kind, { model });
   }
@@ -75,6 +84,7 @@ export function createActivities(deps: ActivityDeps): RunActivities {
     if (!parentReceipt) throw new IntegrityError(`run ${runId} revises ${parentRunId}, which has no approved receipt`);
     const base = parentReceipt.body.extraction;
     const { raw, model } = await deps.interpreter.interpret({ current: base, questions: [], answer: change });
+    await recordModelReply(runId, "revision", { answer: change }, raw, model);
     const patch = validateClarificationPatch(raw);
     if (!patch.ok || patch.value.unmapped) {
       await store.appendEvent(runId, "revision_unmapped", "system", { model, parentRunId, errors: patch.ok ? [] : patch.errors });
@@ -125,10 +135,9 @@ export function createActivities(deps: ActivityDeps): RunActivities {
       if (run.parent_run_id) return reviseScope(run.id, run.parent_run_id, run.revision, intake.text);
       let last: ExtractOutcome = { ok: false, reason: "no attempt made" };
       for (let i = 0; i < attempts; i++) {
-        const { raw, model } = await deps.extractor.extract({
-          text: intake.text,
-          attachmentNames: intake.attachments.map((a) => a.name),
-        });
+        const input = { text: intake.text, attachmentNames: intake.attachments.map((a) => a.name) };
+        const { raw, model } = await deps.extractor.extract(input);
+        await recordModelReply(runId, "extraction", input, raw, model);
         last = await validateModelScope(raw, model, runId, "scope_extracted");
         if (last.ok) {
           const ignored = intake.attachments.length
@@ -196,6 +205,7 @@ export function createActivities(deps: ActivityDeps): RunActivities {
       // Every open question, so one typed or dictated reply can answer several.
       const questions = computeBlockers(base).map((b) => b.question);
       const { raw, model } = await deps.interpreter.interpret({ current: base, questions, answer: answer.text });
+      await recordModelReply(runId, "clarification", { questions, answer: answer.text }, raw, model);
       const patch = validateClarificationPatch(raw);
       if (!patch.ok) {
         await store.appendEvent(runId, "clarification_rejected", "system", { model, intakeId, errors: patch.errors });

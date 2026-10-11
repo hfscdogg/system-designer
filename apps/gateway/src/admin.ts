@@ -11,6 +11,7 @@
  *   node apps/gateway/src/admin.ts show-policy
  *   node apps/gateway/src/admin.ts reconcile        # start workflows for saved runs that have none (hourly job)
  *   node apps/gateway/src/admin.ts smoke spaces/AAAA  # scripted conversation through the deployed system (sd-smoke-<env> job)
+ *   node apps/gateway/src/admin.ts runs --since 2026-10-10 [--person zack] > runs.csv   # every request and its result
  *
  * DMs with an active person are always allowed; shared spaces must be allowed explicitly.
  */
@@ -18,6 +19,7 @@ import { readFile } from "node:fs/promises";
 import pg from "pg";
 import { CommercialPolicySchema } from "@sd/build";
 import { allowSpace, deactivatePerson, MemoryBlobStore, migrate, pgDb, Store, upsertPerson } from "@sd/store";
+import { runsCsv } from "./report.ts";
 import { productionAdapters, productionStore, reconcileRuns, temporalClient, temporalSettings, TemporalWorkflows } from "@sd/worker";
 import { prepareSmoke, runSmoke } from "./smoke.ts";
 
@@ -85,6 +87,19 @@ async function main() {
         if (result.failed.length) process.exitCode = 1;
         break;
       }
+      case "runs": {
+        // Every run since a date as CSV: the request, what was built, and what happened next.
+        const sinceArg = args[args.indexOf("--since") + 1];
+        const person = args.includes("--person") ? args[args.indexOf("--person") + 1] : undefined;
+        if (!args.includes("--since") || !sinceArg || Number.isNaN(Date.parse(sinceArg))) throw new Error("usage: runs --since YYYY-MM-DD [--person <id>]");
+        const { store, pool: storePool } = productionStore();
+        try {
+          process.stdout.write(runsCsv(await store.runReport(new Date(sinceArg), person)));
+        } finally {
+          await storePool.end();
+        }
+        break;
+      }
       case "smoke": {
         const spaceId = args[0] ?? process.env.SMOKE_SPACE_ID;
         if (!spaceId) throw new Error("usage: smoke <spaces/ID> (or set SMOKE_SPACE_ID)");
@@ -108,7 +123,7 @@ async function main() {
         break;
       }
       default:
-        throw new Error("commands: migrate | pending | add-person | allow-space | deactivate | set-policy | show-policy | reconcile | smoke");
+        throw new Error("commands: migrate | pending | add-person | allow-space | deactivate | set-policy | show-policy | reconcile | runs | smoke");
     }
   } finally {
     await pool.end();

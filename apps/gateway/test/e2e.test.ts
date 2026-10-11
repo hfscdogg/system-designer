@@ -13,6 +13,7 @@ import type { DToolsReader } from "@sd/dtools";
 
 const PIXEL = Uint8Array.from(atob("iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mNkYAAAAAYAAjCB0C8AAAAASUVORK5CYII="), (ch) => ch.charCodeAt(0));
 import { handleGoogleChat, type GatewayDeps } from "../src/handler.ts";
+import { runsCsv } from "../src/report.ts";
 import { prepareSmoke, runSmoke, SMOKE_PERSON, SMOKE_SCENARIOS, type SmokeScenario } from "../src/smoke.ts";
 
 const SPACE = "spaces/A";
@@ -639,6 +640,25 @@ describe("editing a scope and revising a finished budget", () => {
     expect(writer.created).toHaveLength(1);
     expect(t.texts()).toHaveLength(posted + 1);
     expect(t.texts().at(-1)).toContain("P-9001");
+
+    // The run log: the request as typed, what was built, and the retainer, one row per run.
+    const [row] = await t.store.runReport(new Date("2000-01-01"));
+    expect(row).toMatchObject({
+      run_id: run!.id,
+      request: "Smith security upgrade",
+      state: "READY_HELD",
+      retainer_opportunity: "P-9001",
+      retainer_usd: 100,
+      pdf_sha256: expect.stringMatching(/^[0-9a-f]{64}$/),
+    });
+    expect(row!.total_usd ?? row!.subtotal_usd).toBeGreaterThan(0);
+    const csv = runsCsv([row!]);
+    expect(csv.split("\n")[0]).toContain("request,later_messages,state");
+    expect(csv).toContain('"Smith security upgrade"');
+    // The model's raw reply is kept with what it was given.
+    const replies = (await t.store.listArtifacts(run!.id)).filter((a) => a.stage === "model");
+    expect(replies.map((a) => a.name)).toEqual([expect.stringMatching(/^extraction-[0-9a-f]{16}$/)]);
+    expect(await t.store.readArtifact(run!.id, "model", replies[0]!.name)).toMatchObject({ kind: "extraction", model: "fake-model", input: { text: "Smith security upgrade" } });
   });
 
   it("revises a finished budget from its approved scope: Revision 2 receipt, -rev2 PDF, old budget superseded", async () => {
