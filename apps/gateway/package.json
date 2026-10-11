@@ -4,6 +4,8 @@
   "private": true,
   "type": "module",
   "dependencies": {
+    "@google-cloud/bigquery": "^9.2.0",
+    "@sd/build": "workspace:*",
     "@sd/channels": "workspace:*",
     "@sd/core": "workspace:*",
     "@sd/llm": "workspace:*",
@@ -11,14 +13,13 @@
     "@sd/worker": "workspace:*",
     "@temporalio/client": "1.24.0",
     "pg": "^8.23.1",
-    "@sd/build": "workspace:*"
+    "@sd/dtools": "workspace:*"
   },
   "scripts": {
     "start": "node src/main.ts"
   },
   "devDependencies": {
-    "@types/pg": "^8.23.1",
-    "@sd/dtools": "workspace:*",
-    "@sd/render": "workspace:*"
+    "@sd/render": "workspace:*",
+    "@types/pg": "^8.23.1"
   }
 }

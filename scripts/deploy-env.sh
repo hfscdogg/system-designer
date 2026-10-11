@@ -59,11 +59,11 @@ gcloud run jobs deploy "sd-migrate-${ENV_NAME}" --region "${REGION}" --image "${
   --set-env-vars "RELEASE_ID=${DIGEST}" --set-secrets "${DB_SECRET}" --max-retries 0 --quiet
 gcloud run jobs execute "sd-migrate-${ENV_NAME}" --region "${REGION}" --wait
 
-log "reconcile job (triggered hourly by Cloud Scheduler; also reads real quotes under retainer opportunities, read-only)"
+log "reconcile job (triggered hourly by Cloud Scheduler; also reads real quotes under retainer opportunities, read-only, and copies the run log to BigQuery)"
 gcloud run jobs deploy "sd-reconcile-${ENV_NAME}" --region "${REGION}" --image "${IMAGE}" \
   --command node --args apps/gateway/src/admin.ts,reconcile \
   --service-account "${WORKER_SA}" --set-cloudsql-instances "${GCP_SQL_INSTANCE}" \
-  --set-env-vars "${COMMON_ENV}" --set-secrets "${DB_SECRET},TEMPORAL_API_KEY=temporal-api-key:latest,DTOOLS_API_KEY=dtools-api-key:latest,DTOOLS_BASIC_AUTH=dtools-basic-auth:latest" --max-retries 0 --quiet
+  --set-env-vars "${COMMON_ENV},RUNLOG_DATASET=sd_runlog_${ENV_NAME}" --set-secrets "${DB_SECRET},TEMPORAL_API_KEY=temporal-api-key:latest,DTOOLS_API_KEY=dtools-api-key:latest,DTOOLS_BASIC_AUTH=dtools-basic-auth:latest" --max-retries 0 --quiet
 
 # One worker service per build: workflows are pinned to the build they started on,
 # so older builds keep running until Temporal reports them drained (cleanup below).
