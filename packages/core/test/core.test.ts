@@ -153,6 +153,9 @@ describe("generic audio and video", () => {
     expect(normalizeFunctionalSystems(["video"])).toEqual(["audio_video"]);
     expect(normalizeFunctionalSystems(["A/V"])).toEqual(["audio_video"]);
     expect(normalizeFunctionalSystems(["audio"])).toEqual(["whole_home_audio"]);
+    expect(normalizeFunctionalSystems(["commercial audio"])).toEqual(["whole_home_audio"]);
+    expect(normalizeFunctionalSystems(["restaurant audio system"])).toEqual(["whole_home_audio"]);
+    expect(normalizeFunctionalSystems(["commercial audio", "tv"])).toEqual(["audio_video"]);
     expect(normalizeFunctionalSystems(["video doorbell"])).toEqual(["video_doorbell"]);
     expect(normalizeFunctionalSystems(["video surveillance"])).toEqual(["video_surveillance"]);
     expect(normalizeFunctionalSystems(["cameras", "video"])).toEqual(["audio_video", "video_surveillance"]);
