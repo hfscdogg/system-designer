@@ -32,9 +32,12 @@ export function escapeHtml(input: unknown): string {
     .replace(/'/g, "&#39;");
 }
 
-/** Henry's wording for the Design & Delivery line (2026-10-12). */
-const DESIGN_DELIVERY_INTRO =
-  "A successful project involves more than equipment and installation labor. Design & Delivery covers the professional planning, coordination, logistics and project support required to deliver a complete, professionally finished system. Rather than building these into individual equipment prices, Livewire lists them separately to keep product pricing clear and transparent. Depending on your project's scope and requirements, Design & Delivery may include:";
+/** Henry's wording for the Design & Delivery line, verbatim (2026-10-12). Preflight lets it say "costs". */
+export const DESIGN_DELIVERY_PARAGRAPHS = [
+  "A successful project involves more than equipment and installation labor. Design & Delivery covers the professional planning, coordination, logistics and project support required to deliver a complete, professionally finished system.",
+  "Rather than building these costs into individual equipment prices, Livewire lists them separately to keep product pricing clear and transparent.",
+  "Depending on your project's scope and requirements, Design & Delivery may include:",
+];
 const DESIGN_DELIVERY_ITEMS = [
   "System engineering & design documentation",
   "Project management, scheduling and coordination",
@@ -128,7 +131,7 @@ export function renderProposalHtml(c: CustomerProposal, brand: Brand, images: Im
       ? `
     <div class="quote-section">
       <h3>Design &amp; Delivery</h3>
-      <p class="scope">${escapeHtml(DESIGN_DELIVERY_INTRO)}</p>
+      ${DESIGN_DELIVERY_PARAGRAPHS.map((t) => `<p class="scope">${escapeHtml(t)}</p>`).join("\n      ")}
       ${list(DESIGN_DELIVERY_ITEMS)}
       <div class="section-total">${formatUsd(c.commercial.parts_cents)}</div>
     </div>`
