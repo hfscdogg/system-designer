@@ -134,12 +134,27 @@ describe("Control4 remotes", () => {
 
   it("reads a Sonos soundbar and sub next to a TV as the TV's sound (the Darren Mackin job)", () => {
     expect(normalizeFunctionalSystems(["77\" OLED TV", "Sonos Arc Ultra", "Sonos Sub"])).toEqual(["audio_video"]);
-    expect(normalizeFunctionalSystems(["TV", "Sonos"])).toEqual(["audio_video"]);
     expect(normalizeFunctionalSystems(["TV", "Sonos Sub Mini"])).toEqual(["audio_video"]);
     // Music through the house is still its own system, TV or not.
     expect(normalizeFunctionalSystems(["TV", "Sonos in-ceiling speakers in the kitchen"])).toEqual(["audio_video", "whole_home_audio"]);
     expect(normalizeFunctionalSystems(["TV", "Sonos Amp"])).toEqual(["audio_video", "whole_home_audio"]);
     expect(normalizeFunctionalSystems(["Sonos Sub"])).toEqual(["whole_home_audio"]);
+  });
+
+  it("keeps whole-home audio next to a TV only when the requests ask for music through the house", () => {
+    const tvJob = (functional_systems: string[], requested_changes: string[]) =>
+      normalizeExtraction(completeExtraction({ functional_systems, requested_changes, requested_quantities: [] })).scope.functional_systems;
+    const darren = ['Provide a 77" OLED TV in the playroom with a Sonos Arc Ultra and Sonos Sub', "Use the Apple TV remote to control everything"];
+    // However the model labels the systems, Henry's job is the TV and its sound.
+    for (const labels of [["TV", "Whole-home audio"], ['77" OLED TV', "Sonos sound system"], ["TV", "audio"], ["TV", "Sonos Arc Ultra", "Sonos Sub"], ["TV", "Sonos"]]) {
+      expect(tvJob(labels, darren), labels.join(" + ")).toEqual(["audio_video"]);
+    }
+    // Music through the house is still its own system.
+    expect(tvJob(["TV", "Sonos"], ["Mount the TV in the family room", "Sonos in the kitchen"])).toEqual(["audio_video", "whole_home_audio"]);
+    expect(tvJob(["TV", "whole-home audio"], ["Mount the TV", "In-ceiling speakers in the dining room"])).toEqual(["audio_video", "whole_home_audio"]);
+    expect(tvJob(["TV", "Sonos Amp"], ["Mount the TV", "Sonos Amp for the patio speakers"])).toEqual(["audio_video", "whole_home_audio"]);
+    // No TV: nothing to fold into.
+    expect(tvJob(["Sonos Amp"], ["Replace the amplifier for the existing ceiling speakers"])).toEqual(["whole_home_audio"]);
   });
 });
 
