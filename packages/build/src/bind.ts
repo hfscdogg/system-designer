@@ -250,10 +250,13 @@ export function bind(draft: ProposalDraft, ctx: BindContext): Proposal {
     assumptions: draft.assumptions,
     exclusions: [...draft.exclusions, ...ctx.scope.excluded_scope],
     remaining_verification: [
-      ...verifyQuantities,
-      ...(draft.labor?.extras ?? []).map((x) => `${x.label}: ${x.hours} hours included in labor`),
-      ...draft.unresolved.map((u) => `${u.item}: ${u.reason}`),
-      ...ctx.scope.unresolved_questions,
+      ...new Set([
+        ...verifyQuantities,
+        ...(draft.labor?.extras ?? []).map((x) => `${x.label}: ${x.hours} hours included in labor`),
+        ...draft.unresolved.map((u) => `${u.item}: ${u.reason}`),
+        // A product the request named and the budget prices is not left to verify.
+        ...ctx.scope.unresolved_questions.filter((q) => !pricedProduct(q, bound)),
+      ]),
     ],
     commercial: {
       complete,
@@ -282,6 +285,19 @@ export function bind(draft: ProposalDraft, ctx: BindContext): Proposal {
       },
     },
   };
+}
+
+const compactText = (s: string) => s.toLowerCase().replace(/[^a-z0-9]/g, "");
+
+/** "Requested product: Araknis AN-520-AP-I" when a priced line is that product (its model, requested model or label). */
+function pricedProduct(question: string, lines: BoundLine[]): boolean {
+  const m = /^requested product:\s*(.+)$/i.exec(question.trim());
+  if (!m) return false;
+  const asked = compactText(m[1]!);
+  if (asked.length < 3) return false;
+  return lines.some((l) =>
+    [l.model, l.label].map(compactText).some((x) => x.length >= 4 && (asked.includes(x) || x.includes(asked))),
+  );
 }
 
 function categoryMix(items: Array<{ price: number; cost: number | null }>, subtotal: number) {

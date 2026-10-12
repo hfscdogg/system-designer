@@ -6,8 +6,8 @@ import { recordingQboClient, type QboClient } from "@sd/qbo";
 import { completeExtraction, noPatch } from "../../../packages/core/test/fixtures.ts";
 import { TEST_POLICY, testStore } from "../../../packages/store/test/helpers.ts";
 import { recordedDToolsReader, recordingDToolsWriter, type DToolsWriter } from "@sd/dtools";
-import type { PatternSpec } from "@sd/build";
-import { CATALOG, testPattern } from "../../../packages/build/test/fixtures.ts";
+import { loadPatterns, patternRecordIds, selectPattern, type PatternSpec, type Selection } from "@sd/build";
+import { CATALOG, product, testPattern } from "../../../packages/build/test/fixtures.ts";
 import { htmlToPdf, preflightPdf } from "@sd/render";
 import { sha256Hex } from "@sd/core";
 import type { DToolsReader } from "@sd/dtools";
@@ -214,6 +214,24 @@ describe("Google Chat → scope approval vertical slice", () => {
     const events = await t.store.listEvents(run!.id);
     expect(events.filter((e) => e.type === "answer_applied").map((e) => e.data.field)).toEqual(["functional_systems", "market", "existing_detectors"]);
     expect(events.some((e) => e.type === "answer_applied" && "model" in e.data)).toBe(false);
+  });
+
+  it("reads a scope sent after a contact-only first message together with it, as one request (Zack's test round)", async () => {
+    // The first message is only who and where: the model finds no systems, so the receipt asks for them.
+    const contactOnly = completeExtraction({ functional_systems: [], requested_changes: [], service_categories: [] });
+    const t = await setup([contactOnly, completeExtraction()]);
+    await t.send(chatMessage("Rick Crowder, 100 Main St, Richmond VA 23220. Residential."));
+    expect(t.questions().at(-1)).toMatchObject({ field: "functional_systems" });
+    // The next message is the request itself: both are read again as one message, not patched onto the empty scope.
+    await t.send(chatMessage("Replace the legacy alarm panel and keypads, add glass-break sensors, smoke and CO detectors."));
+    const receipt = t.receipts().at(-1)!;
+    expect(receipt.status).toBe("AWAITING_APPROVAL");
+    expect(receipt.lines.join("\n")).not.toMatch(/needed|Which systems/i);
+    const [run] = await t.store.listRunsForPerson("zack");
+    const replies = (await t.store.listArtifacts(run!.id)).filter((a) => a.stage === "model");
+    const inputs = await Promise.all(replies.map((a) => t.store.readArtifact<{ kind: string; input: { text: string } }>(run!.id, "model", a.name)));
+    expect(inputs.map((r) => r!.kind)).toEqual(["extraction", "extraction"]);
+    expect(inputs.map((r) => r!.input.text)).toContain("Rick Crowder, 100 Main St, Richmond VA 23220. Residential.\n\nReplace the legacy alarm panel and keypads, add glass-break sensors, smoke and CO detectors.");
   });
 
   it("accepts the text approval form", async () => {
@@ -803,6 +821,32 @@ describe("editing a scope and revising a finished budget", () => {
     expect(await t.store.pendingRetainer(thread)).toBeNull();
   });
 
+  it("offers the one email address typed in the request, and \"yes\" sends the retainer there", async () => {
+    const writer = recordingDToolsWriter();
+    const qbo = recordingQboClient();
+    const t = await setup([completeExtraction()], [], { writer, dtools: retainerDTools(writer), qbo });
+    await t.send(chatMessage("Smith security upgrade.\nEmail: Jane.Smith@example.com"));
+    const [first] = t.receipts();
+    await t.send(click(first!.receiptId, first!.approve!.scopeHash));
+    const [run] = await t.store.listRunsForPerson("zack");
+    expect((await t.send(controlClick("send_retainer", run!.id))).body).toEqual({ text: 'Send the retainer invoice to Jane.Smith@example.com? Reply "yes", another address, or "cancel".' });
+    expect((await t.send(chatMessage("sure thing"))).body).toMatchObject({ text: expect.stringContaining('Reply "yes" to send it to Jane.Smith@example.com') });
+    expect((await t.send(chatMessage("Yes"))).body).toEqual({ text: "Sending the design retainer to Jane.Smith@example.com from QuickBooks. I'll confirm here in a moment." });
+    expect(qbo.sent).toEqual([{ id: qbo.invoices[0]!.Id, email: "Jane.Smith@example.com" }]);
+  });
+
+  it("asks for the address when the request has none, or more than one", async () => {
+    const writer = recordingDToolsWriter();
+    const t = await setup([completeExtraction()], [], { writer, dtools: retainerDTools(writer), qbo: recordingQboClient() });
+    await t.send(chatMessage("Smith security upgrade. Email jane@example.com or bob@example.com"));
+    const [first] = t.receipts();
+    await t.send(click(first!.receiptId, first!.approve!.scopeHash));
+    const [run] = await t.store.listRunsForPerson("zack");
+    expect((await t.send(controlClick("send_retainer", run!.id))).body).toEqual({ text: RETAINER_PROMPT });
+    // With nothing offered, "yes" is not an address.
+    expect((await t.send(chatMessage("yes"))).body).toMatchObject({ text: expect.stringContaining("doesn't look like one email address") });
+  });
+
   it("without QuickBooks the retainer still opens the D-Tools opportunity and says to invoice by hand", async () => {
     const writer = recordingDToolsWriter();
     const t = await setup([completeExtraction()], [], { writer, dtools: retainerDTools(writer) });
@@ -857,6 +901,53 @@ describe("editing a scope and revising a finished budget", () => {
     ]);
     expect(scored[1]!.changes).toMatch(/glass_break/);
     expect(learnReport(scored)).toContain("Quantities reps changed most");
+  });
+
+  it("says a revision that changed nothing priced couldn't be applied, in the rep's words", async () => {
+    const t = await setup([completeExtraction()], [{ ...noPatch, excluded_scope: ["the neighbor's garage"] }]);
+    await t.send(chatMessage("Smith security upgrade"));
+    const [first] = t.receipts();
+    await t.send(click(first!.receiptId, first!.approve!.scopeHash));
+    await t.send(chatMessage("Revise: nothing for the neighbor's garage"));
+    const second = t.receipts().at(-1)!;
+    await t.send(click(second.receiptId, second.approve!.scopeHash));
+    expect(t.texts().at(-1)).toMatch(/^I couldn't apply your change \("Revise: nothing for the neighbor's garage"\): Revision 2 prices the same equipment, quantities and labor as the budget it revises\./);
+  });
+
+  it("lowers the budget for \"only need 1 eero Pro 7\" on a network and camera job (Zack's test round)", async () => {
+    const patterns = await loadPatterns();
+    const both = selectPattern(["networking", "video_surveillance"], patterns)!;
+    // Synthetic records for the shipped patterns: $300 a device at half cost, the $1 parts record.
+    const catalog = Object.fromEntries(patternRecordIds(both).map((id, i) => [id, id === both.parts!.product_id ? product(id, "Livewire", "PARTS", 1, 0.01, { laborItems: [] }) : product(id, "TestCo", `DEV-${i}`, 300, 150, { laborItems: [] })]));
+    const job = completeExtraction({
+      project_type: "Network and cameras",
+      functional_systems: ["eero Wi-Fi", "security cameras"],
+      requested_changes: ["Add eero Wi-Fi with coverage out on the patio", "Install 4 outdoor PoE cameras"],
+      requested_quantities: [{ item: "outdoor PoE cameras", quantity: 4 }],
+      existing_equipment: { status: "none", retained: [], removed_or_replaced: [] },
+      existing_detectors: "not_provided",
+    });
+    const revision = { ...noPatch, requested_quantities: [{ item: "outdoor PoE cameras", quantity: 4 }, { item: "eero Pro 7", quantity: 1 }], excluded_scope: ["additional eeros"] };
+    const t = await setup([job], [revision], { catalog, patterns });
+    await t.send(chatMessage("Network and cameras for the Smiths"));
+    const [first] = t.receipts();
+    await t.send(click(first!.receiptId, first!.approve!.scopeHash));
+    const [original] = await t.store.listRunsForPerson("zack");
+    expect(original!.state).toBe("READY_HELD");
+    const lines = async (runId: string) => Object.fromEntries((await t.store.readArtifact<Selection>(runId, "selection", "selection"))!.lines.map((l) => [l.role, l.quantity]));
+    expect(await lines(original!.id)).toMatchObject({ mesh_wifi: 3, outdoor_access_point: 1, outdoor_camera: 4 });
+    expect(await lines(original!.id)).not.toHaveProperty("wired_access_point");
+
+    await t.send(chatMessage("Revise: I only need 1 eero pro 7"));
+    const second = t.receipts().at(-1)!;
+    await t.send(click(second.receiptId, second.approve!.scopeHash));
+    const revised = (await t.store.listRunsForPerson("zack")).find((r) => r.id !== original!.id)!;
+    expect(revised.state).toBe("READY_HELD");
+    expect(await lines(revised.id)).toMatchObject({ mesh_wifi: 1, outdoor_camera: 4 });
+    expect(await lines(revised.id)).not.toHaveProperty("outdoor_access_point");
+    const subtotal = async (runId: string) => (await t.store.readArtifact<{ commercial: { subtotal_cents: number } }>(runId, "validate", "customer_view"))!.commercial.subtotal_cents;
+    expect(await subtotal(revised.id)).toBeLessThan(await subtotal(original!.id));
+    expect(t.texts().some((x) => x.startsWith("I couldn't apply"))).toBe(false);
   });
 
   it("sets the labor hours in a revision (\"hours to 7\"), replacing the estimate", async () => {

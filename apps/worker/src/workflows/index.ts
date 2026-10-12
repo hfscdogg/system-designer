@@ -35,5 +35,10 @@ export async function proposalRun(input: ProposalRunInput): Promise<RunResult> {
       const arrived = await condition(() => queue.length > 0, idleMs);
       return arrived ? queue.shift()! : null;
     },
+    takeQueued(type) {
+      const taken = queue.filter((s) => s.type === type);
+      queue.splice(0, queue.length, ...queue.filter((s) => s.type !== type));
+      return taken;
+    },
   });
 }

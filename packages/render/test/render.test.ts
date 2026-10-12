@@ -3,8 +3,8 @@ import { PDFDocument } from "pdf-lib";
 import { customerView, formatUsd, retainerCents, type CustomerProposal } from "@sd/build";
 import { sha256Hex } from "@sd/core";
 import { recordedDToolsReader } from "@sd/dtools";
-import { admitProduct, bind, compile, materialize, patternRecordIds, type AdmittedProduct } from "@sd/build";
-import { htmlToPdf, IMAGE_PENDING, loadBrand, preflightPdf, renderProposalHtml } from "../src/index.ts";
+import { admitProduct, bind, compile, loadPatterns, materialize, patternRecordIds, type AdmittedProduct } from "@sd/build";
+import { FORBIDDEN, htmlToPdf, IMAGE_PENDING, loadBrand, preflightPdf, renderProposalHtml } from "../src/index.ts";
 import { approvedScope, CATALOG, POLICY, testPattern } from "../../build/test/fixtures.ts";
 
 async function customer(): Promise<CustomerProposal> {
@@ -108,6 +108,39 @@ describe("PDF + preflight", () => {
     expect((await preflightPdf(pdf, { customer: c, runId: "run_r1", sha256: "0".repeat(64) })).failures.join()).toMatch(/hash/);
     expect((await preflightPdf(new TextEncoder().encode("not a pdf"), { customer: c, runId: "run_r1", sha256: "x" })).ok).toBe(false);
   }, 90_000);
+
+  it("never blocks Livewire's own wording: every pattern's customer-facing text and the brand copy pass the wording rules", async () => {
+    const patterns = await loadPatterns();
+    const brand = await loadBrand();
+    const own: Array<[string, string]> = [];
+    const add = (where: string, ...texts: Array<string | undefined>) => texts.forEach((t) => t && own.push([where, t]));
+    for (const p of patterns) {
+      add(`${p.pattern} title`, p.title);
+      p.assumptions.forEach((t) => add(`${p.pattern} assumption`, t));
+      p.exclusions.forEach((t) => add(`${p.pattern} exclusion`, t));
+      p.services.forEach((s) => add(`${p.pattern} service`, s.label));
+      add(`${p.pattern} parts`, p.parts?.label);
+      (p.labor_extras ?? []).forEach((x) => add(`${p.pattern} labor extra`, x.label));
+      for (const r of p.roles) {
+        add(`${p.pattern}.${r.role}`, r.label, r.location, r.capability, r.quantity.kind === "minimum" ? r.quantity.verify : undefined);
+        (r.variants ?? []).forEach((v) => add(`${p.pattern}.${r.role} variant`, v.label));
+      }
+    }
+    const walk = (where: string, v: unknown): void => {
+      if (typeof v === "string") add(where, v);
+      else if (Array.isArray(v)) v.forEach((x, i) => walk(`${where}[${i}]`, x));
+      else if (v && typeof v === "object") Object.entries(v).forEach(([k, x]) => walk(`${where}.${k}`, x));
+    };
+    walk("brand", { companyName: brand.companyName, tagline: brand.tagline, address: brand.address, website: brand.website, copy: brand.copy });
+    const hits = own.flatMap(([where, text]) => FORBIDDEN.filter((re) => re.test(text)).map((re) => `${where}: "${text}" (${re.source})`));
+    expect(hits).toEqual([]);
+
+    // And rendered: a budget carrying every pattern's assumptions and exclusions passes preflight.
+    const c = await customer();
+    const all = { ...c, assumptions: [...new Set(patterns.flatMap((p) => p.assumptions))], exclusions: [...new Set(patterns.flatMap((p) => p.exclusions))] };
+    const pdf = await htmlToPdf(renderProposalHtml(all, brand, {}, meta));
+    expect((await preflightPdf(pdf, { customer: all, runId: "run_r1", sha256: sha256Hex(pdf) })).failures).toEqual([]);
+  }, 60_000);
 
   it("refuses to render anything that loads external resources", async () => {
     await expect(htmlToPdf('<html><body><img src="https://example.com/x.png">hi</body></html>')).rejects.toThrow(/external resources/);

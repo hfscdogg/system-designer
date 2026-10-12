@@ -20,6 +20,7 @@ import {
   type PolicyRecord,
   type Proposal,
   type ProposalDraft,
+  type Selection,
   type ValidationResult,
 } from "@sd/build";
 import { hashCanonical, RUN_STATES, sha256Hex, type RunState, type ScopeDraftV1 } from "@sd/core";
@@ -99,6 +100,27 @@ export function createBuildStage(deps: BuildDeps) {
     const receipt = await store.getReceipt(approval.receipt_id);
     if (!receipt?.body.scope || receipt.scope_hash !== approval.scope_hash) throw new IntegrityError(`approved receipt for ${runId} does not match its approval`);
     return { approvalId: approval.id, receiptId: receipt.id, scope: receipt.body.scope, scopeHash: approval.scope_hash };
+  }
+
+  /**
+   * What a budget prices, for telling whether a revision changed anything: each line's
+   * device and count, the labor hours, services and allowances, and who and where it is for.
+   */
+  async function pricedAs(runId: string): Promise<string> {
+    const { scope } = await approved(runId);
+    const selection = await artifact<Selection>(runId, "selection", "selection");
+    return hashCanonical({
+      lines: selection.lines.map((l) => `${l.role}|${l.record_id}|${l.quantity}|${l.location}`).sort(),
+      labor_hours: selection.labor?.hours ?? null,
+      services: selection.services.map((x) => x.record_id).sort(),
+      allowances: selection.allowances.map((a) => a.label).sort(),
+      client: scope.client,
+      property: scope.property,
+      project_type: scope.project_type,
+      market: scope.market,
+      discount: scope.requested_discount,
+      selector: scope.source_quote_selector ?? null,
+    });
   }
 
   async function artifact<T>(runId: string, stage: string, name: string): Promise<T> {
@@ -393,6 +415,16 @@ export function createBuildStage(deps: BuildDeps) {
       // A revision replaces the budget it revises.
       if (run.parent_run_id && (await store.getRun(run.parent_run_id)).state === "READY_HELD") {
         await store.transitionRun(run.parent_run_id, "SUPERSEDED", "system", { by: runId });
+      }
+      // A revision that prices exactly what the earlier budget did was not applied: say so, in the rep's words.
+      if (run.parent_run_id && (await pricedAs(runId)) === (await pricedAs(run.parent_run_id))) {
+        const asked = (await store.getIntake(run.intake_id)).text.trim();
+        await deps.notify(
+          run,
+          `I couldn't apply your change ("${asked}"): Revision ${run.revision} prices the same equipment, quantities and labor as the budget it revises. ` +
+            "Tap Revise this budget and say it another way, naming the device and the count (for example \"make it 1 eero\"), or tap New request for a different job.",
+          `${runId}:unchanged`,
+        );
       }
       await deps.postView(
         run,

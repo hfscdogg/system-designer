@@ -135,4 +135,20 @@ describe("runProposal", () => {
     const result = await runProposal({ runId: "run_1" }, { acts, nextSignal: scripted([null, { type: "margin_decision", exceptionId: "MX-1", decision: "declined" }]) });
     expect(result).toEqual({ state: "BLOCKED", reason: "margin exception declined by Henry" });
   });
+
+  it("reads messages sent before the first receipt together with the request, and publishes one receipt", async () => {
+    const extracted: Array<string[] | undefined> = [];
+    const acts = fakeActs({ extractScope: async ({ alsoIntakeIds }) => (extracted.push(alsoIntakeIds), { ok: true, extraction: completeExtraction(), notes: [] }) });
+    const queued: RunSignal[] = [{ type: "clarification", intakeId: "in_2" }, { type: "approved", receiptId: "R-X-1", scopeHash: "h1", approvalId: "a1" }];
+    const takeQueued = (type: RunSignal["type"]) => {
+      const taken = queued.filter((q) => q.type === type);
+      queued.splice(0, queued.length, ...queued.filter((q) => q.type !== type));
+      return taken;
+    };
+    const result = await runProposal({ runId: "run_1" }, { acts, nextSignal: async () => queued.shift() ?? null, takeQueued });
+    expect(extracted).toEqual([undefined, ["in_2"]]);
+    expect(acts.calls.filter((c) => c.startsWith("publish:"))).toEqual(["publish:1"]);
+    // Other signals stay queued and are handled as before.
+    expect(result).toMatchObject({ state: "READY_HELD", approvalId: "a1" });
+  });
 });

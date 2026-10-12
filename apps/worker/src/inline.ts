@@ -40,6 +40,11 @@ export class InlineWorkflows implements WorkflowPort {
           }
           return run.queue.shift()!;
         },
+        takeQueued: (type) => {
+          const taken = run.queue.filter((s) => s.type === type);
+          run.queue = run.queue.filter((s) => s.type !== type);
+          return taken;
+        },
       },
     );
     run.result.finally(() => {

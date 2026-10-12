@@ -119,6 +119,28 @@ export function createActivities(deps: ActivityDeps): RunActivities {
     };
   }
 
+  /** Read a request's scope from its text (the model, then validation), with retries. */
+  async function extractFrom(runId: string, text: string, attachmentNames: string[]): Promise<ExtractOutcome> {
+    let last: ExtractOutcome = { ok: false, reason: "no attempt made" };
+    for (let i = 0; i < attempts; i++) {
+      const input = { text, attachmentNames };
+      const { raw, model } = await deps.extractor.extract(input);
+      await recordModelReply(runId, "extraction", input, raw, model);
+      last = await validateModelScope(raw, model, runId, "scope_extracted");
+      if (last.ok) {
+        const ignored = attachmentNames.length ? [`${attachmentNames.length} attachment(s) received; not yet used as scope evidence`] : [];
+        return { ...last, notes: [...last.notes, ...ignored] };
+      }
+    }
+    return last;
+  }
+
+  /** These intakes, in order, when each is the requester's own message; anyone else's are left out. */
+  async function requesterIntakes(run: RunRecord, ids: string[]) {
+    const intakes = await Promise.all([...new Set(ids)].map((id) => store.getIntake(id)));
+    return intakes.filter((m) => m.person_id === run.person_id && m.id !== run.intake_id);
+  }
+
   /** `source` is recorded with the event: the model that proposed the scope, or how the requester answered. */
   async function validateScope(raw: unknown, runId: string, kind: string, source: Record<string, unknown>): Promise<ExtractOutcome> {
     const valid = validateExtraction(raw);
@@ -136,25 +158,17 @@ export function createActivities(deps: ActivityDeps): RunActivities {
       await upsertStatus(await store.getRun(runId), statusView(runId, phase, note ?? null));
     },
 
-    async extractScope({ runId }) {
+    async extractScope({ runId, alsoIntakeIds }) {
       const run = await store.getRun(runId);
       const intake = await store.getIntake(run.intake_id); // verifies the stored text hash
-      if (run.parent_run_id) return reviseScope(run.id, run.parent_run_id, run.revision, intake.text);
-      let last: ExtractOutcome = { ok: false, reason: "no attempt made" };
-      for (let i = 0; i < attempts; i++) {
-        const input = { text: intake.text, attachmentNames: intake.attachments.map((a) => a.name) };
-        const { raw, model } = await deps.extractor.extract(input);
-        await recordModelReply(runId, "extraction", input, raw, model);
-        last = await validateModelScope(raw, model, runId, "scope_extracted");
-        if (last.ok) {
-          const ignored = intake.attachments.length
-            ? [`${intake.attachments.length} attachment(s) received; not yet used as scope evidence`]
-            : [];
-          return { ...last, notes: [...last.notes, ...ignored] };
-        }
-      }
-      return last;
+      // Messages that arrived before the first receipt are read with the request, as one message.
+      const more = await requesterIntakes(run, alsoIntakeIds ?? []);
+      if (more.length) await store.appendEvent(runId, "intake_combined", "system", { intakeIds: more.map((m) => m.id) });
+      const text = [intake.text, ...more.map((m) => m.text)].join("\n\n");
+      if (run.parent_run_id) return reviseScope(run.id, run.parent_run_id, run.revision, text);
+      return extractFrom(runId, text, [...intake.attachments, ...more.flatMap((m) => m.attachments)].map((a) => a.name));
     },
+
 
     async publishReceipt({ runId, version, extraction, notes }) {
       const run = await store.getRun(runId);
@@ -209,6 +223,17 @@ export function createActivities(deps: ActivityDeps): RunActivities {
       const answer = await store.getIntake(intakeId);
       if (answer.person_id !== latest.body.requester_person_id) throw new IntegrityError("clarification is not from the requester");
       const base = latest.body.extraction;
+      const run = await store.getRun(runId);
+      // A first message that was only who and where ("Rick Crowder, 100 Main St") left nothing to price: the next
+      // message is the request itself, so both are read together as one, instead of patching an empty scope.
+      if (!run.parent_run_id && computeBlockers(base).some((b) => b.field === "functional_systems")) {
+        const earlier = (await store.listEvents(runId)).filter((e) => e.type === "intake_combined").flatMap((e) => e.data.intakeIds as string[]);
+        const intake = await store.getIntake(run.intake_id);
+        const more = await requesterIntakes(run, [...earlier, intakeId]);
+        await store.appendEvent(runId, "intake_combined", "system", { intakeIds: more.map((m) => m.id) });
+        const outcome = await extractFrom(runId, [intake.text, ...more.map((m) => m.text)].join("\n\n"), [...intake.attachments, ...more.flatMap((m) => m.attachments)].map((a) => a.name));
+        return outcome.ok ? { ...outcome, notes: [...latest.body.notes.filter((n) => !outcome.notes.includes(n)), ...outcome.notes] } : outcome;
+      }
       // Every open question, so one typed or dictated reply can answer several.
       const questions = computeBlockers(base).map((b) => b.question);
       const { raw, model } = await deps.interpreter.interpret({ current: base, questions, answer: answer.text });

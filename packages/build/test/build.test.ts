@@ -741,7 +741,98 @@ describe("HDMI on TV jobs (Henry, 2026-10-12)", () => {
       new Map(materialize(approvedScope({ functional_systems, requested_changes, existing_detectors: "not_provided" }).scope, tv).lines.map((l) => [l.role, l.quantity]));
     // Soundbar + Apple TV: two cables, like most Livewire TV-and-soundbar quotes.
     expect(roles(["TV", "Sonos Arc Ultra", "Sonos Sub"], ['Provide a 77" OLED TV with a Sonos Arc Ultra and Sonos Sub', "Use the Apple TV remote to control everything"]).get("hdmi_cable")).toBe(2);
-    // A TV hang with no new sources still gets one.
-    expect(roles(["TV"], ["Mount the customer's TV on the living room wall"]).get("hdmi_cable")).toBe(1);
+    // A TV hang with no new sources needs no new cable (Zack's test round, 2026-10-12).
+    expect(roles(["TV"], ["Mount the customer's TV on the living room wall"]).has("hdmi_cable")).toBe(false);
+    expect(roles(["TV"], ["Mount the customer's TV on the living room wall with a new Apple TV"]).get("hdmi_cable")).toBe(1);
+  });
+});
+
+describe("Zack's test round (2026-10-12)", () => {
+  const none = { existing_detectors: "not_provided" as const, existing_equipment: { status: "none" as const, retained: [], removed_or_replaced: [] } };
+  const quantities = (sel: ReturnType<typeof materialize>) => Object.fromEntries(sel.lines.map((l) => [l.role, l.quantity]));
+  async function job(o: object) {
+    const patterns = await loadPatterns();
+    const { scope } = approvedScope({ ...none, ...o });
+    return materialize(scope, selectPattern(scope.functional_systems, patterns)!);
+  }
+
+  it("reads mentions as whole words in the request itself, not in system names or rooms", async () => {
+    // Camera wording ("outdoor PoE cameras", "garage") adds no access points; the eero words sit in another change.
+    const cams = await job({
+      functional_systems: ["networking", "security cameras"],
+      room_types: ["Garage", "Patio"],
+      requested_changes: ["Install 4 outdoor PoE cameras around the garage and patio", "Add eero Wi-Fi to the house"],
+      requested_quantities: [{ item: "outdoor PoE cameras", quantity: 4 }],
+    });
+    expect(quantities(cams)).toMatchObject({ mesh_wifi: 3, outdoor_camera: 4 });
+    expect(cams.lines.map((l) => l.role)).not.toEqual(expect.arrayContaining(["wired_access_point"]));
+    expect(cams.lines.map((l) => l.role)).not.toContain("outdoor_access_point");
+    expect(cams.lines.map((l) => l.role)).not.toContain("floodlight_camera");
+    // "arc" is a soundbar, not part of "arched".
+    const tv = await job({ functional_systems: ["TV"], requested_changes: ["Mount the customer's TV in the arched niche"] });
+    expect(tv.lines.map((l) => l.role)).not.toContain("soundbar");
+    // Outdoor Wi-Fi asked in so many words still adds the outdoor eero.
+    const outdoor = await job({ functional_systems: ["Wi-Fi"], requested_changes: ["Add outdoor WiFi for the back patio and pool"] });
+    expect(quantities(outdoor)).toMatchObject({ outdoor_access_point: 1 });
+  });
+
+  it("takes \"only 1 eero\" as the eero count: other eeros it only mentioned go, and \"no additional eeros\" keeps the one", async () => {
+    const base = {
+      functional_systems: ["networking", "security cameras"],
+      requested_changes: ["Add eero Wi-Fi with coverage out on the patio", "Install 4 outdoor PoE cameras"],
+    };
+    const before = await job({ ...base, requested_quantities: [{ item: "outdoor PoE cameras", quantity: 4 }] });
+    expect(quantities(before)).toMatchObject({ mesh_wifi: 3, outdoor_access_point: 1 });
+    const after = await job({
+      ...base,
+      requested_quantities: [{ item: "outdoor PoE cameras", quantity: 4 }, { item: "eero Pro 7", quantity: 1 }],
+      excluded_scope: ["additional eeros"],
+    });
+    expect(quantities(after)).toMatchObject({ mesh_wifi: 1 });
+    expect(after.lines.map((l) => l.role)).not.toContain("outdoor_access_point");
+    // An outdoor eero the rep counts itself stays.
+    const both = await job({ ...base, requested_quantities: [{ item: "eero Pro 7", quantity: 1 }, { item: "outdoor eero", quantity: 1 }] });
+    expect(quantities(both)).toMatchObject({ mesh_wifi: 1, outdoor_access_point: 1 });
+  });
+
+  it("prices network gear only with the eero network, unless the request names it", async () => {
+    // Networking came along with the cameras but nobody asked for Wi-Fi: no eeros, switch, OvrC or WattBox.
+    const cams = await job({ functional_systems: ["networking", "security cameras"], requested_changes: ["Install 2 turret cameras"] });
+    expect(cams.lines.map((l) => l.role).filter((r) => ["mesh_wifi", "network_switch", "remote_management", "power_protection"].includes(r))).toEqual([]);
+    expect(cams.requirements.find((r) => r.system === "networking")).toMatchObject({ classification: "removed" });
+    expect(cams.unresolved).toEqual([]);
+    // A WattBox asked for by name is priced on its own.
+    const wattbox = await job({ functional_systems: ["networking"], requested_changes: ["Add a WattBox to the rack"] });
+    expect(wattbox.lines.map((l) => l.role)).toEqual(["power_protection"]);
+  });
+
+  it("leaves to verify only what the rep didn't settle: no minimum note on a stated or single count, no priced product, no repeats", async () => {
+    const { proposal } = await pipeline({
+      requested_quantities: [{ item: "Keypads", quantity: 2 }],
+      unresolved_questions: ["Requested product: TestCo PANEL-1", "Requested product: Bretford cart", "Requested product: Bretford cart "],
+    });
+    const v = proposal.remaining_verification;
+    expect(v.filter((x) => x.startsWith("Keypad"))).toEqual([]);
+    expect(v.filter((x) => /PANEL-1/.test(x))).toEqual([]);
+    expect(v.filter((x) => /Bretford/.test(x))).toEqual(["Requested product: Bretford cart"]);
+    // "Replace the amplifier": the rep's one amp is not a minimum to verify.
+    const amp = await job({ functional_systems: ["Sonos"], requested_changes: ["Replace the amplifier for the existing ceiling speakers"] });
+    expect(amp.lines.find((l) => l.role === "zone_amplifier")).toMatchObject({ quantity: 1, quantity_basis: "fixed", verify: null });
+  });
+
+  it("counts stated speakers as pairs, and adds new speakers beside existing ones", async () => {
+    const audio = async (o: object) => quantities(await job({ functional_systems: ["in-ceiling speakers"], requested_changes: ["Add in-ceiling speakers in the kitchen"], ...o }));
+    expect((await audio({ requested_quantities: [{ item: "in-ceiling speakers", quantity: 2 }] })).in_ceiling_speakers).toBe(1);
+    expect((await audio({ requested_quantities: [{ item: "speakers", quantity: 7 }] })).in_ceiling_speakers).toBe(4);
+    expect((await audio({ requested_quantities: [{ item: "pairs of in-ceiling speakers", quantity: 3 }] })).in_ceiling_speakers).toBe(3);
+    // "Add 2 more" beside 5 existing speakers prices one new pair; the existing ones are not a count of new pairs.
+    const more = await job({
+      functional_systems: ["in-ceiling speakers"],
+      requested_changes: ["Add 2 more in-ceiling speakers in the kitchen"],
+      requested_quantities: [{ item: "existing in-ceiling speakers", quantity: 5 }, { item: "in-ceiling speakers", quantity: 2 }],
+      existing_equipment: { status: "described", retained: ["5 existing in-ceiling speakers"], removed_or_replaced: [] },
+    });
+    expect(quantities(more).in_ceiling_speakers).toBe(1);
+    expect(more.unresolved.map((u) => u.role)).not.toContain("in_ceiling_speakers");
   });
 });

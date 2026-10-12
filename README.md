@@ -17,7 +17,7 @@ The design rationale and requirement mapping are in [`docs/architecture.md`](doc
 
 The flow is Google Chat message → captured intake → scope extraction → one question at a time (tap-to-answer buttons, or a typed reply that can answer several) → receipt card → **Approve** button → D-Tools catalog read → compile → bind → validate → D-Tools re-check → watermarked PDF → preflight → PDF posted in the thread → `READY_HELD`.
 
-- **Natural conversation.** The salesperson writes normally. The LLM proposes a scope, and code validates it, normalizes it and decides what to ask (at most 3 questions per turn).
+- **Natural conversation.** The salesperson writes normally. The LLM proposes a scope, and code validates it, normalizes it and decides what to ask (at most 3 questions per turn). A request split over two messages (who and where first, then the scope) is read again as one message, not patched onto an empty scope.
 - **Deterministic receipts.** Code generates each receipt. It is shown verbatim as a Chat card, and its Approve button is bound to the receipt ID and scope hash. `Approve scope <id>` also works as text.
 - **Live progress.** One status card per run, edited in place (✅ ⏳ ▫️).
 - **Safety.** Only the requester can approve, only in the run's own conversation, and only the latest receipt.
@@ -100,6 +100,8 @@ A build below its market's floor, or with any requested discount, is **held** as
 
 Patterns (`packages/build/patterns/`), each built from Livewire's D-Tools history, cover security modernization, home networking, whole-home audio (Sonos), TV and media walls, prewire, surveillance cameras, Control4 automation, Lutron lighting control, video doorbells, commercial access control and motorized shades. A scope that needs several gets them combined into one budget: setup hours add up and each role keeps its own labor rate.
 
+Gear is priced only when asked (Zack's test round, 2026-10-12). A role's `mentions` match whole words in the rep's own changes and stated counts, never system names or rooms; `mentions_require` also needs a Wi-Fi word in the same change, so "outdoor PoE cameras" add no eero. `asked_by` includes the eero network only when the request asks for Wi-Fi, coverage, a router or the like, and `with_roles` prices the switch, OvrC and WattBox (and HDMI cables, with a soundbar or streamer) only alongside it, unless the rep names them. Roles in a `count_group` share a stated count: "only need 1 eero" drops the outdoor or wired eeros the request only mentioned. Speakers sold in pairs take a stated count of speakers as pairs. A revision that prices exactly what the budget it revises did gets a "couldn't apply your change" reply quoting the rep.
+
 Design & Delivery (the parts line) is `design_delivery.base_pct` of product + labor + services, costed at the parts margin. When a budget would fall under the margin floor, it rises in half-point steps up to `design_delivery.max_pct` until the budget clears the floor; past that, the budget waits for an admin's approval. Without `design_delivery`, parts are sized to the parts share of the subtotal. `tax` can also be `{ "mode": "rate", "rate_pct": <n>, "applies_to": "taxable_equipment" }`.
 
 The file ships in the image. Publish it with the admin job (see `docs/deploy.md`):
@@ -115,7 +117,8 @@ Anyone with an active identity can DM the app. Each person's runs are their own:
 
 Under each finished budget, **Send design retainer** collects the retainer (Henry, 2026-10-12): 4% of the likely range's low end, at least $100.
 1. The bot asks: "What email should the retainer invoice go to?" The requester replies with just the client's address, or `cancel`.
-   - The address is taken only from that reply, matched by a strict pattern with no model involved. Anything else is asked again.
+   - When the request the rep typed (its captured messages, never model output) holds exactly one email address other than the rep's own, the bot offers it instead: "Send the retainer invoice to jane@example.com? Reply "yes", another address, or "cancel"."
+   - The address is taken only from that reply (or the offered one on "yes"), matched by a strict pattern with no model involved. Anything else is asked again.
    - The ask lapses after 24 hours, or when the budget is revised or a new request starts.
 2. The worker creates a D-Tools opportunity, `Design Retainer · <client> · SD-xxxxxxxx`. It has no quote template; reps build the real quote under it later, and the hourly job reads that quote back for the run log.
 3. In QuickBooks Online it finds the client's customer by email. Failing that, it creates one named after the client, or "Client (email)" when that name is taken.

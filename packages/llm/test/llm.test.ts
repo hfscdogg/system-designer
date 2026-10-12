@@ -153,6 +153,14 @@ describe("clarification wire format", () => {
     expect(valid.value.property).toEqual({ line1: null, city: "Midlothian", region: null, postal_code: null });
   });
 
+  it("carries a requested product the answer describes, or drops an open item it settles", () => {
+    const valid = validateClarificationPatch(wireToPatch(wire([["unresolved_questions", ["Requested product: a mount that swings out from the wall"]]])));
+    expect(valid.ok && valid.value.unresolved_questions).toEqual(["Requested product: a mount that swings out from the wall"]);
+    // A patch that doesn't list it leaves the open items as they are.
+    const none = validateClarificationPatch(wireToPatch(wire([["client", "X"]])));
+    expect(none.ok && none.value.unresolved_questions).toBeNull();
+  });
+
   it("rejects a value that isn't JSON, and passes unmapped through", () => {
     expect(validateClarificationPatch(wireToPatch(wire([["client", "!not json"]]))).ok).toBe(false);
     expect(wireToPatch(wire([], { unmapped: true }))).toMatchObject({ unmapped: true, client: null });

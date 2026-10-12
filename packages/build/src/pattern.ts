@@ -16,8 +16,25 @@ export const RoleSpecSchema = z
     critical: z.boolean(),
     /** Canonical functional systems this role serves (see @sd/core normalize). */
     systems: z.array(z.string()).min(1),
-    /** If set, include the role only when the request mentions one of these terms. */
+    /** If set, include the role only when the request mentions one of these terms (whole words, in its changes or stated counts). */
     mentions: z.array(z.string()).optional(),
+    /**
+     * A mention counts only when the same change also names one of these (an "outdoor" eero needs Wi-Fi
+     * words beside it, so "outdoor PoE cameras" adds no access point).
+     */
+    mentions_require: z.array(z.string()).min(1).optional(),
+    /**
+     * Include the role only when the request uses one of these words for its system ("Wi-Fi",
+     * "internet"). Unlike mentions they don't name the device, so "add Wi-Fi" is not an add-on of one eero.
+     */
+    asked_by: z.array(z.string()).min(1).optional(),
+    /** Include the role only when one of these roles is included (a switch and power protection for the eero network). */
+    with_roles: z.array(z.string()).min(1).optional(),
+    /**
+     * Roles in one count group are counted together ("only need 1 eero"): when a stated count
+     * goes to one of them, the others the request never named are dropped.
+     */
+    count_group: z.string().optional(),
     /** If set, include the role only when the answer about existing smoke/CO detectors is one of these. */
     existing_detectors: z.array(z.enum(EXISTING_DETECTORS)).min(1).optional(),
     /** Terms that identify this role in the retained-equipment list. */

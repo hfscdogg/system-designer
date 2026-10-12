@@ -118,6 +118,7 @@ const REVISION_WINDOW_DAYS = 14;
 const REVISE_WORDS = /^(revise|revision)\b/i;
 const EDIT_PROMPT = "What should change? Reply in plain words, for example \"make it 4 eeros\", \"remove the niche\" or \"client is Monica Greene\".";
 const RETAINER_EMAIL_PROMPT = "What email should the retainer invoice go to? Reply with just the address, or \"cancel\".";
+const retainerConfirmPrompt = (email: string) => `Send the retainer invoice to ${email}? Reply "yes", another address, or "cancel".`;
 /** How long after "Send design retainer" a typed address still answers it. */
 const RETAINER_EMAIL_HOURS = 24;
 /**
@@ -127,6 +128,30 @@ const RETAINER_EMAIL_HOURS = 24;
  */
 const EMAIL = /^(?!\.)(?!.*\.\.)[A-Za-z0-9._%+'-]{1,64}(?<!\.)@(?:[A-Za-z0-9](?:[A-Za-z0-9-]{0,61}[A-Za-z0-9])?\.)+[A-Za-z]{2,24}$/;
 export const isInvoiceEmail = (text: string) => text.length <= 100 && EMAIL.test(text);
+const EMAIL_IN_TEXT = /[A-Za-z0-9._%+'-]+@(?:[A-Za-z0-9-]+\.)+[A-Za-z]{2,24}/g;
+
+/**
+ * The one email address the rep typed in the request itself: the messages captured for the
+ * run and the budgets it revises, never model output. Null when there is none, or several.
+ * The rep's own address (a signature) is not the client's.
+ */
+async function emailInRequest(store: Store, run: RunRecord): Promise<string | null> {
+  const texts: string[] = [];
+  for (let r: RunRecord | null = run; r; r = r.parent_run_id ? await store.getRun(r.parent_run_id) : null) {
+    texts.push((await store.getIntake(r.intake_id)).text);
+    // Messages read together with the request (a contact-only first message, then the scope).
+    for (const e of (await store.listEvents(r.id)).filter((x) => x.type === "intake_combined")) {
+      for (const id of e.data.intakeIds as string[]) texts.push((await store.getIntake(id)).text);
+    }
+  }
+  const own = (await store.requesterEmail(run.id))?.toLowerCase();
+  const found = new Map<string, string>();
+  for (const m of texts.flatMap((t) => t.match(EMAIL_IN_TEXT) ?? [])) {
+    const email = m.replace(/^[.'-]+|[.'-]+$/g, "");
+    if (isInvoiceEmail(email) && email.toLowerCase() !== own && !found.has(email.toLowerCase())) found.set(email.toLowerCase(), email);
+  }
+  return found.size === 1 ? [...found.values()][0]! : null;
+}
 
 /** Card controls: edit or restart an open scope, revise a finished budget, or start a new request. */
 async function control(deps: GatewayDeps, person: Person, event: Extract<InboundEvent, { kind: "control_click" }>): Promise<WebhookReply> {
@@ -162,9 +187,10 @@ async function control(deps: GatewayDeps, person: Person, event: Extract<Inbound
     const sent = await store.readArtifact<RetainerInvoiceRecord>(run.id, "retainer", "invoice");
     if (sent) return reply(`The design retainer already went to ${sent.sent_to} from QuickBooks (invoice ${sent.qbo_doc_number}).`);
     if (!(await store.claimMessage(event.platform, event.providerEventId, "retainer", run.id))) return silent;
-    // The workflow starts when the rep replies with the client's email (see message()).
-    await store.setPendingRetainer(event.thread, run.id, person.id);
-    return reply(RETAINER_EMAIL_PROMPT);
+    // The workflow starts when the rep replies with the client's email, or "yes" to the one in the request (see message()).
+    const suggested = await emailInRequest(store, run);
+    await store.setPendingRetainer(event.thread, run.id, person.id, suggested);
+    return reply(suggested ? retainerConfirmPrompt(suggested) : RETAINER_EMAIL_PROMPT);
   }
   if (run.state !== "READY_HELD") {
     return reply(run.state === "SUPERSEDED" ? "That budget was already revised. Use the newest one." : "That budget isn't finished, so it can't be revised yet.");
@@ -175,12 +201,16 @@ async function control(deps: GatewayDeps, person: Person, event: Extract<Inbound
 }
 
 /** The finished budget this person asked to send a retainer for in this thread, while it is still finished and the ask is fresh. */
-async function pendingRetainerRun(deps: GatewayDeps, person: Person, event: Extract<InboundEvent, { kind: "message" }>): Promise<RunRecord | null> {
+async function pendingRetainerRun(
+  deps: GatewayDeps,
+  person: Person,
+  event: Extract<InboundEvent, { kind: "message" }>,
+): Promise<{ run: RunRecord; suggested: string | null } | null> {
   const { store } = deps;
   const pending = await store.pendingRetainer(event.thread, RETAINER_EMAIL_HOURS);
   if (!pending || pending.person_id !== person.id) return null;
   const run = await store.getRun(pending.run_id);
-  if (run.state === "READY_HELD") return run;
+  if (run.state === "READY_HELD") return { run, suggested: pending.suggested_email };
   await store.clearPendingRetainer(event.thread);
   return null;
 }
@@ -253,14 +283,16 @@ async function message(deps: GatewayDeps, person: Person, event: Extract<Inbound
     return approve(deps, person, event.thread, receipt.id, receipt.scope_hash, event.providerMessageId, "text");
   }
 
-  // "Send design retainer" asked for the invoice email: an address, or "cancel", answers it.
-  const retainer = await pendingRetainerRun(deps, person, event);
-  if (retainer) {
-    if (isInvoiceEmail(text)) {
+  // "Send design retainer" asked for the invoice email: an address, "yes" to the one offered, or "cancel", answers it.
+  const pendingRetainer = await pendingRetainerRun(deps, person, event);
+  if (pendingRetainer) {
+    const { run: retainer, suggested } = pendingRetainer;
+    const email = isInvoiceEmail(text) ? text : suggested && /^(y|yes)[.!]?$/i.test(text) ? suggested : null;
+    if (email) {
       if (!(await claim("retainer_email", retainer.id))) return silent;
-      await withRetry(() => deps.workflows.startRetainer(retainer.id, event.providerMessageId, text));
+      await withRetry(() => deps.workflows.startRetainer(retainer.id, event.providerMessageId, email));
       await store.clearPendingRetainer(event.thread);
-      return reply(`Sending the design retainer to ${text} from QuickBooks. I'll confirm here in a moment.`);
+      return reply(`Sending the design retainer to ${email} from QuickBooks. I'll confirm here in a moment.`);
     }
     if (/^cancel$/i.test(text)) {
       if (!(await claim("retainer_cancel", retainer.id))) return silent;
@@ -271,7 +303,11 @@ async function message(deps: GatewayDeps, person: Person, event: Extract<Inbound
     const revising = await store.pendingRevision(event.thread);
     if (revising?.person_id !== person.id && !(await store.findOpenRun(event.thread))) {
       if (!(await claim("retainer_email_invalid", retainer.id))) return silent;
-      return reply("That doesn't look like one email address. Reply with just the client's email (like jane@example.com), or \"cancel\".");
+      return reply(
+        suggested
+          ? `That doesn't look like one email address. Reply "yes" to send it to ${suggested}, just the client's email (like jane@example.com), or "cancel".`
+          : "That doesn't look like one email address. Reply with just the client's email (like jane@example.com), or \"cancel\".",
+      );
     }
   }
 

@@ -66,7 +66,8 @@ export type PublishOutcome = { ok: true; receipt: CurrentReceipt } | { ok: false
 
 export interface RunActivities {
   reportProgress(a: { runId: string; phase: Phase; note?: string }): Promise<void>;
-  extractScope(a: { runId: string }): Promise<ExtractOutcome>;
+  /** `alsoIntakeIds`: the requester's messages that arrived before the first receipt, read with the request as one. */
+  extractScope(a: { runId: string; alsoIntakeIds?: string[] }): Promise<ExtractOutcome>;
   /** Fails softly when the run already left scope collection (approved or reset meanwhile). */
   publishReceipt(a: { runId: string; version: number; extraction: ScopeExtraction; notes: string[] }): Promise<PublishOutcome>;
   interpretClarification(a: { runId: string; intakeId: string }): Promise<ExtractOutcome>;
@@ -92,6 +93,8 @@ export interface RunRuntime {
   acts: RunActivities;
   /** Next signal, or null when `idleMs` passes without one. */
   nextSignal(idleMs: number): Promise<RunSignal | null>;
+  /** Take the already-queued signals of this type without waiting; others stay queued. The queue is workflow state, so this is deterministic. */
+  takeQueued?(type: RunSignal["type"]): RunSignal[];
 }
 
 export type RunResult =
@@ -101,6 +104,10 @@ export type RunResult =
 
 export const RECONCILE_EVERY_MS = 60 * 60 * 1000;
 export const EXPIRE_AFTER_IDLE_CHECKS = 14 * 24; // ~14 days of hourly checks
+
+function takeClarifications(rt: RunRuntime): string[] {
+  return (rt.takeQueued?.("clarification") ?? []).flatMap((s) => (s.type === "clarification" ? [s.intakeId] : []));
+}
 
 function closedRun(runState: string): RunResult {
   return { state: "STALE", reason: `run is ${runState}` };
@@ -136,7 +143,12 @@ async function proposal(input: ProposalRunInput, rt: RunRuntime): Promise<RunRes
   const notify = (text: string) => acts.notify({ runId, text, key: `${runId}:notice:${++notices}` });
 
   await acts.reportProgress({ runId, phase: "reading" });
-  const first = await acts.extractScope({ runId });
+  let first = await acts.extractScope({ runId });
+  // The rep sent the rest of the request while the first message was being read: read them together, once.
+  for (let early = takeClarifications(rt), all: string[] = []; first.ok && early.length; early = takeClarifications(rt)) {
+    all = [...all, ...early];
+    first = await acts.extractScope({ runId, alsoIntakeIds: all });
+  }
   if (!first.ok) {
     await acts.markOutcome({ runId, state: "BLOCKED", reason: first.reason });
     return { state: "BLOCKED", reason: first.reason };
