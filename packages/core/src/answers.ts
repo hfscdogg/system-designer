@@ -67,6 +67,7 @@ export const ANSWER_CHOICES: Record<string, QuestionChoices> = {
 };
 
 export const NO_CHANGE_PATCH: ClarificationPatch = {
+  labor_hours: null,
   client: null,
   property: null,
   project_type: null,

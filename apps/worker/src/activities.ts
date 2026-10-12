@@ -88,7 +88,11 @@ export function createActivities(deps: ActivityDeps): RunActivities {
     const patch = validateClarificationPatch(raw);
     if (!patch.ok || patch.value.unmapped) {
       await store.appendEvent(runId, "revision_unmapped", "system", { model, parentRunId, errors: patch.ok ? [] : patch.errors });
-      return { ok: false, reason: "I couldn't apply that change to the earlier budget. Tap \"Revise this budget\" and say what to change, or tap \"New request\" for a different job" };
+      return {
+        ok: false,
+        reason:
+          "I couldn't apply that change to the earlier budget. A revision can change devices and quantities, remove a device or system, set the labor hours (\"hours to 7\"), or change the client, address, budget or date. Tap \"Revise this budget\" and say it that way, or tap \"New request\" for a different job",
+      };
     }
     const revised = applyClarification(base, patch.value);
     // Open questions about something the revision removed no longer apply.

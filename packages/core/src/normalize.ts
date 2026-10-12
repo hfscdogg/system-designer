@@ -83,12 +83,21 @@ export function systemsMentioned(text: string): string[] {
   return systemHits(text);
 }
 
+/** A TV's own sound: a soundbar and its sub ("Sonos Arc Ultra", "Sonos Sub Mini"). */
+const TV_SOUND = /\b(soundbars?|sound bars?|arc( ultra)?|beam|ray|sub( mini)?|subwoofers?)\b/;
+/** Music through the house, which a TV's soundbar never is. */
+const HOUSE_MUSIC = /\b((in|on)[- ](ceiling|wall)|ceiling|outdoor|landscape|patio|amps?|amplifiers?|era|five|zones?|whole[- ](home|house)|distributed|multi[- ]room|background|music)\b/;
+
 export function normalizeFunctionalSystems(items: string[]): string[] {
-  const mapped = items.map((item) => {
-    const hits = systemHits(item);
-    // A Sonos soundbar ("Sonos Arc Ultra") is TV sound, not music through the house.
-    const tvSound = hits.includes("audio_video") && /\b(soundbars?|sound bars?|arc|beam|ray)\b/.test(fold(item));
-    return { item, hits: tvSound ? hits.filter((h) => h !== "whole_home_audio") : hits };
+  const raw = items.map((item) => ({ item, hits: systemHits(item) }));
+  const hasTv = raw.some((m) => m.hits.includes("audio_video"));
+  const mapped = raw.map(({ item, hits }) => {
+    const t = fold(item);
+    // With a TV in the job, a Sonos soundbar or sub ("Sonos Arc Ultra", "Sonos Sub"), or bare
+    // "Sonos", is the TV's sound, not music through the house (Henry's Darren Mackin job, 2026-10-11).
+    const tvSound =
+      (hits.includes("audio_video") || hasTv) && hits.includes("whole_home_audio") && !HOUSE_MUSIC.test(t) && (TV_SOUND.test(t) || /^sonos( audio| system)?$/.test(t));
+    return { item, hits: tvSound ? [...new Set([...hits.filter((h) => h !== "whole_home_audio"), "audio_video"])] : hits };
   });
   const hasAv = mapped.some((m) => m.hits.includes("audio_video"));
   return uniqSorted(
@@ -187,6 +196,8 @@ export function normalizeExtraction(input: ScopeExtraction): NormalizedExtractio
     target_installation_date: date,
     proposal: { number: proposalNumber, name: nullableClean(input.proposal.name) },
     unresolved_questions: list(input.unresolved_questions),
+    // Only a revision sets it; absent stays absent so older scopes hash the same.
+    ...(input.labor_hours ? { labor_hours: input.labor_hours } : {}),
   };
   return { scope, notes };
 }
