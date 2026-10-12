@@ -114,7 +114,8 @@ export const SMOKE_SCENARIOS: SmokeScenario[] = [
         pattern: "tv_media",
         expect: { television: 1, soundbar: 1, subwoofer: 1 },
       },
-      { say: "Revise: hours to 7", pattern: "tv_media", expect: { television: 1, soundbar: 1, subwoofer: 1 }, receipt: ["Labor: 7 hours total"] },
+      // Raising the hours (estimate 12.5) proves the override without tripping the margin floor; Henry's 7 h falls under 40% and waits for an admin.
+      { say: "Revise: hours to 14", pattern: "tv_media", expect: { television: 1, soundbar: 1, subwoofer: 1 }, receipt: ["Labor: 14 hours total"] },
     ],
   },
   {
