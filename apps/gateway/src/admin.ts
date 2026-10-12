@@ -9,7 +9,7 @@
  *   node apps/gateway/src/admin.ts deactivate zack
  *   node apps/gateway/src/admin.ts set-policy henry policy.json "Pilot margin and tax rules"   # admin only
  *   node apps/gateway/src/admin.ts show-policy
- *   node apps/gateway/src/admin.ts reconcile        # hourly: start missing workflows, read real quotes, copy the run log to BigQuery (RUNLOG_DATASET)
+ *   node apps/gateway/src/admin.ts reconcile        # hourly: start missing workflows, read real quotes, check retainer invoices for payment, copy the run log to BigQuery (RUNLOG_DATASET)
  *   node apps/gateway/src/admin.ts smoke spaces/AAAA  # scripted conversation through the deployed system (sd-smoke-<env> job)
  *   node apps/gateway/src/admin.ts runs --since 2026-10-10 [--person zack] > runs.csv   # every request, its result, edits and score
  *   node apps/gateway/src/admin.ts learn --since 2026-10-10 [--person zack]            # what reps changed, for tuning patterns
@@ -19,10 +19,20 @@
 import { readFile } from "node:fs/promises";
 import pg from "pg";
 import { CommercialPolicySchema } from "@sd/build";
-import { allowSpace, deactivatePerson, MemoryBlobStore, migrate, pgDb, Store, upsertPerson } from "@sd/store";
+import { allowSpace, deactivatePerson, MemoryBlobStore, migrate, pgDb, Store, threadOf, upsertPerson } from "@sd/store";
 import { httpDToolsReader } from "@sd/dtools";
 import { learnReport, runsCsv, scoreRuns } from "./report.ts";
-import { followUpFinalQuotes, productionAdapters, productionStore, reconcileRuns, temporalClient, temporalSettings, TemporalWorkflows } from "@sd/worker";
+import {
+  checkRetainerPayments,
+  followUpFinalQuotes,
+  productionAdapters,
+  productionQbo,
+  productionStore,
+  reconcileRuns,
+  temporalClient,
+  temporalSettings,
+  TemporalWorkflows,
+} from "@sd/worker";
 import { bigQueryRunlogSink, exportRunlog } from "./runlog-export.ts";
 import { prepareSmoke, runSmoke } from "./smoke.ts";
 
@@ -95,6 +105,22 @@ async function main() {
           if (process.env.DTOOLS_API_KEY && process.env.DTOOLS_BASIC_AUTH) {
             const dtools = httpDToolsReader({ apiKey: process.env.DTOOLS_API_KEY, basicAuth: process.env.DTOOLS_BASIC_AUTH });
             console.log(JSON.stringify({ final_quotes: await followUpFinalQuotes(blobStore, dtools) }));
+          }
+          // Retainer invoices paid in QuickBooks (read-only there). This job runs as the worker's service
+          // account, which is the Chat app, so it posts "retainer paid" to the budget's thread itself.
+          const qbo = productionQbo(blobStore);
+          if (qbo) {
+            try {
+              // A refresh every pass, even with nothing to check, keeps the 100-day refresh token from lapsing.
+              await qbo.tokens.accessToken();
+              const chat = productionAdapters().google_chat!;
+              const notify = (run: { platform: string; space_id: string; thread_id: string }, text: string, key: string) =>
+                chat.post(threadOf(run), { kind: "text", text }, key).then(() => undefined);
+              console.log(JSON.stringify({ retainer_payments: await checkRetainerPayments(blobStore, qbo, notify) }));
+            } catch (err) {
+              console.error(`retainer payment check failed: ${err instanceof Error ? err.message : err}`);
+              process.exitCode = 1;
+            }
           }
           // Copy the scored run log to BigQuery for read-only questions. Best effort: the next pass replaces it.
           if (process.env.RUNLOG_DATASET) {

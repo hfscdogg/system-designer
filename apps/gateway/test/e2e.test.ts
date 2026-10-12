@@ -1,7 +1,8 @@
 import { beforeEach, describe, expect, it } from "vitest";
 import { FakeChannelAdapter, type View } from "@sd/channels";
 import type { ClarificationInterpreter, ScopeExtractor } from "@sd/llm";
-import { createActivities, followUpFinalQuotes, InlineWorkflows, readFinalQuote } from "@sd/worker";
+import { checkRetainerPayments, createActivities, followUpFinalQuotes, InlineWorkflows, readFinalQuote } from "@sd/worker";
+import { recordingQboClient, type QboClient } from "@sd/qbo";
 import { completeExtraction, noPatch } from "../../../packages/core/test/fixtures.ts";
 import { TEST_POLICY, testStore } from "../../../packages/store/test/helpers.ts";
 import { recordedDToolsReader, recordingDToolsWriter, type DToolsWriter } from "@sd/dtools";
@@ -82,6 +83,7 @@ interface BuildOptions {
   patterns?: PatternSpec[];
   policy?: boolean | Record<string, unknown>;
   writer?: DToolsWriter;
+  qbo?: QboClient;
 }
 
 async function setup(extractions: unknown[] = [], patches: unknown[] = [], build: BuildOptions = {}) {
@@ -104,6 +106,7 @@ async function setup(extractions: unknown[] = [], patches: unknown[] = [], build
     interpreter,
     dtools,
     dtoolsWriter: build.writer ?? null,
+    qbo: build.qbo ?? null,
     patterns: build.patterns ?? [testPattern()],
     renderPdf: (html) => htmlToPdf(html),
     // Only the panel has a reachable image; everything else must show IMAGE PENDING.
@@ -608,41 +611,77 @@ describe("editing a scope and revising a finished budget", () => {
     expect(run!.state).toBe("STALE");
   });
 
-  it("sends the design retainer: one D-Tools opportunity from the Design Retainer template, with the amount to type", async () => {
-    const writer = recordingDToolsWriter();
+  /** D-Tools stand-ins for the retainer: opportunities the writer created, and quotes reps add under them. */
+  function retainerDTools(writer: ReturnType<typeof recordingDToolsWriter>, quotes: Record<string, Record<string, unknown>> = {}) {
     const json = (endpoint: string, query: Record<string, string>, value: unknown) => {
       const body = new TextEncoder().encode(JSON.stringify(value));
       return { endpoint, query, status: 200, body, sha256: "x", fetchedAt: "2026-10-10T12:00:00.000Z" };
     };
-    const base = recordedDToolsReader(CATALOG);
-    // The retainer quote the template makes (the rep types its amount); the real quote is added under the same opportunity later.
-    const quotes: Record<string, Record<string, unknown>> = { "q-1": { id: "q-1", name: "Design Retainer", price: 0, state: "Design Development" } };
-    const dtools = Object.assign(base, {
+    return Object.assign(recordedDToolsReader(CATALOG), {
       findOpportunities: async (search: string) => json("Opportunities/GetOpportunities", { search }, { opportunities: writer.created.filter((o) => o.name.includes(search)) }),
       getOpportunity: async (id: string) => json("Opportunities/GetOpportunity", { id }, { id, number: "P-9001", name: writer.created.find((o) => o.id === id)!.name, quoteIds: Object.keys(quotes) }),
       getQuote: async (id: string) => json("Quotes/GetQuote", { id }, quotes[id]),
     });
-    const t = await setup([completeExtraction()], [], { writer, dtools });
+  }
+  const RETAINER_PROMPT = 'What email should the retainer invoice go to? Reply with just the address, or "cancel".';
+
+  it("sends the design retainer: asks for the email, opens the D-Tools opportunity, and QuickBooks emails the invoice", async () => {
+    const writer = recordingDToolsWriter();
+    // The real quote is added under the retainer's opportunity later.
+    const quotes: Record<string, Record<string, unknown>> = {};
+    const dtools = retainerDTools(writer, quotes);
+    // QuickBooks already has someone else called "Smith Family", so the new customer is named with the email.
+    const qbo = recordingQboClient({ customers: [{ Id: "7", DisplayName: "Smith Family", PrimaryEmailAddr: { Address: "other@example.com" } }] });
+    const t = await setup([completeExtraction()], [], { writer, dtools, qbo });
     await t.send(chatMessage("Smith security upgrade"));
     const [first] = t.receipts();
     await t.send(click(first!.receiptId, first!.approve!.scopeHash));
     const [run] = await t.store.listRunsForPerson("zack");
     expect(run!.state).toBe("READY_HELD");
+    const ref = `SD-${run!.id.slice(4, 12)}`;
 
     expect((await t.send(controlClick("send_retainer", run!.id, "users/henry"))).body).toEqual({ text: "Only the person who made this request can send its retainer." });
-    expect((await t.send(controlClick("send_retainer", run!.id))).body).toMatchObject({ text: expect.stringContaining("Setting up the design retainer") });
-    expect(writer.created).toEqual([
-      expect.objectContaining({ quoteTemplate: "Design Retainer", clientName: expect.any(String), name: expect.stringContaining(`SD-${run!.id.slice(4, 12)}`) }),
-    ]);
-    expect(t.texts().at(-1)).toMatch(/^Design retainer: \$100\.00 \(4% of the (low estimate|budget), \$[\d,.]+\)\. It's ready as D-Tools opportunity P-9001 .* set the Design Retainer line to \$100\.00, then send the quote for e-signature/);
-    expect(t.texts().at(-1)).not.toContain("⚠️");
+    // The tap only asks for the address; nothing is created yet.
+    expect((await t.send(controlClick("send_retainer", run!.id))).body).toEqual({ text: RETAINER_PROMPT });
+    expect(writer.created).toEqual([]);
+    // Anything but one address is asked again, and is not taken as a new request.
+    expect((await t.send(chatMessage("it's jane at example dot com"))).body).toEqual({
+      text: 'That doesn\'t look like one email address. Reply with just the client\'s email (like jane@example.com), or "cancel".',
+    });
+    expect((await t.send(chatMessage("jane@example.com, bob@example.com"))).body).toMatchObject({ text: expect.stringContaining("doesn't look like one email address") });
+    expect(await t.store.listRunsForPerson("zack")).toHaveLength(1);
+    expect(writer.created).toEqual([]);
 
-    // A second tap re-posts the same opportunity instead of creating another.
-    const posted = t.texts().length;
-    await t.send(controlClick("send_retainer", run!.id));
+    expect((await t.send(chatMessage("  client@example.com  "))).body).toEqual({ text: "Sending the design retainer to client@example.com from QuickBooks. I'll confirm here in a moment." });
+    expect(writer.created).toEqual([expect.objectContaining({ clientName: "Smith Family", name: expect.stringContaining(ref) })]);
+    expect(writer.created[0]).not.toHaveProperty("quoteTemplate");
+    expect(qbo.customers.at(-1)).toEqual({ Id: expect.any(String), DisplayName: "Smith Family (client@example.com)", PrimaryEmailAddr: { Address: "client@example.com" } });
+    expect(qbo.invoices).toHaveLength(1);
+    expect(qbo.invoices[0]!.payload).toMatchObject({
+      CustomerRef: { value: qbo.customers.at(-1)!.Id },
+      DocNumber: ref,
+      PrivateNote: `System Designer ${ref}; D-Tools opportunity P-9001.`,
+      BillEmail: { Address: "client@example.com" },
+      AllowOnlineCreditCardPayment: true,
+      AllowOnlineACHPayment: true,
+      Line: [
+        {
+          Amount: 100,
+          Description: expect.stringMatching(/^Design Retainer: 4% Deposit Against Estimated Total Budget of \$[\d,]+( – \$[\d,]+)?\. Non-refundable; applied in full toward your final project value\.$/),
+          SalesItemLineDetail: { ItemRef: { value: "3649" }, Qty: 1, UnitPrice: 100, TaxCodeRef: { value: "NON" } },
+        },
+      ],
+    });
+    expect(qbo.sent).toEqual([{ id: qbo.invoices[0]!.Id, email: "client@example.com" }]);
+    expect(t.texts().at(-1)).toBe(
+      `Design retainer $100.00 (4% of ${(await t.store.readArtifact<{ basis: string }>(run!.id, "retainer", "opportunity"))!.basis}) sent to client@example.com from QuickBooks ` +
+        `(invoice ${ref}, customer "Smith Family (client@example.com)"). D-Tools opportunity P-9001 is set up for the real quote.`,
+    );
+
+    // A second tap says where it went instead of sending again.
+    expect((await t.send(controlClick("send_retainer", run!.id))).body).toEqual({ text: `The design retainer already went to client@example.com from QuickBooks (invoice ${ref}).` });
     expect(writer.created).toHaveLength(1);
-    expect(t.texts()).toHaveLength(posted + 1);
-    expect(t.texts().at(-1)).toContain("P-9001");
+    expect(qbo.sent).toHaveLength(1);
 
     // The run log: the request as typed, what was built, and the retainer, one row per run.
     const [row] = await t.store.runReport(new Date("2000-01-01"));
@@ -651,6 +690,8 @@ describe("editing a scope and revising a finished budget", () => {
       request: "Smith security upgrade",
       state: "READY_HELD",
       retainer_opportunity: "P-9001",
+      retainer_invoice: ref,
+      retainer_paid_at: null,
       retainer_usd: 100,
       pdf_sha256: expect.stringMatching(/^[0-9a-f]{64}$/),
     });
@@ -659,6 +700,19 @@ describe("editing a scope and revising a finished budget", () => {
     // Left as built and the retainer sent: 5 stars.
     const [scored] = await scoreRuns(t.store, [row!], new Date());
     expect(scored).toMatchObject({ changes: null, stars: 5, why: "left as built; retainer sent", final_quote_usd: null });
+
+    // The hourly check: unpaid stays unpaid; once the balance is 0 it is recorded and the thread told, once.
+    const notify = (r: { platform: string; space_id: string; thread_id: string }, text: string, key: string) =>
+      t.chat.post({ platform: r.platform, spaceId: r.space_id, threadId: r.thread_id }, { kind: "text", text }, key).then(() => undefined);
+    expect(await checkRetainerPayments(t.store, qbo, notify)).toEqual({ checked: 1, paid: 0, failed: [] });
+    Object.assign(qbo.invoices[0]!, { Balance: 0, MetaData: { LastUpdatedTime: "2026-10-13T09:30:00-07:00" } });
+    expect(await checkRetainerPayments(t.store, qbo, notify)).toEqual({ checked: 1, paid: 1, failed: [] });
+    expect(t.texts().at(-1)).toBe(`✓ Design retainer paid: $100.00 (QuickBooks invoice ${ref}).`);
+    expect(await checkRetainerPayments(t.store, qbo, notify)).toEqual({ checked: 0, paid: 0, failed: [] });
+    expect(await t.store.readArtifact(run!.id, "retainer", "payment")).toEqual({ paid_at: "2026-10-13T16:30:00.000Z", amount_cents: 10_000, invoice_id: qbo.invoices[0]!.Id, doc_number: ref });
+    const [paidRow] = await t.store.runReport(new Date("2000-01-01"));
+    expect(paidRow).toMatchObject({ retainer_paid_at: "2026-10-13T16:30:00.000Z" });
+    expect((await scoreRuns(t.store, [paidRow!], new Date()))[0]).toMatchObject({ stars: 5, why: "left as built; retainer paid" });
     const csv = runsCsv([scored!]);
     expect(csv.split("\n")[0]).toContain("request,later_messages,changes,state");
     expect(csv.split("\n")[0]).toContain("final_quote_usd,final_quote_diff_pct,thread_runs,stars,why");
@@ -698,6 +752,70 @@ describe("editing a scope and revising a finished budget", () => {
     const replies = (await t.store.listArtifacts(run!.id)).filter((a) => a.stage === "model");
     expect(replies.map((a) => a.name)).toEqual([expect.stringMatching(/^extraction-[0-9a-f]{16}$/)]);
     expect(await t.store.readArtifact(run!.id, "model", replies[0]!.name)).toMatchObject({ kind: "extraction", model: "fake-model", input: { text: "Smith security upgrade" } });
+  });
+
+  it("retainer email: cancel, another person's message, a failed send retried on the same invoice, and expiry", async () => {
+    const writer = recordingDToolsWriter();
+    const qbo = recordingQboClient({ customers: [{ Id: "7", DisplayName: "Smith Household", PrimaryEmailAddr: { Address: "Client@Example.com" } }] });
+    const t = await setup([completeExtraction(), completeExtraction({ client: "Henry Test" })], [], { writer, dtools: retainerDTools(writer), qbo });
+    await t.send(chatMessage("Smith security upgrade"));
+    const [first] = t.receipts();
+    await t.send(click(first!.receiptId, first!.approve!.scopeHash));
+    const [run] = await t.store.listRunsForPerson("zack");
+    const ref = `SD-${run!.id.slice(4, 12)}`;
+    const thread = { platform: "google_chat", spaceId: SPACE, threadId: THREAD };
+
+    // A request started before emails were asked for has no address: the opportunity is made, QuickBooks is skipped.
+    await t.acts.createRetainer({ runId: run!.id, tap: "old-tap" });
+    expect(writer.created).toHaveLength(1);
+    expect(qbo.invoices).toEqual([]);
+    expect(t.texts().at(-1)).toMatch(/^No email address came with this request, so send the design retainer from QuickBooks by hand for \$100\.00/);
+
+    expect((await t.send(controlClick("send_retainer", run!.id))).body).toEqual({ text: RETAINER_PROMPT });
+    expect((await t.send(chatMessage("Cancel"))).body).toEqual({ text: 'OK, no retainer sent. Tap "Send design retainer" again when you have the client\'s email.' });
+    expect(await t.store.pendingRetainer(thread)).toBeNull();
+
+    // Someone else's address in the thread is not the requester's answer: it is an ordinary message (here, Henry's own request).
+    await t.send(controlClick("send_retainer", run!.id));
+    const other = await t.send(chatMessage("henry@example.com", { user: "users/henry" }));
+    for (const r of await t.store.listRunsForPerson("henry")) await t.workflows.settled(r.id);
+    expect(other.body).not.toMatchObject({ text: expect.stringContaining("Sending the design retainer") });
+    expect(qbo.invoices).toEqual([]);
+    expect(await t.store.pendingRetainer(thread)).toMatchObject({ run_id: run!.id, person_id: "zack" });
+
+    // QuickBooks fails to email it: the invoice stays, and the next try sends that same invoice.
+    qbo.failSends = 1;
+    expect((await t.send(chatMessage("client@example.com"))).body).toMatchObject({ text: expect.stringContaining("Sending the design retainer to client@example.com") });
+    expect(t.texts().at(-1)).toMatch(new RegExp(`^⚠️ QuickBooks invoice ${ref} for \\$100\\.00 is created, but sending it to client@example\\.com failed`));
+    expect(await t.store.readArtifact(run!.id, "retainer", "invoice")).toBeNull();
+    expect(await t.send(controlClick("send_retainer", run!.id))).toMatchObject({ body: { text: RETAINER_PROMPT } });
+    await t.send(chatMessage("client@example.com"));
+    expect(qbo.invoices).toHaveLength(1);
+    expect(qbo.sent).toEqual([{ id: qbo.invoices[0]!.Id, email: "client@example.com" }]);
+    expect(writer.created).toHaveLength(1);
+    // The one existing customer with that email (any case) was used.
+    expect(qbo.customers).toHaveLength(1);
+    expect(t.texts().at(-1)).toContain(`sent to client@example.com from QuickBooks (invoice ${ref}, customer "Smith Household")`);
+
+    // An ask left unanswered for a day lapses.
+    await t.store.setPendingRetainer(thread, run!.id, "zack");
+    await t.db.query(`UPDATE pending_retainers SET created_at = now() - interval '25 hours'`);
+    expect(await t.store.pendingRetainer(thread)).toBeNull();
+  });
+
+  it("without QuickBooks the retainer still opens the D-Tools opportunity and says to invoice by hand", async () => {
+    const writer = recordingDToolsWriter();
+    const t = await setup([completeExtraction()], [], { writer, dtools: retainerDTools(writer) });
+    await t.send(chatMessage("Smith security upgrade"));
+    const [first] = t.receipts();
+    await t.send(click(first!.receiptId, first!.approve!.scopeHash));
+    const [run] = await t.store.listRunsForPerson("zack");
+    await t.send(controlClick("send_retainer", run!.id));
+    await t.send(chatMessage("client@example.com"));
+    expect(writer.created).toHaveLength(1);
+    expect(t.texts().at(-1)).toMatch(
+      /^The QuickBooks invoice isn't switched on here yet, so send the design retainer from QuickBooks by hand for \$100\.00 \(4% of the (low estimate|budget), \$[\d,.]+\)\. D-Tools opportunity P-9001 is set up for the real quote\.$/,
+    );
   });
 
   it("revises a finished budget from its approved scope: Revision 2 receipt, -rev2 PDF, old budget superseded", async () => {

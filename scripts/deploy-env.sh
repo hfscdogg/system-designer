@@ -10,6 +10,8 @@
 #              [SMOKE_USER_EMAIL]: a member of that space; delegated PDF uploads post as this person.
 #              ANTHROPIC_ORGANIZATION_ID ANTHROPIC_FEDERATION_RULE_ID ANTHROPIC_SERVICE_ACCOUNT_ID [ANTHROPIC_WORKSPACE_ID]
 #              (Claude API access is keyless: Workload Identity Federation from the worker's Google identity.)
+#              [QBO_REALM_ID]: the Livewire QuickBooks company id. Prod only; when set, the design-retainer invoice is
+#              switched on and the qbo-* secrets must have values (docs/deploy.md).
 #              WORKER_ID_TOKEN: Google ID token with audience sd-worker-<env>, for the worker health check
 #              (CI mints it in the auth step; gcloud can't mint audience-bound tokens from federated credentials).
 # Needs: gcloud (authenticated as the deployer), curl, jq, temporal CLI.
@@ -44,9 +46,18 @@ CHAT_ENDPOINT="${GATEWAY_URL}/chat/google"
 COMMON_ENV="RELEASE_ID=${DIGEST},TEMPORAL_ADDRESS=${TEMPORAL_ADDRESS},TEMPORAL_NAMESPACE=${TEMPORAL_NAMESPACE},TEMPORAL_TASK_QUEUE=${QUEUE},EVIDENCE_BUCKET=${BUCKET}"
 # The one D-Tools write (design-retainer opportunities) runs in prod only: staging shares Livewire's D-Tools account.
 SD_DTOOLS_RETAINER=$([ "${ENV_NAME}" = prod ] && echo on || echo off)
-WORKER_ENV="${COMMON_ENV},SD_DTOOLS_RETAINER=${SD_DTOOLS_RETAINER},GOOGLE_CHAT_ACTION_URL=${CHAT_ENDPOINT},WORKER_DEPLOYMENT_NAME=${DEPLOYMENT},LLM_MODEL=${LLM_MODEL},GOOGLE_CHAT_UPLOAD_MODE=${GOOGLE_CHAT_UPLOAD_MODE},GOOGLE_CHAT_DELEGATED_USER=${GOOGLE_CHAT_DELEGATED_USER:-},WORKER_SERVICE_ACCOUNT=${WORKER_SA},ANTHROPIC_ORGANIZATION_ID=${ANTHROPIC_ORGANIZATION_ID},ANTHROPIC_FEDERATION_RULE_ID=${ANTHROPIC_FEDERATION_RULE_ID},ANTHROPIC_SERVICE_ACCOUNT_ID=${ANTHROPIC_SERVICE_ACCOUNT_ID},ANTHROPIC_WORKSPACE_ID=${ANTHROPIC_WORKSPACE_ID:-}"
+# The QuickBooks retainer invoice emails real clients: prod only, and only once Henry has set it up (QBO_REALM_ID).
+# The refresh token is not passed in: it rotates, so the worker reads and rewrites qbo-refresh-token itself.
+if [[ "${ENV_NAME}" == prod && -n "${QBO_REALM_ID:-}" ]]; then
+  QBO_ENV="SD_QBO_RETAINER=on,QBO_REALM_ID=${QBO_REALM_ID},GOOGLE_CLOUD_PROJECT=${PROJECT}"
+  QBO_SECRETS=",QBO_CLIENT_ID=qbo-client-id:latest,QBO_CLIENT_SECRET=qbo-client-secret:latest"
+else
+  QBO_ENV="SD_QBO_RETAINER=off"
+  QBO_SECRETS=""
+fi
+WORKER_ENV="${COMMON_ENV},${QBO_ENV},SD_DTOOLS_RETAINER=${SD_DTOOLS_RETAINER},GOOGLE_CHAT_ACTION_URL=${CHAT_ENDPOINT},WORKER_DEPLOYMENT_NAME=${DEPLOYMENT},LLM_MODEL=${LLM_MODEL},GOOGLE_CHAT_UPLOAD_MODE=${GOOGLE_CHAT_UPLOAD_MODE},GOOGLE_CHAT_DELEGATED_USER=${GOOGLE_CHAT_DELEGATED_USER:-},WORKER_SERVICE_ACCOUNT=${WORKER_SA},ANTHROPIC_ORGANIZATION_ID=${ANTHROPIC_ORGANIZATION_ID},ANTHROPIC_FEDERATION_RULE_ID=${ANTHROPIC_FEDERATION_RULE_ID},ANTHROPIC_SERVICE_ACCOUNT_ID=${ANTHROPIC_SERVICE_ACCOUNT_ID},ANTHROPIC_WORKSPACE_ID=${ANTHROPIC_WORKSPACE_ID:-}"
 DB_SECRET="DATABASE_URL=database-url-${ENV_NAME}:latest"
-WORKER_SECRETS="${DB_SECRET},TEMPORAL_API_KEY=temporal-api-key:latest,DTOOLS_API_KEY=dtools-api-key:latest,DTOOLS_BASIC_AUTH=dtools-basic-auth:latest"
+WORKER_SECRETS="${DB_SECRET},TEMPORAL_API_KEY=temporal-api-key:latest,DTOOLS_API_KEY=dtools-api-key:latest,DTOOLS_BASIC_AUTH=dtools-basic-auth:latest${QBO_SECRETS}"
 
 log() { echo "==> [${ENV_NAME}] $*"; }
 
@@ -59,11 +70,11 @@ gcloud run jobs deploy "sd-migrate-${ENV_NAME}" --region "${REGION}" --image "${
   --set-env-vars "RELEASE_ID=${DIGEST}" --set-secrets "${DB_SECRET}" --max-retries 0 --quiet
 gcloud run jobs execute "sd-migrate-${ENV_NAME}" --region "${REGION}" --wait
 
-log "reconcile job (triggered hourly by Cloud Scheduler; also reads real quotes under retainer opportunities, read-only, and copies the run log to BigQuery)"
+log "reconcile job (triggered hourly by Cloud Scheduler; also reads real quotes under retainer opportunities, read-only, checks retainer invoices for payment, and copies the run log to BigQuery)"
 gcloud run jobs deploy "sd-reconcile-${ENV_NAME}" --region "${REGION}" --image "${IMAGE}" \
   --command node --args apps/gateway/src/admin.ts,reconcile \
   --service-account "${WORKER_SA}" --set-cloudsql-instances "${GCP_SQL_INSTANCE}" \
-  --set-env-vars "${COMMON_ENV},RUNLOG_DATASET=sd_runlog_${ENV_NAME}" --set-secrets "${DB_SECRET},TEMPORAL_API_KEY=temporal-api-key:latest,DTOOLS_API_KEY=dtools-api-key:latest,DTOOLS_BASIC_AUTH=dtools-basic-auth:latest" --max-retries 0 --quiet
+  --set-env-vars "${COMMON_ENV},${QBO_ENV},RUNLOG_DATASET=sd_runlog_${ENV_NAME}" --set-secrets "${DB_SECRET},TEMPORAL_API_KEY=temporal-api-key:latest,DTOOLS_API_KEY=dtools-api-key:latest,DTOOLS_BASIC_AUTH=dtools-basic-auth:latest${QBO_SECRETS}" --max-retries 0 --quiet
 
 # One worker service per build: workflows are pinned to the build they started on,
 # so older builds keep running until Temporal reports them drained (cleanup below).

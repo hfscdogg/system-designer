@@ -16,6 +16,7 @@
     "pg": "^8.23.1",
     "@sd/build": "workspace:*",
     "@sd/dtools": "workspace:*",
+    "@sd/qbo": "workspace:*",
     "@sd/render": "workspace:*"
   },
   "devDependencies": {

@@ -34,6 +34,11 @@ export const CommercialPolicySchema = z
      * parts share of the subtotal, as before.
      */
     design_delivery: z.object({ base_pct: pct, max_pct: pct }).strict().optional(),
+    /**
+     * The design retainer's QuickBooks Online item ("DESIGN RETAINER"), so a
+     * new item needs no deploy. Absent: the worker's default item id.
+     */
+    retainer: z.object({ qbo_item_id: z.string().regex(/^\d+$/).optional() }).strict().optional(),
   })
   .strict()
   .superRefine((p, ctx) => {

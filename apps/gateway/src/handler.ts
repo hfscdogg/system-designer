@@ -1,7 +1,7 @@
 import { answerLabels, OPEN_INTAKE_STATES, parseApprovalText, type RunSignal, type ThreadRef } from "@sd/core";
 import { googleChatReplyBody, isAddonBody, parseGoogleChatEvent, type InboundEvent, type RequestVerifier, type WebhookReply } from "@sd/channels";
-import type { Person, Store } from "@sd/store";
-import { WorkflowClosedError, type WorkflowPort } from "@sd/worker";
+import type { Person, RunRecord, Store } from "@sd/store";
+import { WorkflowClosedError, type RetainerInvoiceRecord, type WorkflowPort } from "@sd/worker";
 
 /**
  * Webhook front door. Deterministic code only: verify the provider, resolve the
@@ -117,6 +117,16 @@ const REVISION_WINDOW_DAYS = 14;
 // Only an explicit "revise": in a DM every job shares one conversation, so "change the panel for the Joneses" may be a new job.
 const REVISE_WORDS = /^(revise|revision)\b/i;
 const EDIT_PROMPT = "What should change? Reply in plain words, for example \"make it 4 eeros\", \"remove the niche\" or \"client is Monica Greene\".";
+const RETAINER_EMAIL_PROMPT = "What email should the retainer invoice go to? Reply with just the address, or \"cancel\".";
+/** How long after "Send design retainer" a typed address still answers it. */
+const RETAINER_EMAIL_HOURS = 24;
+/**
+ * One email address and nothing else. The retainer invoice goes only to an
+ * address the rep typed and this matched; a model never supplies it
+ * (customer_email is an authority key).
+ */
+const EMAIL = /^(?!\.)(?!.*\.\.)[A-Za-z0-9._%+'-]{1,64}(?<!\.)@(?:[A-Za-z0-9](?:[A-Za-z0-9-]{0,61}[A-Za-z0-9])?\.)+[A-Za-z]{2,24}$/;
+export const isInvoiceEmail = (text: string) => text.length <= 100 && EMAIL.test(text);
 
 /** Card controls: edit or restart an open scope, revise a finished budget, or start a new request. */
 async function control(deps: GatewayDeps, person: Person, event: Extract<InboundEvent, { kind: "control_click" }>): Promise<WebhookReply> {
@@ -142,21 +152,37 @@ async function control(deps: GatewayDeps, person: Person, event: Extract<Inbound
   }
   if (event.control === "new_request") {
     await store.clearPendingRevision(event.thread);
+    await store.clearPendingRetainer(event.thread);
     return reply("OK. Send the new request whenever you're ready.");
   }
   if (event.control === "send_retainer") {
     if (run.state !== "READY_HELD") {
       return reply(run.state === "SUPERSEDED" ? "That budget was revised. Send the retainer from the newest one." : "That budget isn't finished yet.");
     }
+    const sent = await store.readArtifact<RetainerInvoiceRecord>(run.id, "retainer", "invoice");
+    if (sent) return reply(`The design retainer already went to ${sent.sent_to} from QuickBooks (invoice ${sent.qbo_doc_number}).`);
     if (!(await store.claimMessage(event.platform, event.providerEventId, "retainer", run.id))) return silent;
-    await withRetry(() => deps.workflows.startRetainer(run.id, event.providerEventId));
-    return reply("Setting up the design retainer in D-Tools. I'll post the opportunity here in a moment.");
+    // The workflow starts when the rep replies with the client's email (see message()).
+    await store.setPendingRetainer(event.thread, run.id, person.id);
+    return reply(RETAINER_EMAIL_PROMPT);
   }
   if (run.state !== "READY_HELD") {
     return reply(run.state === "SUPERSEDED" ? "That budget was already revised. Use the newest one." : "That budget isn't finished, so it can't be revised yet.");
   }
+  await store.clearPendingRetainer(event.thread);
   await store.setPendingRevision(event.thread, run.id, person.id);
   return reply(EDIT_PROMPT);
+}
+
+/** The finished budget this person asked to send a retainer for in this thread, while it is still finished and the ask is fresh. */
+async function pendingRetainerRun(deps: GatewayDeps, person: Person, event: Extract<InboundEvent, { kind: "message" }>): Promise<RunRecord | null> {
+  const { store } = deps;
+  const pending = await store.pendingRetainer(event.thread, RETAINER_EMAIL_HOURS);
+  if (!pending || pending.person_id !== person.id) return null;
+  const run = await store.getRun(pending.run_id);
+  if (run.state === "READY_HELD") return run;
+  await store.clearPendingRetainer(event.thread);
+  return null;
 }
 
 /** The finished run a new message revises: one the requester tapped Revise on, or their latest budget when the message starts with "revise". */
@@ -225,6 +251,28 @@ async function message(deps: GatewayDeps, person: Person, event: Extract<Inbound
     const receipt = await store.getReceipt(approvalReceipt);
     if (!receipt?.scope_hash) return reply(`I can't find an approvable receipt ${approvalReceipt}.`);
     return approve(deps, person, event.thread, receipt.id, receipt.scope_hash, event.providerMessageId, "text");
+  }
+
+  // "Send design retainer" asked for the invoice email: an address, or "cancel", answers it.
+  const retainer = await pendingRetainerRun(deps, person, event);
+  if (retainer) {
+    if (isInvoiceEmail(text)) {
+      if (!(await claim("retainer_email", retainer.id))) return silent;
+      await withRetry(() => deps.workflows.startRetainer(retainer.id, event.providerMessageId, text));
+      await store.clearPendingRetainer(event.thread);
+      return reply(`Sending the design retainer to ${text} from QuickBooks. I'll confirm here in a moment.`);
+    }
+    if (/^cancel$/i.test(text)) {
+      if (!(await claim("retainer_cancel", retainer.id))) return silent;
+      await store.clearPendingRetainer(event.thread);
+      return reply("OK, no retainer sent. Tap \"Send design retainer\" again when you have the client's email.");
+    }
+    // Other text goes to a revision or open request this person also has here; otherwise it is not a new request.
+    const revising = await store.pendingRevision(event.thread);
+    if (revising?.person_id !== person.id && !(await store.findOpenRun(event.thread))) {
+      if (!(await claim("retainer_email_invalid", retainer.id))) return silent;
+      return reply("That doesn't look like one email address. Reply with just the client's email (like jane@example.com), or \"cancel\".");
+    }
   }
 
   const open = await store.findOpenRun(event.thread);

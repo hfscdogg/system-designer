@@ -169,6 +169,8 @@ jobs:
           WORKER_ID_TOKEN: ${{ steps.auth.outputs.id_token }}
           ANTHROPIC_FEDERATION_RULE_ID: ${{ vars.ANTHROPIC_FEDERATION_RULE_ID_PROD }}
           ANTHROPIC_SERVICE_ACCOUNT_ID: ${{ vars.ANTHROPIC_SERVICE_ACCOUNT_ID_PROD }}
+          # The Livewire QuickBooks company; empty keeps the retainer invoice off (docs/deploy.md).
+          QBO_REALM_ID: ${{ vars.QBO_REALM_ID }}
       - uses: actions/upload-artifact@v4
         with:
           name: release-prod

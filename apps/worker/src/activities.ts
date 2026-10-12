@@ -16,6 +16,7 @@ import type { ChannelAdapter, View } from "@sd/channels";
 import type { ClarificationInterpreter, ScopeExtractor } from "@sd/llm";
 import { formatUsd, type PatternSpec, type Proposal } from "@sd/build";
 import type { DToolsReader, DToolsWriter } from "@sd/dtools";
+import type { QboClient } from "@sd/qbo";
 import { IntegrityError, threadOf, type RunRecord, type Store } from "@sd/store";
 import { createBuildStage } from "./build-activities.ts";
 import { createRetainer } from "./retainer.ts";
@@ -30,6 +31,8 @@ export interface ActivityDeps {
   dtools: DToolsReader;
   /** The one approved D-Tools write (retainer opportunities); null where it is not configured. */
   dtoolsWriter?: DToolsWriter | null;
+  /** QuickBooks Online, for the design-retainer invoice; null where it is not switched on. */
+  qbo?: QboClient | null;
   patterns: PatternSpec[];
   /** HTML → PDF (Chromium in production). */
   renderPdf: (html: string) => Promise<Uint8Array>;
@@ -314,11 +317,18 @@ export function createActivities(deps: ActivityDeps): RunActivities {
       }
     },
 
-    createRetainer: ({ runId, tap }) =>
+    createRetainer: ({ runId, tap, email }) =>
       createRetainer(
-        { store, dtools: deps.dtools, writer: deps.dtoolsWriter ?? null, notify: (run, text, key) => adapterFor(run).post(threadOf(run), { kind: "text", text }, key).then(() => undefined) },
+        {
+          store,
+          dtools: deps.dtools,
+          writer: deps.dtoolsWriter ?? null,
+          qbo: deps.qbo ?? null,
+          notify: (run, text, key) => adapterFor(run).post(threadOf(run), { kind: "text", text }, key).then(() => undefined),
+        },
         runId,
         tap,
+        email,
       ),
 
     buildStage: createBuildStage({

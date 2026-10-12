@@ -51,6 +51,9 @@ importers:
         specifier: ^8.23.1
         version: 8.23.1
     devDependencies:
+      '@sd/qbo':
+        specifier: workspace:*
+        version: link:../../packages/qbo
       '@sd/render':
         specifier: workspace:*
         version: link:../../packages/render
@@ -78,6 +81,9 @@ importers:
       '@sd/llm':
         specifier: workspace:*
         version: link:../../packages/llm
+      '@sd/qbo':
+        specifier: workspace:*
+        version: link:../../packages/qbo
       '@sd/render':
         specifier: workspace:*
         version: link:../../packages/render
@@ -154,6 +160,12 @@ importers:
       zod:
         specifier: ^4.6.5
         version: 4.6.5
+
+  packages/qbo:
+    dependencies:
+      google-auth-library:
+        specifier: ^11.1.0
+        version: 11.1.0
 
   packages/render:
     dependencies:

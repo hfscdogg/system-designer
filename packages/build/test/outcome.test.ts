@@ -7,7 +7,7 @@ const line = (role: string, quantity: number, record_id = `${role}-std`, request
 const NOW = new Date("2026-11-01T00:00:00Z");
 const daysAgo = (n: number) => new Date(NOW.getTime() - n * 86_400_000);
 const version = (over: Partial<BudgetVersion> = {}): BudgetVersion => ({
-  run_id: "run_1", state: "READY_HELD", created_at: daysAgo(1), total_cents: 100_000, retainer_sent: false, final_quote: null,
+  run_id: "run_1", state: "READY_HELD", created_at: daysAgo(1), total_cents: 100_000, retainer_sent: false, retainer_paid: false, final_quote: null,
   selection: { pattern: "tv_media", lines: [line("tv_mount", 2), line("soundbar", 1)] },
   ...over,
 });
@@ -41,6 +41,8 @@ describe("budget score", () => {
 
   it("left as built and sent is a 5; not sent yet waits; dropped after 14 days is a 1", () => {
     expect(scoreBudget([version({ retainer_sent: true })], NOW)).toMatchObject({ stars: 5, why: "left as built; retainer sent" });
+    // Paid in QuickBooks: the same score, and the run log says so.
+    expect(scoreBudget([version({ retainer_sent: true, retainer_paid: true })], NOW)).toMatchObject({ stars: 5, why: "left as built; retainer paid" });
     expect(scoreBudget([version()], NOW)).toMatchObject({ stars: null, why: "left as built; retainer not sent yet" });
     expect(scoreBudget([version({ created_at: daysAgo(15) })], NOW)).toMatchObject({ stars: 1, why: "left as built; no retainer after 14 days" });
   });

@@ -65,6 +65,15 @@ resource "google_storage_bucket_iam_member" "evidence_read" {
   member   = "serviceAccount:${each.value.email}"
 }
 
+# QuickBooks rotates its refresh token on use: the prod worker and its jobs (same account) save each new one
+# as a version of this one secret and disable the old ones. Nothing else in Secret Manager is writable.
+resource "google_secret_manager_secret_iam_member" "qbo_refresh_token_writer" {
+  for_each  = toset(["roles/secretmanager.secretVersionAdder", "roles/secretmanager.secretVersionManager"])
+  secret_id = google_secret_manager_secret.shared["qbo-refresh-token"].id
+  role      = each.value
+  member    = "serviceAccount:${google_service_account.worker["prod"].email}"
+}
+
 # Delegated PDF upload signs its own delegation JWT through IAM (no key file).
 resource "google_service_account_iam_member" "worker_self_sign" {
   for_each           = local.envs

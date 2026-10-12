@@ -168,3 +168,42 @@ describe("receipts and approval", () => {
     await expect(publish(store, run.id, 1)).resolves.toBeDefined();
   });
 });
+
+describe("design retainer", () => {
+  it("keeps one pending retainer per thread, cleared on reset and by the requester's next run", async () => {
+    const { store, db } = await testStore();
+    const run = await startRun(store, "m1");
+    await store.setPendingRetainer(thread, run.id, "zack");
+    await store.setPendingRetainer(thread, run.id, "zack");
+    expect(await store.pendingRetainer(thread)).toEqual({ run_id: run.id, person_id: "zack" });
+    await db.query(`UPDATE pending_retainers SET created_at = now() - interval '2 hours'`);
+    expect(await store.pendingRetainer(thread, 1)).toBeNull();
+    expect(await store.pendingRetainer(thread)).not.toBeNull();
+    await store.resetSession(thread, "zack");
+    expect(await store.pendingRetainer(thread)).toBeNull();
+
+    // Someone else's new request in the thread leaves it; the requester's own clears it.
+    await store.setPendingRetainer(thread, run.id, "zack");
+    const henry = (await store.resolvePerson("google_chat", "users/henry"))!;
+    const theirs = (await store.captureIntake(intakeInput("m2", "Jones request", { requesterProviderId: "users/henry" }), henry, await store.currentGeneration(thread))).intake;
+    expect((await store.startRun(theirs)).ok).toBe(true);
+    expect(await store.pendingRetainer(thread)).not.toBeNull();
+    await store.transitionRun((await store.findOpenRun(thread))!.id, "STALE", "system");
+    await startRun(store, "m3");
+    expect(await store.pendingRetainer(thread)).toBeNull();
+  });
+
+  it("serialises work under an advisory lock", async () => {
+    const { store } = await testStore();
+    const order: string[] = [];
+    const work = (name: string) =>
+      store.withAdvisoryLock("qbo-token-refresh", async () => {
+        order.push(`${name}:start`);
+        await new Promise((r) => setTimeout(r, 5));
+        order.push(`${name}:end`);
+        return name;
+      });
+    expect(await Promise.all([work("a"), work("b")])).toEqual(["a", "b"]);
+    expect(order).toEqual(["a:start", "a:end", "b:start", "b:end"]);
+  });
+});

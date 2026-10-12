@@ -9,7 +9,7 @@ Everything runs in the Google Cloud project you created, in **us-east4**. You ru
 | `sd-gateway-{staging,prod}` | Cloud Run service receiving Google Chat events | Public URL. Every request is checked against Google's signed token; unauthenticated calls get 401. Scales to zero. |
 | `sd-worker-{env}-sha-…` | Cloud Run service running the Temporal worker | One service per release. Older releases stay up until their pinned runs finish, then are deleted automatically. Private. |
 | `sd-migrate-{env}` | Cloud Run job | Runs database migrations before each release. |
-| `sd-reconcile-{env}` | Cloud Run job, hourly | Restarts any saved run whose workflow never started. |
+| `sd-reconcile-{env}` | Cloud Run job, hourly | Restarts any saved run whose workflow never started. Reads real quotes under retainer opportunities, checks retainer invoices for payment, and copies the run log to BigQuery. |
 | Cloud SQL `system-designer` | Postgres 16, databases `sd_staging` and `sd_prod` | Daily backups, point-in-time recovery, deletion protection. |
 | `<project>-sd-evidence-{env}` | Storage buckets | Intake, catalog evidence, PDFs. Versioned. The app can create and read objects but never delete them. |
 | Secret Manager | API keys and database URLs | Values never live in GitHub or the repo. |
@@ -100,6 +100,40 @@ The bot posts every scripted line, its real replies, the PDFs and a ✅/❌ resu
 3. In GitHub → Settings → Secrets and variables → Actions → Variables, add `SMOKE_SPACE_ID=spaces/AAAA…`. With delegated PDF upload, also add `SMOKE_USER_EMAIL` set to a member of that space; the PDFs are posted as that person.
 
 Without `SMOKE_SPACE_ID` the step is skipped. Each run costs a few Claude calls and stays in staging; nothing goes to customers or D-Tools.
+
+## QuickBooks retainer invoice (production)
+
+The design retainer is invoiced from QuickBooks Online and emailed by QuickBooks (see the README). It runs in production only, once `QBO_REALM_ID` is set. Staging never emails a client. Until then the bot creates the D-Tools opportunity and says to invoice by hand.
+
+It uses its own Intuit app, so the data warehouse's and Outgrow's QuickBooks connections are untouched. Paste secret values only into your own Cloud Shell, never into chat or GitHub. One-time setup:
+
+1. **Create the app.** In the Intuit Developer portal (developer.intuit.com), create an app named "System Designer" with the scope `com.intuit.quickbooks.accounting`. Use its **production** keys (Keys & credentials → Production).
+2. **Allow the OAuth Playground.** Add the Intuit OAuth 2.0 Playground's redirect URI, shown on the Playground page, to the app's production redirect URIs.
+3. **Get the first refresh token.** In the OAuth 2.0 Playground (developer.intuit.com/app/developer/playground):
+   1. Pick the System Designer app and the accounting scope.
+   2. Sign in to the Livewire company and connect.
+   3. Exchange the code for tokens.
+   4. Note the **Realm ID** (the company id) and the **refresh token**.
+4. **Create the secrets.** Run Terraform apply first (bootstrap or `terraform apply` in `infra/terraform`). It creates the three secrets. It also lets the prod worker, which runs the hourly job, add versions to `qbo-refresh-token` and disable old ones.
+5. **Store the values.** From your own Cloud Shell, replace each `<paste …>` with the value:
+   ```bash
+   printf %s "<paste client id>" | gcloud secrets versions add qbo-client-id --project livewire-system-designer-deux --data-file=-
+   printf %s "<paste client secret>" | gcloud secrets versions add qbo-client-secret --project livewire-system-designer-deux --data-file=-
+   printf %s "<paste refresh token>" | gcloud secrets versions add qbo-refresh-token --project livewire-system-designer-deux --data-file=-
+   history -c
+   ```
+6. **Set the realm id.** Add the GitHub repository variable `QBO_REALM_ID` with the Realm ID. It identifies the company and isn't secret. Then redeploy (re-run the CI workflow on `main`).
+   - With it set, the production worker and `sd-reconcile-prod` get `SD_QBO_RETAINER=on` and the client id and secret.
+   - Each deploy reads `qbo-client-id` and `qbo-client-secret`, so both need values first.
+
+**Token rotation.**
+- Intuit access tokens last an hour. Refresh tokens last 100 days and may change on each refresh.
+- The worker reads the refresh token from `qbo-refresh-token` at every refresh. When Intuit returns a new one, the worker adds it as a new version and disables the older ones.
+- A Postgres advisory lock keeps the worker and the hourly job from refreshing at the same time.
+- The hourly job refreshes on every pass, so the token never reaches its 100 days.
+- If the connection is ever revoked, repeat steps 3 and 5 with a new refresh token.
+
+**The item.** The invoice line uses the QuickBooks item `DESIGN RETAINER`, id 3649. To use another item, publish a commercial policy with `"retainer": { "qbo_item_id": "<id>" }`.
 
 ## Rollback
 

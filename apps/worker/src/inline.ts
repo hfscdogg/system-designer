@@ -49,8 +49,8 @@ export class InlineWorkflows implements WorkflowPort {
   }
 
   /** The retainer request, run to completion in-process. */
-  async startRetainer(runId: string, tap: string): Promise<void> {
-    await this.acts.createRetainer({ runId, tap });
+  async startRetainer(runId: string, tap: string, email: string): Promise<void> {
+    await this.acts.createRetainer({ runId, tap, email });
   }
 
   async signal(runId: string, signal: RunSignal): Promise<void> {

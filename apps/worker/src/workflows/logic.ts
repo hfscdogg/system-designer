@@ -81,8 +81,11 @@ export interface RunActivities {
   requestMarginApproval(a: { runId: string; exceptionId: string; reason: string }): Promise<void>;
   /** A decision already committed in the database (its signal may have been lost). */
   findMarginDecision(a: { runId: string }): Promise<MarginDecision | null>;
-  /** Create the budget's design-retainer opportunity in D-Tools (the one D-Tools write), and tell the requester. */
-  createRetainer(a: { runId: string; tap: string }): Promise<void>;
+  /**
+   * Create the budget's D-Tools opportunity (the one D-Tools write), invoice the retainer from QuickBooks to
+   * `email` (the address the rep typed), and tell the requester. No `email`: a request from before emails were asked for.
+   */
+  createRetainer(a: { runId: string; tap: string; email?: string }): Promise<void>;
 }
 
 export interface RunRuntime {

@@ -15,7 +15,8 @@ locals {
   envs = toset(var.environments)
   # Shared runtime secrets. Values are added by hand (see infra/bootstrap.sh output), never by Terraform.
   # The Claude API needs none: the worker uses Workload Identity Federation (docs/deploy.md).
-  shared_secrets = ["temporal-api-key", "dtools-api-key", "dtools-basic-auth"]
+  # qbo-*: the QuickBooks Online app for the design-retainer invoice (prod only; docs/deploy.md).
+  shared_secrets = ["temporal-api-key", "dtools-api-key", "dtools-basic-auth", "qbo-client-id", "qbo-client-secret", "qbo-refresh-token"]
 }
 
 resource "google_project_service" "apis" {

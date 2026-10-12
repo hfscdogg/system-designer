@@ -19,6 +19,7 @@
     "start": "node src/main.ts"
   },
   "devDependencies": {
+    "@sd/qbo": "workspace:*",
     "@sd/render": "workspace:*",
     "@types/pg": "^8.23.1"
   }

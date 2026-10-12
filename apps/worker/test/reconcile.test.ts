@@ -10,7 +10,7 @@ class RecordingPort implements WorkflowPort {
     if (this.failFor.has(runId)) throw new Error("temporal unreachable");
     this.started.push(runId);
   }
-  async startRetainer(_runId: string, _tap: string) {}
+  async startRetainer(_runId: string, _tap: string, _email: string) {}
   async signal(_runId: string, _s: RunSignal) {}
   async isRunning(_runId: string) {
     return false;
