@@ -67,7 +67,7 @@ describe("PDF + preflight", () => {
     let text = "";
     for (let n = 1; n <= doc.numPages; n++) text += " " + (await (await doc.getPage(n)).getTextContent()).items.map((i) => ("str" in i ? i.str : "")).join(" ");
     text = text.replace(/\s+/g, " ");
-    for (const s of ["Henry Clifford", "henry@getlivewire.com", "Project Number", "Why Livewire?", "System Proposal", "Your Custom Quote:", "ITEM QTY", "Installation Labor", "90 Day Warranty", "Summary", "Product + Labor", "Shipping & Handling/Parts", "Looking for Financing or ACH Options?", "Terms & Conditions"]) {
+    for (const s of ["Henry Clifford", "henry@getlivewire.com", "Project Number", "Why Livewire?", "System Proposal", "Your Custom Quote:", "ITEM QTY", "Installation Labor", "90 Day Warranty", "Summary", "Product + Labor", "Design & Delivery", "Rather than building these costs into individual equipment prices", "Responsible disposal and recycling of packaging and replaced electronics", "Looking for Financing or ACH Options?", "Terms & Conditions"]) {
       expect(text, s).toContain(s);
     }
     expect(text).toContain(`Design Retainer ${formatUsd(c.commercial.retainer.cents)}`);

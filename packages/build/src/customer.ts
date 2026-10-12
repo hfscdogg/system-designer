@@ -59,7 +59,7 @@ export interface CustomerProposal {
     subtotal_cents: number;
     tax: "TBD" | { rate_pct: number; cents: number };
     total_cents: number | null;
-    /** Shown in the Summary as "Shipping & Handling/Parts", as Livewire's D-Tools proposals do. */
+    /** Design & Delivery: its own section and a Summary row, as Livewire lists it on proposals. */
     parts_cents: number;
     /** An admin-approved price reduction, shown in the Summary. */
     reduction: { pct: number; cents: number } | null;

@@ -21,7 +21,7 @@
     { "category": "training", "label": "Client training", "product_id": null }
   ],
   "labor": { "labor_type": "07LABOR1MAN", "base_hours": 1, "hours_per_device": 0.5, "covers": ["design", "removal", "installation", "programming", "testing", "commissioning", "training", "project_management"], "basis": "Livewire packages since 2025: Sonos Amp Package 0.5 hours, SONOS by Sonance In-Ceiling Speakers package 2.9 hours per pair (retrofit with wire); so each amp and Port carries 0.5 hours and each speaker pair 3 hours, plus 1 hour of setup: 8 hours for a typical two-zone job; a Sonos Amp about 1 hour (backtest of 9 accepted amp-only jobs, median 1.2 h)" },
-  "parts": { "product_id": "141236a5-8780-493e-a20d-106b7f71c5b4", "label": "Installation parts and materials" },
+  "parts": { "product_id": "141236a5-8780-493e-a20d-106b7f71c5b4", "label": "Design & Delivery" },
   "assumptions": [
     "Speakers are retrofit into accessible ceilings with new speaker wire to the equipment location.",
     "A working Wi-Fi network covers the equipment location; Sonos is controlled from the Sonos app.",

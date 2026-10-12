@@ -705,3 +705,43 @@ describe("a revision that removes a whole system", () => {
     expect(validation.findings.filter((f) => f.code === "scope_coverage")).toEqual([]);
   });
 });
+
+describe("Design & Delivery (Henry, 2026-10-12)", () => {
+  const withDd = (floor: number): PolicyRecord => ({
+    ...POLICY,
+    policy: { ...POLICY.policy, design_delivery: { base_pct: 10, max_pct: 15 }, margin: { residential_min_gross_margin_pct: floor, commercial_min_gross_margin_pct: floor } },
+  });
+
+  it("is 10% of product + labor, and the line is called Design & Delivery", async () => {
+    const { proposal } = await pipeline({}, testPattern(), withDd(30));
+    // 154,000 equipment + 124,900 labor = 278,900 cents; 10% in $1 units = 279 units.
+    expect(proposal.parts).toMatchObject({ quantity: 279, price_cents: 27900, pct_of_product_labor: 10 });
+    expect(proposal.parts!.raised_for_margin).toBeUndefined();
+  });
+
+  it("rises in half-point steps until the budget clears the margin floor, and stops at 15%", async () => {
+    const base = (await pipeline({}, testPattern(), withDd(30))).proposal.internal.gross_margin_pct!;
+    const lifted = (await pipeline({}, testPattern(), withDd(base + 0.5))).proposal;
+    expect(lifted.parts).toMatchObject({ raised_for_margin: true });
+    expect(lifted.parts!.pct_of_product_labor).toBeGreaterThan(10);
+    expect(lifted.parts!.pct_of_product_labor).toBeLessThan(15);
+    expect(lifted.internal.gross_margin_pct).toBeGreaterThanOrEqual(base + 0.5);
+    // Out of reach: capped at 15%, and the budget still goes to an admin (the margin stays under the floor).
+    const capped = (await pipeline({}, testPattern(), withDd(90))).proposal;
+    expect(capped.parts).toMatchObject({ pct_of_product_labor: 15, raised_for_margin: true, quantity: Math.ceil(278900 * 0.15 / 100) });
+    expect(capped.internal.gross_margin_pct).toBeLessThan(90);
+  });
+});
+
+describe("HDMI on TV jobs (Henry, 2026-10-12)", () => {
+  it("adds one AudioQuest HDMI per source connected to the TV", async () => {
+    const patterns = await loadPatterns();
+    const tv = patterns.find((p) => p.pattern === "tv_media")!;
+    const roles = (functional_systems: string[], requested_changes: string[]) =>
+      new Map(materialize(approvedScope({ functional_systems, requested_changes, existing_detectors: "not_provided" }).scope, tv).lines.map((l) => [l.role, l.quantity]));
+    // Soundbar + Apple TV: two cables, like most Livewire TV-and-soundbar quotes.
+    expect(roles(["TV", "Sonos Arc Ultra", "Sonos Sub"], ['Provide a 77" OLED TV with a Sonos Arc Ultra and Sonos Sub', "Use the Apple TV remote to control everything"]).get("hdmi_cable")).toBe(2);
+    // A TV hang with no new sources still gets one.
+    expect(roles(["TV"], ["Mount the customer's TV on the living room wall"]).get("hdmi_cable")).toBe(1);
+  });
+});

@@ -99,7 +99,7 @@ A build below its market's floor, or with any requested discount, is **held** as
 
 Patterns (`packages/build/patterns/`), each built from Livewire's D-Tools history, cover security modernization, home networking, whole-home audio (Sonos), TV and media walls, prewire, surveillance cameras, Control4 automation, Lutron lighting control, video doorbells, commercial access control and motorized shades. A scope that needs several gets them combined into one budget: setup hours add up and each role keeps its own labor rate.
 
-Parts are sized to the parts share at the parts margin. `tax` can also be `{ "mode": "rate", "rate_pct": <n>, "applies_to": "taxable_equipment" }`.
+Design & Delivery (the parts line) is `design_delivery.base_pct` of product + labor + services, costed at the parts margin. When a budget would fall under the margin floor, it rises in half-point steps up to `design_delivery.max_pct` until the budget clears the floor; past that, the budget waits for an admin's approval. Without `design_delivery`, parts are sized to the parts share of the subtotal. `tax` can also be `{ "mode": "rate", "rate_pct": <n>, "applies_to": "taxable_equipment" }`.
 
 The file ships in the image. Publish it with the admin job (see `docs/deploy.md`):
 

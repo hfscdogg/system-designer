@@ -27,12 +27,20 @@ export const CommercialPolicySchema = z
       z.object({ mode: z.literal("tbd") }).strict(),
       z.object({ mode: z.literal("rate"), rate_pct: pct, applies_to: z.literal("taxable_equipment") }).strict(),
     ]),
+    /**
+     * Design & Delivery (the parts line): base_pct of product + labor + services, and
+     * how high it may go to bring a budget up to the margin floor before the
+     * budget needs an admin's approval instead. Absent: parts are sized to the
+     * parts share of the subtotal, as before.
+     */
+    design_delivery: z.object({ base_pct: pct, max_pct: pct }).strict().optional(),
   })
   .strict()
   .superRefine((p, ctx) => {
     const shares = p.mix_targets.equipment.share_pct + p.mix_targets.labor.share_pct + p.mix_targets.parts.share_pct;
     if (Math.abs(shares - 100) > 0.001) ctx.addIssue({ code: "custom", message: `mix target shares must add up to 100, got ${shares}` });
     if (p.mix_targets.parts.share_pct >= 100) ctx.addIssue({ code: "custom", message: "parts share must be below 100" });
+    if (p.design_delivery && p.design_delivery.max_pct < p.design_delivery.base_pct) ctx.addIssue({ code: "custom", message: "design_delivery max_pct must be at least base_pct" });
   });
 
 export type CommercialPolicy = z.infer<typeof CommercialPolicySchema>;

@@ -1,6 +1,6 @@
 import { formatUsd, PILOT_WATERMARK, type CustomerProposal } from "@sd/build";
 import { sha256Hex } from "@sd/core";
-import { IMAGE_PENDING } from "./html.ts";
+import { DESIGN_DELIVERY_PARAGRAPHS, IMAGE_PENDING } from "./html.ts";
 
 /**
  * Preflight inspects the actual generated PDF bytes (PRD §13.7). It never
@@ -23,10 +23,13 @@ export interface PreflightResult {
 
 const FORBIDDEN = [/\bcosts?\b/i, /\bmargins?\b/i, /\bmarkups?\b/i, /\bcommissions?\b/i, /\bsignature\b/i, /\baccept(ance|ed)?\b/i, /\bsign here\b/i];
 
-/** Text the document prints verbatim from data, longest first, whitespace-collapsed as the PDF text is. */
+/**
+ * Text the document prints verbatim from data, longest first, whitespace-collapsed as the PDF text is,
+ * plus Henry's approved Design & Delivery wording ("these costs" there is not an internal cost).
+ */
 function dataStrings(c: CustomerProposal): string[] {
   const items = c.sections.flatMap((sec) => sec.items.flatMap((i) => [i.manufacturer, i.model, i.description, i.quantity_note ?? ""]));
-  return [c.client, c.property, c.project_type, c.title, ...items, ...c.labor_lines.map((l) => l.description), ...c.exclusions, ...c.remaining_verification, ...c.allowances.map((a) => a.note)]
+  return [c.client, c.property, c.project_type, c.title, ...items, ...c.labor_lines.map((l) => l.description), ...c.exclusions, ...c.remaining_verification, ...c.allowances.map((a) => a.note), ...DESIGN_DELIVERY_PARAGRAPHS]
     .map((x) => x.replace(/\s+/g, " ").trim())
     .filter((x) => x.length > 0)
     .sort((a, b) => b.length - a.length);

@@ -49,6 +49,10 @@ export interface PricedParts extends DraftParts {
   cost_cents: number;
   /** D-Tools carries a placeholder cost for this record, so cost comes from the policy's parts margin. */
   cost_basis: "policy_parts_margin";
+  /** Design & Delivery as a share of product + labor + services, when the policy sets one. */
+  pct_of_product_labor?: number;
+  /** Raised above the base share to bring the budget up to the margin floor. */
+  raised_for_margin?: boolean;
 }
 
 export interface Proposal {
@@ -120,14 +124,27 @@ function priceLabor(labor: DraftLabor | null, policy: CommercialPolicy | undefin
   return { ...labor, included: included.length ? included : labor.covers, price_per_hour_cents: perHour, cost_per_hour_cents: costPerHour, price_cents: Math.round(perHour * labor.hours), cost_cents: Math.round(costPerHour * labor.hours) };
 }
 
-/** Parts sized so they make up the policy's parts share of the subtotal (rounded up to whole units). */
-export function sizeParts(parts: DraftParts, otherCents: number, policy: CommercialPolicy): PricedParts {
+/**
+ * Parts (Design & Delivery), rounded up to whole units: `pctOfOther` percent of
+ * product + labor + services when given, else the policy's parts share of the subtotal.
+ */
+export function sizeParts(parts: DraftParts, otherCents: number, policy: CommercialPolicy, pctOfOther?: number): PricedParts {
   const share = policy.mix_targets.parts.share_pct / 100;
-  const target = (otherCents * share) / (1 - share);
+  const target = pctOfOther !== undefined ? (otherCents * pctOfOther) / 100 : (otherCents * share) / (1 - share);
   const quantity = Math.max(1, Math.ceil(target / parts.unit_price_cents));
   const unitCost = Math.round(parts.unit_price_cents * (1 - policy.mix_targets.parts.margin_pct / 100));
-  return { ...parts, quantity, price_cents: quantity * parts.unit_price_cents, cost_cents: quantity * unitCost, cost_basis: "policy_parts_margin" };
+  return {
+    ...parts,
+    quantity,
+    price_cents: quantity * parts.unit_price_cents,
+    cost_cents: quantity * unitCost,
+    cost_basis: "policy_parts_margin",
+    ...(pctOfOther !== undefined ? { pct_of_product_labor: pctOfOther } : {}),
+  };
 }
+
+/** Design & Delivery steps up by this much at a time toward the margin floor. */
+const DESIGN_DELIVERY_STEP_PCT = 0.5;
 
 export function bind(draft: ProposalDraft, ctx: BindContext): Proposal {
   const bound: BoundLine[] = draft.lines.map((l) => ({
@@ -154,11 +171,37 @@ export function bind(draft: ProposalDraft, ctx: BindContext): Proposal {
   const equipment = sum(sections.map((s) => s.equipment_cents));
   const labor = sum(sections.map((s) => s.labor_cents)) + (projectLabor?.price_cents ?? 0);
   const services = sum(draft.services.map((s) => s.unit_price_cents));
-  const parts = draft.parts && policy ? sizeParts(draft.parts, equipment + labor + services, policy) : null;
-  const partsCents = parts?.price_cents ?? 0;
-  const gross = equipment + labor + services + partsCents;
-  const discount = ctx.scope.requested_discount ? { ...ctx.scope.requested_discount, cents: Math.round((gross * ctx.scope.requested_discount.pct) / 100) } : null;
-  const subtotal = gross - (discount?.cents ?? 0);
+  const floor = policy ? minimumMarginPct(policy, ctx.scope.market) : null;
+  // Everything that depends on the parts line: totals, discount and margin.
+  const priceWith = (parts: PricedParts | null) => {
+    const partsCents = parts?.price_cents ?? 0;
+    const gross = equipment + labor + services + partsCents;
+    const discount = ctx.scope.requested_discount ? { ...ctx.scope.requested_discount, cents: Math.round((gross * ctx.scope.requested_discount.pct) / 100) } : null;
+    const costed = [...bound.map((l) => ({ id: l.label, price: l.extended_cents, cost: l.unit_cost_cents === null ? null : l.unit_cost_cents * l.quantity })),
+      ...draft.services.map((s) => ({ id: s.label, price: s.unit_price_cents, cost: s.unit_cost_cents })),
+      ...(projectLabor ? [{ id: "Labor", price: projectLabor.price_cents, cost: projectLabor.cost_cents }] : []),
+      ...(parts ? [{ id: parts.label, price: parts.price_cents, cost: parts.cost_cents }] : []),
+      // The discount comes straight off the margin.
+      ...(discount ? [{ id: "Discount", price: -discount.cents, cost: 0 }] : [])];
+    const withCost = costed.filter((c) => c.cost !== null);
+    const pricedWithCost = sum(withCost.map((c) => c.price));
+    const cost = sum(withCost.map((c) => c.cost!));
+    const margin = pricedWithCost > 0 ? Math.round(((pricedWithCost - cost) / pricedWithCost) * 10000) / 100 : null;
+    return { parts, partsCents, gross, discount, costed, pricedWithCost, cost, margin };
+  };
+  // Design & Delivery starts at its base share; below the margin floor it rises, up to its cap,
+  // until the budget clears the floor (Henry, 2026-10-12). Past the cap the budget waits for an admin.
+  const dd = policy?.design_delivery;
+  const productLabor = equipment + labor + services;
+  let priced = priceWith(draft.parts && policy ? sizeParts(draft.parts, productLabor, policy, dd?.base_pct) : null);
+  if (dd && draft.parts && policy && floor !== null && priced.margin !== null && priced.margin < floor) {
+    for (let pctOf = dd.base_pct + DESIGN_DELIVERY_STEP_PCT; pctOf <= dd.max_pct + 1e-9; pctOf += DESIGN_DELIVERY_STEP_PCT) {
+      priced = priceWith({ ...sizeParts(draft.parts, productLabor, policy, Math.round(pctOf * 100) / 100), raised_for_margin: true });
+      if (priced.margin !== null && priced.margin >= floor) break;
+    }
+  }
+  const { parts, partsCents, discount, costed, pricedWithCost, cost } = priced;
+  const subtotal = priced.gross - (discount?.cents ?? 0);
   const keep = 1 - (discount?.pct ?? 0) / 100;
   const tax: Proposal["commercial"]["tax"] =
     policy?.tax.mode === "rate"
@@ -175,15 +218,6 @@ export function bind(draft: ProposalDraft, ctx: BindContext): Proposal {
   // A conceptual budget totals with minimum quantities (they are listed to verify); TBD allowances and unresolved roles still withhold it.
   const complete = allowances.length === 0 && draft.unresolved.length === 0 && tax.status === "calculated";
 
-  const costed = [...bound.map((l) => ({ id: l.label, price: l.extended_cents, cost: l.unit_cost_cents === null ? null : l.unit_cost_cents * l.quantity })),
-    ...draft.services.map((s) => ({ id: s.label, price: s.unit_price_cents, cost: s.unit_cost_cents })),
-    ...(projectLabor ? [{ id: "Labor", price: projectLabor.price_cents, cost: projectLabor.cost_cents }] : []),
-    ...(parts ? [{ id: parts.label, price: parts.price_cents, cost: parts.cost_cents }] : []),
-    // The discount comes straight off the margin.
-    ...(discount ? [{ id: "Discount", price: -discount.cents, cost: 0 }] : [])];
-  const withCost = costed.filter((c) => c.cost !== null);
-  const pricedWithCost = sum(withCost.map((c) => c.price));
-  const cost = sum(withCost.map((c) => c.cost!));
 
   const selector = ctx.scope.source_quote_selector;
   return {
@@ -240,7 +274,7 @@ export function bind(draft: ProposalDraft, ctx: BindContext): Proposal {
       gross_margin_pct: pricedWithCost > 0 ? Math.round(((pricedWithCost - cost) / pricedWithCost) * 10000) / 100 : null,
       lines_without_cost: costed.filter((c) => c.cost === null).map((c) => c.id),
       policy_version: ctx.policy?.version ?? null,
-      minimum_gross_margin_pct: policy ? minimumMarginPct(policy, ctx.scope.market) : null,
+      minimum_gross_margin_pct: floor,
       mix: {
         equipment: categoryMix(bound.map((l) => ({ price: l.extended_cents, cost: l.unit_cost_cents === null ? null : l.unit_cost_cents * l.quantity })), subtotal),
         labor: categoryMix(projectLabor ? [{ price: projectLabor.price_cents, cost: projectLabor.cost_cents }] : [], subtotal),
