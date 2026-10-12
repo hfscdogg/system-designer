@@ -22,7 +22,7 @@
     { "category": "training", "label": "Client training", "product_id": null }
   ],
   "labor": { "labor_type": "07LABOR1MAN", "base_hours": 2.5, "add_on_base_hours": 0.75, "hours_per_device": 0.5, "covers": ["design", "removal", "installation", "programming", "testing", "commissioning", "training", "project_management"], "basis": "Hours scaled 0.8x to match actual hours on same-scope accepted quotes (2026-10-10). 129 Livewire network-only quotes since 2024: median 6 labor hours at a median of 3 network devices; the Basic Network Package carries 5 hours. 3 hours plus 0.5 per device gives 6 hours for a typical 6-device job. Refit 2026-10-10 by non-negative least squares on 84 accepted network quotes (outliers trimmed; holdout median labor error 67% to 34%): 1 hour of setup on an add-on visit, eero 1, wired AP 1.25, outdoor AP 3.75, switch 1.75, WattBox 2.25 hours" },
-  "parts": { "product_id": "141236a5-8780-493e-a20d-106b7f71c5b4", "label": "Installation parts and materials" },
+  "parts": { "product_id": "141236a5-8780-493e-a20d-106b7f71c5b4", "label": "Design & Delivery" },
   "assumptions": [
     "The internet service provider's modem or ONT is in place; the first eero node connects to it.",
     "Existing Cat6 is usable for wired access points; new cable runs are verified on site.",

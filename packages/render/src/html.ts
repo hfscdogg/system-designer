@@ -32,6 +32,19 @@ export function escapeHtml(input: unknown): string {
     .replace(/'/g, "&#39;");
 }
 
+/** Henry's wording for the Design & Delivery line (2026-10-12). */
+const DESIGN_DELIVERY_INTRO =
+  "A successful project involves more than equipment and installation labor. Design & Delivery covers the professional planning, coordination, logistics and project support required to deliver a complete, professionally finished system. Rather than building these into individual equipment prices, Livewire lists them separately to keep product pricing clear and transparent. Depending on your project's scope and requirements, Design & Delivery may include:";
+const DESIGN_DELIVERY_ITEMS = [
+  "System engineering & design documentation",
+  "Project management, scheduling and coordination",
+  "Manufacturer freight & shipping",
+  "Secure receiving, storage and handling of products until installation",
+  "On-site product delivery & project-related travel",
+  "Incidental installation materials & supplies",
+  "Responsible disposal and recycling of packaging and replaced electronics",
+];
+
 function list(items: string[]): string {
   return `<ul>${items.map((i) => `<li>${escapeHtml(i)}</li>`).join("")}</ul>`;
 }
@@ -110,6 +123,16 @@ export function renderProposalHtml(c: CustomerProposal, brand: Brand, images: Im
       <div class="section-total">${formatUsd(c.labor_total_cents)}</div>
     </div>`
     : "";
+  const designDelivery =
+    c.commercial.parts_cents > 0
+      ? `
+    <div class="quote-section">
+      <h3>Design &amp; Delivery</h3>
+      <p class="scope">${escapeHtml(DESIGN_DELIVERY_INTRO)}</p>
+      ${list(DESIGN_DELIVERY_ITEMS)}
+      <div class="section-total">${formatUsd(c.commercial.parts_cents)}</div>
+    </div>`
+      : "";
   const allowances = c.allowances.length
     ? `
     <div class="quote-section">
@@ -122,7 +145,7 @@ export function renderProposalHtml(c: CustomerProposal, brand: Brand, images: Im
   const complete = k.total_cents !== null;
   const summaryRows = [
     ["Product + Labor", formatUsd(k.subtotal_cents + (k.reduction?.cents ?? 0) - k.parts_cents), ""],
-    ...(k.parts_cents > 0 ? [["Shipping & Handling/Parts", formatUsd(k.parts_cents), ""]] : []),
+    ...(k.parts_cents > 0 ? [["Design & Delivery", formatUsd(k.parts_cents), ""]] : []),
     ...(k.reduction ? [[`Discount (${k.reduction.pct}%)`, `(${formatUsd(k.reduction.cents)})`, ""]] : []),
     [complete ? "Subtotal" : k.label, formatUsd(k.subtotal_cents), "strong"],
     ["Tax", k.tax === "TBD" ? "TBD" : formatUsd(k.tax.cents), ""],
@@ -250,6 +273,7 @@ ${brand.copy.intro_after.map((t) => `<p>${escapeHtml(t)}</p>`).join("")}
 <h2>Your Custom Quote:</h2>
 ${sections || "<p>No equipment priced yet.</p>"}
 ${labor}
+${designDelivery}
 ${allowances}
 
 <h2>${escapeHtml(brand.copy.warranty_title)}</h2>

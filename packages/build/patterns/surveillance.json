@@ -19,7 +19,7 @@
     { "category": "training", "label": "Client training", "product_id": null }
   ],
   "labor": { "labor_type": "07LABOR1MAN", "base_hours": 0.5, "add_on_base_hours": 0.5, "hours_per_device": 0.5, "covers": ["design", "removal", "installation", "programming", "testing", "commissioning", "training", "project_management"], "basis": "Livewire packages since 2025: Outdoor Turret Camera Package 2 hours per camera (run, mount, terminate), ADC Floodlight Camera - Installed 1.5 hours each on an existing light box; an add-on visit adds 1 hour (camera-only Livewire quotes, 2026-10-10)" },
-  "parts": { "product_id": "141236a5-8780-493e-a20d-106b7f71c5b4", "label": "Installation parts and materials" },
+  "parts": { "product_id": "141236a5-8780-493e-a20d-106b7f71c5b4", "label": "Design & Delivery" },
   "assumptions": [
     "Cat6 can be run from each camera location to the equipment location through an accessible attic or crawl space.",
     "Floodlight cameras replace existing exterior light fixtures on working boxes.",
