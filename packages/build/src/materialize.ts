@@ -6,7 +6,8 @@ import { laborHoursFor, type PatternSpec, type RoleSpec } from "./pattern.ts";
  * Deterministic materializer (PRD §13.2): approved scope + approved pattern →
  * selection. No model call, no catalog search, no invented quantities.
  */
-export type Classification = "supported" | "allowance" | "unresolved";
+/** "removed": the request took out every device of a system it named (a revision dropping the ceiling speakers). */
+export type Classification = "supported" | "allowance" | "unresolved" | "removed";
 
 export interface SelectionLine {
   role: string;
@@ -29,7 +30,8 @@ export interface Selection {
   lines: SelectionLine[];
   services: Array<{ category: string; record_id: string; quantity: 1 }>;
   /** Project labor estimate; null when the pattern has no labor model. */
-  labor: { labor_type: string; hours: number; devices: number; covers: string[]; extras: string[] } | null;
+  /** set_by_rep: the hours are the rep's ("hours to 7"), not the pattern estimate. */
+  labor: { labor_type: string; hours: number; devices: number; covers: string[]; extras: string[]; set_by_rep?: boolean } | null;
   parts: { record_id: string } | null;
   requirements: Array<{ system: string; classification: Classification; roles: string[]; note: string }>;
   allowances: Array<{ label: string; reason: string }>;
@@ -371,9 +373,12 @@ export function materialize(original: ScopeDraftV1, pattern: PatternSpec, namedP
   const devices = lines.reduce((n, l) => n + l.quantity, 0);
   // Labor-only allowances the request mentions (framing a niche), priced as hours at the pattern's labor rate.
   const extras = (pattern.labor_extras ?? []).filter((x) => mentioned(scope, x.mentions)).map((x) => x.id);
-  const hours = pattern.labor && devices > 0 ? laborHoursFor(pattern, lines, addOn, extras) : 0;
+  // Hours the rep set in a revision replace the estimate.
+  const hours = !pattern.labor ? 0 : (scope.labor_hours ?? (devices > 0 ? laborHoursFor(pattern, lines, addOn, extras) : 0));
   const labor: Selection["labor"] =
-    pattern.labor && hours > 0 ? { labor_type: pattern.labor.labor_type, hours, devices, covers: pattern.labor.covers, extras } : null;
+    pattern.labor && hours > 0
+      ? { labor_type: pattern.labor.labor_type, hours, devices, covers: pattern.labor.covers, extras, ...(scope.labor_hours ? { set_by_rep: true } : {}) }
+      : null;
 
   const services: Selection["services"] = [];
   for (const category of scope.service_categories) {
@@ -388,7 +393,8 @@ export function materialize(original: ScopeDraftV1, pattern: PatternSpec, namedP
   const removedSystems = scope.functional_systems.filter(
     (system) => !included.some((r) => r.systems.includes(system)) && candidates.some((r) => r.systems.includes(system) && removedRoles.has(r.role)),
   );
-  const requirements: Selection["requirements"] = scope.functional_systems.filter((s) => !removedSystems.includes(s)).map((system) => {
+  const requirements: Selection["requirements"] = scope.functional_systems.map((system) => {
+    if (removedSystems.includes(system)) return { system, classification: "removed", roles: [], note: "every device removed by the request" };
     const roles = included.filter((r) => r.systems.includes(system));
     if (!roles.length) {
       unresolved.push({ item: system, role: null, reason: `not covered by the ${pattern.title} pattern`, escalate: true });

@@ -51,6 +51,14 @@ describe("budget score", () => {
     expect(scoreBudget(edited([line("tv_mount", 2)], 99_000, { retainer_sent: true }), NOW)).toMatchObject({ stars: 3, why: "1 edit changed the scope, total moved 1%; retainer sent" });
   });
 
+  it("tries that blocked on the way cap the score at 3 (the Darren Mackin session)", () => {
+    const stuck = version({ run_id: "run_b", state: "BLOCKED", selection: null, total_cents: null, created_at: daysAgo(2) });
+    expect(scoreBudget([version({ created_at: daysAgo(3) }), stuck, stuck, version({ run_id: "run_2", retainer_sent: true })], NOW)).toMatchObject({
+      stars: 3,
+      why: "1 small edit, total moved 0%; 2 tries blocked; retainer sent",
+    });
+  });
+
   it("blocked is a 2; unfinished waits, then is a 1", () => {
     expect(scoreBudget([version({ state: "BLOCKED", selection: null, total_cents: null })], NOW)).toMatchObject({ stars: 2, why: "stopped at BLOCKED" });
     expect(scoreBudget([version({ state: "NEEDS_CLARIFICATION", selection: null })], NOW).stars).toBeNull();

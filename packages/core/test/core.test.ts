@@ -131,6 +131,16 @@ describe("Control4 remotes", () => {
     expect(normalizeFunctionalSystems(["Sonos Arc Ultra soundbar"])).toEqual(["audio_video"]);
     expect(normalizeFunctionalSystems(["Sonos in the kitchen"])).toEqual(["whole_home_audio"]);
   });
+
+  it("reads a Sonos soundbar and sub next to a TV as the TV's sound (the Darren Mackin job)", () => {
+    expect(normalizeFunctionalSystems(["77\" OLED TV", "Sonos Arc Ultra", "Sonos Sub"])).toEqual(["audio_video"]);
+    expect(normalizeFunctionalSystems(["TV", "Sonos"])).toEqual(["audio_video"]);
+    expect(normalizeFunctionalSystems(["TV", "Sonos Sub Mini"])).toEqual(["audio_video"]);
+    // Music through the house is still its own system, TV or not.
+    expect(normalizeFunctionalSystems(["TV", "Sonos in-ceiling speakers in the kitchen"])).toEqual(["audio_video", "whole_home_audio"]);
+    expect(normalizeFunctionalSystems(["TV", "Sonos Amp"])).toEqual(["audio_video", "whole_home_audio"]);
+    expect(normalizeFunctionalSystems(["Sonos Sub"])).toEqual(["whole_home_audio"]);
+  });
 });
 
 describe("add-on requests", () => {

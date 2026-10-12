@@ -137,6 +137,8 @@ export function scoreBudget(versions: BudgetVersion[], now: Date): Outcome {
       : { stars: null, why: `in progress (${last.state})`, final_quote_diff_pct: null };
   }
 
+  // Tries that blocked on the way (a change the system couldn't apply) mean the rep had to fight it.
+  const blocked = versions.slice(0, -1).filter((v) => STOPPED.includes(v.state)).length;
   const revisions = diffs.length;
   const first = built[0]?.total_cents ?? null;
   const moved = first && last.total_cents !== null ? Math.abs(pct(last.total_cents, first)) : 0;
@@ -152,6 +154,9 @@ export function scoreBudget(versions: BudgetVersion[], now: Date): Outcome {
     stars = 3;
     why = `${revisions} edit${revisions > 1 ? "s" : ""} changed the scope, total moved ${moved}%`;
   }
+
+  if (blocked && stars > 3) stars = 3;
+  if (blocked) why = `${why}; ${blocked} ${blocked > 1 ? "tries" : "try"} blocked`;
 
   if (final && last.total_cents) {
     const off = pct(last.total_cents, final.price_cents);

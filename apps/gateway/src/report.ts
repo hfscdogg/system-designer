@@ -5,6 +5,8 @@ import { readFinalQuote } from "@sd/worker";
 /** What happened to a run: its change from the version it revised, and (on a thread's newest version) the thread's score. */
 export interface RunOutcome {
   changes: string | null;
+  /** Runs in this budget's thread: its revisions and any restarts. */
+  thread_runs: number;
   diff: RevisionDiff | null;
   stars: Outcome["stars"];
   why: string | null;
@@ -35,6 +37,7 @@ const COLUMNS: Array<keyof ScoredRow> = [
   "retainer_opportunity",
   "final_quote_usd",
   "final_quote_diff_pct",
+  "thread_runs",
   "stars",
   "why",
   "pdf_sha256",
@@ -61,43 +64,65 @@ async function versionOf(store: Store, runId: string, state: string, createdAt: 
   };
 }
 
+/** A fresh request for the same client from the same person within this long is a retry of the same budget. */
+const RESTART_WINDOW_MS = 24 * 3_600_000;
+
 /**
- * Score the report's runs. Revisions chain by parent; a parent from before the
- * report window is read from the store so the first revision in it still shows its change.
+ * Score the report's runs by budget thread: revisions chain by parent, and a
+ * fresh request for the same client from the same person within 24 hours of an
+ * earlier one (a rep starting over after a bad result) joins that thread. The
+ * thread is scored once, on its newest run. A parent from before the report
+ * window is read from the store so the first revision in it still shows its change.
  */
 export async function scoreRuns(store: Store, rows: RunReportRow[], now: Date): Promise<ScoredRow[]> {
   const versions = new Map<string, BudgetVersion>();
-  const parentOf = new Map<string, string | null>();
-  for (const r of rows) {
-    versions.set(r.run_id, await versionOf(store, r.run_id, r.state, new Date(r.created_at)));
-    parentOf.set(r.run_id, r.parent_run_id);
-  }
+  for (const r of rows) versions.set(r.run_id, await versionOf(store, r.run_id, r.state, new Date(r.created_at)));
   for (const r of rows) {
     if (r.parent_run_id && !versions.has(r.parent_run_id)) {
       const parent = await store.getRun(r.parent_run_id);
-      // Only a thread's newest version's date matters (for "dropped"), so an older parent's date can be left unset.
+      // Only a thread's newest run's date matters (for "dropped"), so an older parent's date can be left unset.
       versions.set(parent.id, await versionOf(store, parent.id, parent.state, new Date(0)));
     }
   }
-  const hasChild = new Set(rows.map((r) => r.parent_run_id).filter((p): p is string => p !== null));
-  const chain = (id: string): BudgetVersion[] => {
-    const out: BudgetVersion[] = [];
-    for (let cur: string | null | undefined = id; cur && versions.has(cur); cur = parentOf.get(cur)) out.unshift(versions.get(cur)!);
-    return out;
+
+  // Threads: union revisions with their parents, and restarts with the run they restart.
+  const root = new Map<string, string>();
+  const find = (id: string): string => {
+    const up = root.get(id) ?? id;
+    return up === id ? id : find(up);
   };
+  const join = (a: string, b: string) => root.set(find(a), find(b));
+  const ordered = [...rows].sort((a, b) => a.created_at.localeCompare(b.created_at));
+  for (const [i, r] of ordered.entries()) {
+    if (r.parent_run_id) join(r.run_id, r.parent_run_id);
+    else if (r.client) {
+      const at = Date.parse(r.created_at);
+      const earlier = ordered
+        .slice(0, i)
+        .reverse()
+        .find((e) => e.requester === r.requester && e.client === r.client && at - Date.parse(e.created_at) <= RESTART_WINDOW_MS);
+      if (earlier) join(r.run_id, earlier.run_id);
+    }
+  }
+  const threads = new Map<string, BudgetVersion[]>();
+  for (const v of versions.values()) threads.set(find(v.run_id), [...(threads.get(find(v.run_id)) ?? []), v]);
+  for (const t of threads.values()) t.sort((a, b) => a.created_at.getTime() - b.created_at.getTime());
+
   return rows.map((r) => {
     const v = versions.get(r.run_id)!;
     const parent = r.parent_run_id ? versions.get(r.parent_run_id) : undefined;
     const diff = parent?.selection && v.selection ? diffSelections(parent.selection, v.selection, parent.total_cents, v.total_cents) : null;
-    const latest = !hasChild.has(r.run_id);
-    const outcome = latest ? scoreBudget(chain(r.run_id), now) : null;
-    const final = chain(r.run_id).map((x) => x.final_quote).filter((q) => q !== null).at(-1) ?? null;
+    const thread = threads.get(find(r.run_id))!;
+    const latest = thread.at(-1)!.run_id === r.run_id;
+    const outcome = latest ? scoreBudget(thread, now) : null;
+    const final = thread.map((x) => x.final_quote).filter((q) => q !== null).at(-1) ?? null;
     return {
       ...r,
       changes: diff ? describeDiff(diff) : null,
       diff,
+      thread_runs: thread.length,
       stars: outcome?.stars ?? null,
-      why: outcome?.why ?? (latest ? null : "revised (see the newer version)"),
+      why: outcome?.why ?? (latest ? null : "see the newer version of this budget"),
       final_quote_usd: latest && final ? final.price_cents / 100 : null,
       final_quote_diff_pct: outcome?.final_quote_diff_pct ?? null,
     };

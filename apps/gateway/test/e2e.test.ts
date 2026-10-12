@@ -661,7 +661,7 @@ describe("editing a scope and revising a finished budget", () => {
     expect(scored).toMatchObject({ changes: null, stars: 5, why: "left as built; retainer sent", final_quote_usd: null });
     const csv = runsCsv([scored!]);
     expect(csv.split("\n")[0]).toContain("request,later_messages,changes,state");
-    expect(csv.split("\n")[0]).toContain("final_quote_usd,final_quote_diff_pct,stars,why");
+    expect(csv.split("\n")[0]).toContain("final_quote_usd,final_quote_diff_pct,thread_runs,stars,why");
     expect(csv).toContain('"Smith security upgrade"');
 
     // The rep builds the real quote under the retainer's opportunity. A draft isn't final; once presented it is recorded.
@@ -734,16 +734,37 @@ describe("editing a scope and revising a finished budget", () => {
     // The run log shows what the revision changed and scores the thread on its newest version.
     const scored = await scoreRuns(t.store, await t.store.runReport(new Date("2000-01-01")), new Date());
     expect(scored.map((r) => [r.run_id, r.stars, r.why])).toEqual([
-      [original!.id, null, "revised (see the newer version)"],
+      [original!.id, null, "see the newer version of this budget"],
       [revision.id, null, expect.stringMatching(/^1 (small edit|edit changed the scope), total moved [\d.]+%; retainer not sent yet$/)],
     ]);
     expect(scored[1]!.changes).toMatch(/glass_break/);
     expect(learnReport(scored)).toContain("Quantities reps changed most");
   });
 
+  it("sets the labor hours in a revision (\"hours to 7\"), replacing the estimate", async () => {
+    const t = await setup([completeExtraction()], [{ ...noPatch, labor_hours: 7 }]);
+    await t.send(chatMessage("Smith security upgrade"));
+    const [first] = t.receipts();
+    await t.send(click(first!.receiptId, first!.approve!.scopeHash));
+    const [original] = await t.store.listRunsForPerson("zack");
+    const before = await t.store.readArtifact<{ intro: { labor_hours: number | null } }>(original!.id, "validate", "customer_view");
+    expect(before!.intro.labor_hours).not.toBe(7);
+
+    await t.send(chatMessage("Revise: hours to 7"));
+    const second = t.receipts().at(-1)!;
+    expect(second.lines).toContain("Labor: 7 hours total (set in a revision; replaces the estimate)");
+    expect(second.lines).toContain(`Note: Changed: Labor hours: estimated → 7 h`);
+    await t.send(click(second.receiptId, second.approve!.scopeHash));
+    const revision = (await t.store.listRunsForPerson("zack")).find((r) => r.id !== original!.id)!;
+    const done = await t.store.getRun(revision.id);
+    expect([done.state, (done as { last_error?: string | null }).last_error ?? null]).toEqual(["READY_HELD", null]);
+    const after = await t.store.readArtifact<{ intro: { labor_hours: number | null } }>(revision.id, "validate", "customer_view");
+    expect(after!.intro.labor_hours).toBe(7);
+  });
+
   it("treats a message starting with \"revise\" as a revision of the latest budget, and anything else as a new request", async () => {
     const t = await setup(
-      [completeExtraction(), completeExtraction({ client: "Jones Family" })],
+      [completeExtraction(), completeExtraction({ client: "Jones Family" }), completeExtraction()],
       [{ ...noPatch, client: "Smith-Jones Family" }],
     );
     await t.send(chatMessage("Smith security upgrade"));
@@ -762,6 +783,19 @@ describe("editing a scope and revising a finished budget", () => {
     const newest = (await t.store.listRunsForPerson("zack"))[0]!;
     expect(newest.parent_run_id).toBeNull();
     expect(t.receipts().at(-1)!.lines).toContain("Client: Jones Family");
+
+    // Starting over for the same client the same day is scored as one more try at the same budget.
+    await t.send(click(t.receipts().at(-1)!.receiptId, t.receipts().at(-1)!.approve!.scopeHash));
+    await t.send(controlClick("new_request", (await t.store.listRunsForPerson("zack"))[0]!.id));
+    await t.send(chatMessage("Smith security upgrade"));
+    await t.send(click(t.receipts().at(-1)!.receiptId, t.receipts().at(-1)!.approve!.scopeHash));
+    const scored = await scoreRuns(t.store, await t.store.runReport(new Date("2000-01-01")), new Date());
+    expect(scored.map((r) => [r.client, r.thread_runs, r.why])).toEqual([
+      ["Smith Family", 3, "see the newer version of this budget"],
+      ["Smith-Jones Family", 3, "see the newer version of this budget"],
+      ["Jones Family", 1, "left as built; retainer not sent yet"],
+      ["Smith Family", 3, "2 small edits, total moved 0%; retainer not sent yet"],
+    ]);
   });
 });
 

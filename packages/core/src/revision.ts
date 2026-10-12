@@ -35,5 +35,6 @@ export function describeScopeChanges(before: ScopeExtraction, after: ScopeExtrac
   list("Excluded", before.excluded_scope, after.excluded_scope);
   value("Budget", before.budget.amount_usd, after.budget.amount_usd, (v: number | null) => (v === null ? "unknown" : `$${v.toLocaleString("en-US")}`));
   value("Target install", before.target_installation_date, after.target_installation_date);
+  value("Labor hours", before.labor_hours ?? null, after.labor_hours ?? null, (v: number | null) => (v === null ? "estimated" : `${v} h`));
   return out;
 }

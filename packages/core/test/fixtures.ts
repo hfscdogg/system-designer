@@ -66,5 +66,6 @@ export const noPatch = {
   budget: null,
   target_installation_date: null,
   proposal: null,
+  labor_hours: null,
   unmapped: false,
 };

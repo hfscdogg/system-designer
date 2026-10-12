@@ -690,3 +690,18 @@ describe("empty proposals", () => {
     expect(v.findings.map((f) => f.code)).toContain("empty_bom");
   });
 });
+
+describe("a revision that removes a whole system", () => {
+  it("builds without it instead of failing validation (\"remove the thermostats\")", async () => {
+    const base = await pipeline({ functional_systems: ["alarm system", "thermostats"], requested_changes: ["Replace the alarm panel", "Add thermostats"] });
+    expect(base.selection.requirements.find((r) => r.system === "climate_control")).toMatchObject({ classification: "supported" });
+    const { selection, validation } = await pipeline({
+      functional_systems: ["alarm system", "thermostats"],
+      requested_changes: ["Replace the alarm panel", "Add thermostats"],
+      excluded_scope: ["thermostats"],
+    });
+    expect(selection.lines.some((l) => l.role === "thermostat")).toBe(false);
+    expect(selection.requirements.find((r) => r.system === "climate_control")).toMatchObject({ classification: "removed", roles: [] });
+    expect(validation.findings.filter((f) => f.code === "scope_coverage")).toEqual([]);
+  });
+});

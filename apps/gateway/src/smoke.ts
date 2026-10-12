@@ -106,6 +106,18 @@ export const SMOKE_SCENARIOS: SmokeScenario[] = [
     ],
   },
   {
+    // Henry, 2026-10-11: the Sonos sub pulled in whole-home audio (ceiling speakers, amps), and "hours to 7" couldn't be applied.
+    name: "Darren Mackin (TV and Sonos soundbar)",
+    steps: [
+      {
+        say: `Scope for Darren Mackin, ${ADDRESS}. Residential. Livewire provided 77" OLED TV in playroom with Sonos Arc Ultra and Sonos Sub with one remote to control everything; actually just use the Apple TV remote to control everything.`,
+        pattern: "tv_media",
+        expect: { television: 1, soundbar: 1, subwoofer: 1 },
+      },
+      { say: "Revise: hours to 7", pattern: "tv_media", expect: { television: 1, soundbar: 1, subwoofer: 1 }, receipt: ["Labor: 7 hours total"] },
+    ],
+  },
+  {
     // The correction was ignored: same price, and in-ceiling speakers were added.
     name: "Biscuit Belly (amp)",
     steps: [

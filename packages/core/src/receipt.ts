@@ -83,6 +83,7 @@ export function toScopeDraft(raw: ScopeExtraction): ScopeDraftV1 {
         : { status: "unknown" },
     target_installation_date: s.target_installation_date!,
   };
+  if (s.labor_hours) draft.labor_hours = s.labor_hours;
   // An UNASSIGNED or partial selector does not identify a real source quote (PRD §8.1).
   if (s.proposal.number && s.proposal.number !== "UNASSIGNED" && s.proposal.name) {
     draft.source_quote_selector = { number: s.proposal.number, name: s.proposal.name };
@@ -123,6 +124,7 @@ function scopeLines(s: ScopeExtraction, assumed: string[]): string[] {
             : "Budget type: complete system (assumed)",
         ]
       : []),
+    ...(s.labor_hours ? [`Labor: ${s.labor_hours} hours total (set in a revision; replaces the estimate)`] : []),
     ...(s.requested_quantities.length ? [`Stated quantities: ${s.requested_quantities.map((q) => `${q.item} × ${q.quantity}`).join("; ")}`] : []),
     ...(s.requested_discount ? [`Discount: ${s.requested_discount.pct}%${s.requested_discount.note ? ` (${s.requested_discount.note})` : ""}, needs Henry's or Zack's approval`] : []),
     mark("existing_equipment", `Existing equipment: ${equipment}`),

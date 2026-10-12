@@ -57,6 +57,8 @@ export const SizeSchema = z
   })
   .strict();
 
+const LaborHoursSchema = z.number().positive().max(500);
+
 export const ScopeExtractionSchema = z
   .object({
     client: z.string().nullable(),
@@ -78,8 +80,13 @@ export const ScopeExtractionSchema = z
     target_installation_date: z.string().nullable(),
     proposal: z.object({ number: z.string().nullable(), name: z.string().nullable() }).strict(),
     unresolved_questions: z.array(z.string()),
+    /** Total labor hours the rep set in a revision ("hours to 7"), replacing the estimate. Never extracted from a request. */
+    labor_hours: LaborHoursSchema.nullable().optional(),
   })
   .strict();
+
+/** What the model fills in from a request: everything but the rep-set labor hours. */
+export const ScopeExtractionModelSchema = ScopeExtractionSchema.omit({ labor_hours: true });
 
 export type ScopeExtraction = z.infer<typeof ScopeExtractionSchema>;
 
@@ -107,6 +114,7 @@ export const ClarificationPatchSchema = z
     budget: BudgetSchema.nullable(),
     target_installation_date: z.string().nullable(),
     proposal: z.object({ number: z.string().nullable(), name: z.string().nullable() }).strict().nullable(),
+    labor_hours: LaborHoursSchema.nullable(),
     /** True when the answer could not be mapped to these fields. */
     unmapped: z.boolean(),
   })
@@ -139,6 +147,8 @@ export const ScopeDraftV1Schema = z
     ]),
     target_installation_date: z.string(),
     source_quote_selector: z.object({ number: z.string().min(1), name: z.string().min(1) }).strict().optional(),
+    /** Present only when the rep set the hours; absent keeps older scopes (and their hashes) unchanged. */
+    labor_hours: LaborHoursSchema.optional(),
   })
   .strict();
 
@@ -277,6 +287,7 @@ export function applyClarification(base: ScopeExtraction, patch: ClarificationPa
   else if (patch.size !== null) next.size = patch.size;
   if (patch.budget !== null) next.budget = patch.budget;
   if (patch.target_installation_date !== null) next.target_installation_date = patch.target_installation_date;
+  if (patch.labor_hours !== null) next.labor_hours = patch.labor_hours;
   if (patch.proposal !== null) {
     if (patch.proposal.number !== null) next.proposal.number = patch.proposal.number;
     if (patch.proposal.name !== null) next.proposal.name = patch.proposal.name;
