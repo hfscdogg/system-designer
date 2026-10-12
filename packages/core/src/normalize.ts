@@ -86,17 +86,34 @@ export function systemsMentioned(text: string): string[] {
 /** A TV's own sound: a soundbar and its sub ("Sonos Arc Ultra", "Sonos Sub Mini"). */
 const TV_SOUND = /\b(soundbars?|sound bars?|arc( ultra)?|beam|ray|sub( mini)?|subwoofers?)\b/;
 /** Music through the house, which a TV's soundbar never is. */
-const HOUSE_MUSIC = /\b((in|on)[- ](ceiling|wall)|ceiling|outdoor|landscape|patio|amps?|amplifiers?|era|five|zones?|whole[- ](home|house)|distributed|multi[- ]room|background|music)\b/;
+const HOUSE_MUSIC = /\b((in|on)[- ](ceiling|wall)|ceiling|outdoor|landscape|patio|amps?|amplifiers?|era|sonos five|zones?|whole[- ](home|house)|distributed|multi[- ]room|background|music)\b/;
+
+const AUDIO_WORDS = /\b(sonos|audio|speakers?|music|sound)\b/;
+const TV_WORDS = /\b(tvs?|television|oled|qled|projector|soundbars?|sound bars?|arc( ultra)?|beam|ray|sub( mini)?|subwoofers?|surround)\b/;
+
+/**
+ * With a TV in the job, whole-home audio stays only when the rep's own requests
+ * ask for music through the house (in-ceiling speakers, amps, "Sonos in the
+ * kitchen"). Otherwise the audio is the TV's sound, priced by the TV pattern's
+ * soundbar and sub. The model's system labels ("Sonos sound system",
+ * "whole-home audio") vary run to run, so they aren't evidence (Henry's Darren
+ * Mackin job, 2026-10-11/12).
+ */
+function tvSoundOnly(systems: string[], requests: string[]): string[] {
+  if (!systems.includes("audio_video") || !systems.includes("whole_home_audio")) return systems;
+  const houseMusic = requests.map(fold).some((t) => HOUSE_MUSIC.test(t) || (AUDIO_WORDS.test(t) && !TV_WORDS.test(t)));
+  return houseMusic ? systems : systems.filter((s) => s !== "whole_home_audio");
+}
 
 export function normalizeFunctionalSystems(items: string[]): string[] {
   const raw = items.map((item) => ({ item, hits: systemHits(item) }));
   const hasTv = raw.some((m) => m.hits.includes("audio_video"));
   const mapped = raw.map(({ item, hits }) => {
     const t = fold(item);
-    // With a TV in the job, a Sonos soundbar or sub ("Sonos Arc Ultra", "Sonos Sub"), or bare
-    // "Sonos", is the TV's sound, not music through the house (Henry's Darren Mackin job, 2026-10-11).
-    const tvSound =
-      (hits.includes("audio_video") || hasTv) && hits.includes("whole_home_audio") && !HOUSE_MUSIC.test(t) && (TV_SOUND.test(t) || /^sonos( audio| system)?$/.test(t));
+    // With a TV in the job, a Sonos soundbar or sub ("Sonos Arc Ultra", "Sonos Sub") is the TV's
+    // sound, not music through the house (Henry's Darren Mackin job, 2026-10-11). A bare "Sonos" is
+    // decided by the requests themselves (tvSoundOnly).
+    const tvSound = (hits.includes("audio_video") || hasTv) && hits.includes("whole_home_audio") && !HOUSE_MUSIC.test(t) && TV_SOUND.test(t);
     return { item, hits: tvSound ? [...new Set([...hits.filter((h) => h !== "whole_home_audio"), "audio_video"])] : hits };
   });
   const hasAv = mapped.some((m) => m.hits.includes("audio_video"));
@@ -168,6 +185,10 @@ export function normalizeExtraction(input: ScopeExtraction): NormalizedExtractio
   let proposalNumber = nullableClean(input.proposal.number);
   if (proposalNumber !== null && /^unassigned$/i.test(proposalNumber)) proposalNumber = "UNASSIGNED";
 
+  const systems = tvSoundOnly(normalizeFunctionalSystems(input.functional_systems), [
+    ...input.requested_changes,
+    ...input.requested_quantities.map((q) => q.item),
+  ]);
   const scope: ScopeExtraction = {
     client: nullableClean(input.client),
     property: {
@@ -179,7 +200,7 @@ export function normalizeExtraction(input: ScopeExtraction): NormalizedExtractio
     project_type: nullableClean(input.project_type),
     market: input.market,
     room_types: list(input.room_types),
-    functional_systems: normalizeFunctionalSystems(input.functional_systems),
+    functional_systems: systems,
     requested_changes: list(input.requested_changes),
     requested_quantities: normalizeQuantities(input.requested_quantities),
     requested_discount: input.requested_discount ? { pct: input.requested_discount.pct, note: clean(input.requested_discount.note) } : null,
