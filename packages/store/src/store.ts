@@ -157,6 +157,10 @@ export interface RunReportRow {
   retainer_usd: number | null;
   /** The D-Tools retainer opportunity, when "Send design retainer" was tapped. */
   retainer_opportunity: string | null;
+  /** The QuickBooks retainer invoice number, once QuickBooks emailed it. */
+  retainer_invoice: string | null;
+  /** When the hourly check found the retainer invoice paid. */
+  retainer_paid_at: string | null;
   pdf_sha256: string | null;
   last_error: string | null;
 }
@@ -231,6 +235,7 @@ export class Store {
       if (staleRunIds.length) {
         await tx.query(`UPDATE receipts SET superseded_at = now() WHERE run_id = ANY($1) AND superseded_at IS NULL`, [staleRunIds]);
       }
+      await tx.query(`DELETE FROM pending_retainers WHERE platform = $1 AND space_id = $2 AND thread_id = $3`, [t.platform, t.spaceId, t.threadId]);
       await this.event(tx, null, "session_reset", actor, { thread: t, generation, staleRunIds });
       return { generation, staleRunIds };
     });
@@ -354,6 +359,13 @@ export class Store {
         if (parent) {
           await tx.query(`DELETE FROM pending_revisions WHERE platform = $1 AND space_id = $2 AND thread_id = $3`, [intake.platform, intake.space_id, intake.thread_id]);
         }
+        // The requester moved on to a new request or revision: their retainer stops waiting for an email.
+        await tx.query(`DELETE FROM pending_retainers WHERE platform = $1 AND space_id = $2 AND thread_id = $3 AND person_id = $4`, [
+          intake.platform,
+          intake.space_id,
+          intake.thread_id,
+          intake.person_id,
+        ]);
         return { ok: true as const, run: run.rows[0]! };
       });
     } catch (err) {
@@ -444,6 +456,57 @@ export class Store {
 
   async clearPendingRevision(t: ThreadRef): Promise<void> {
     await this.db.query(`DELETE FROM pending_revisions WHERE platform = $1 AND space_id = $2 AND thread_id = $3`, [t.platform, t.spaceId, t.threadId]);
+  }
+
+  /** The requester tapped "Send design retainer"; their next message in the thread names the invoice email. */
+  async setPendingRetainer(t: ThreadRef, runId: string, personId: string): Promise<void> {
+    await this.db.query(
+      `INSERT INTO pending_retainers (platform, space_id, thread_id, run_id, person_id) VALUES ($1,$2,$3,$4,$5)
+       ON CONFLICT (platform, space_id, thread_id) DO UPDATE SET run_id = $4, person_id = $5, created_at = now()`,
+      [t.platform, t.spaceId, t.threadId, runId, personId],
+    );
+    await this.event(this.db, runId, "retainer_email_requested", personId, { thread: t });
+  }
+
+  /** The thread's pending retainer, unless it is older than `maxAgeHours`. */
+  async pendingRetainer(t: ThreadRef, maxAgeHours = 24): Promise<{ run_id: string; person_id: string } | null> {
+    const res = await this.db.query<{ run_id: string; person_id: string }>(
+      `SELECT run_id, person_id FROM pending_retainers WHERE platform = $1 AND space_id = $2 AND thread_id = $3
+         AND created_at > now() - make_interval(hours => $4)`,
+      [t.platform, t.spaceId, t.threadId, maxAgeHours],
+    );
+    return res.rows[0] ?? null;
+  }
+
+  async clearPendingRetainer(t: ThreadRef): Promise<void> {
+    await this.db.query(`DELETE FROM pending_retainers WHERE platform = $1 AND space_id = $2 AND thread_id = $3`, [t.platform, t.spaceId, t.threadId]);
+  }
+
+  /**
+   * Runs whose retainer invoice went out from QuickBooks within `maxAgeDays` and
+   * is not recorded as paid yet: the hourly paid check reads these.
+   */
+  async runsAwaitingRetainerPayment(maxAgeDays: number): Promise<string[]> {
+    const res = await this.db.query<{ run_id: string }>(
+      `SELECT a.run_id FROM artifacts a
+        WHERE a.stage = 'retainer' AND a.name = 'invoice' AND a.created_at > now() - make_interval(days => $1)
+          AND NOT EXISTS (SELECT 1 FROM artifacts b WHERE b.run_id = a.run_id AND b.stage = 'retainer' AND b.name = 'payment')
+        ORDER BY a.created_at`,
+      [maxAgeDays],
+    );
+    return res.rows.map((r) => r.run_id);
+  }
+
+  /**
+   * Run `fn` while holding a Postgres advisory lock named `key`, shared by every
+   * process on this database (the worker and the hourly job). The lock is
+   * transaction-scoped, so it is released however `fn` ends.
+   */
+  async withAdvisoryLock<T>(key: string, fn: () => Promise<T>): Promise<T> {
+    return this.db.transaction(async (tx) => {
+      await tx.query(`SELECT pg_advisory_xact_lock(hashtext($1))`, [key]);
+      return fn();
+    });
   }
 
   async listRunsForPerson(personId: string, limit = 10): Promise<RunRecord[]> {
@@ -725,6 +788,8 @@ export class Store {
       const view = await this.readArtifact<{ client?: string; commercial?: { subtotal_cents?: number; total_cents?: number | null; likely_range?: { low_cents: number; high_cents: number } | null; retainer?: { cents: number } } }>(r.id, "validate", "customer_view");
       const pattern = await this.readArtifact<{ pattern?: string }>(r.id, "prebuild", "pattern");
       const retainer = await this.readArtifact<{ number?: string | null; opportunity_id?: string }>(r.id, "retainer", "opportunity");
+      const invoice = await this.readArtifact<{ qbo_doc_number?: string; qbo_invoice_id?: string }>(r.id, "retainer", "invoice");
+      const payment = await this.readArtifact<{ paid_at?: string }>(r.id, "retainer", "payment");
       const pdf = (await this.listArtifacts(r.id)).find((a) => a.stage === "render" && a.name === "pdf");
       const c = view?.commercial;
       rows.push({
@@ -745,6 +810,8 @@ export class Store {
         likely_high_usd: c?.likely_range ? c.likely_range.high_cents / 100 : null,
         retainer_usd: c?.retainer ? c.retainer.cents / 100 : null,
         retainer_opportunity: retainer ? (retainer.number ?? retainer.opportunity_id ?? null) : null,
+        retainer_invoice: invoice ? (invoice.qbo_doc_number ?? invoice.qbo_invoice_id ?? null) : null,
+        retainer_paid_at: payment?.paid_at ?? null,
         pdf_sha256: pdf?.sha256 ?? null,
         last_error: r.last_error,
       });

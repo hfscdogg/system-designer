@@ -49,6 +49,8 @@ echo "2) Store the secret values (paste each value when prompted; nothing is ech
 for s in temporal-api-key dtools-api-key dtools-basic-auth; do
   echo "     read -rs V && printf %s \"\$V\" | gcloud secrets versions add ${s} --data-file=- && unset V"
 done
+echo "   The QuickBooks retainer invoice (prod) also needs qbo-client-id, qbo-client-secret and qbo-refresh-token,"
+echo "   and the QBO_REALM_ID repository variable: see docs/deploy.md."
 echo
 echo "3) Claude API access is keyless. In console.anthropic.com → Settings → Workload identity →"
 echo "   Connect workload → Google Cloud, create one rule per environment (audience https://api.anthropic.com),"

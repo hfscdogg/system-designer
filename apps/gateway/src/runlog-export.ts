@@ -37,6 +37,8 @@ const FIELDS: Array<[keyof RunlogRow, "STRING" | "INTEGER" | "FLOAT" | "TIMESTAM
   ["likely_high_usd", "FLOAT", "NULLABLE"],
   ["retainer_usd", "FLOAT", "NULLABLE"],
   ["retainer_opportunity", "STRING", "NULLABLE"],
+  ["retainer_invoice", "STRING", "NULLABLE"],
+  ["retainer_paid_at", "TIMESTAMP", "NULLABLE"],
   ["final_quote_usd", "FLOAT", "NULLABLE"],
   ["final_quote_diff_pct", "FLOAT", "NULLABLE"],
   ["thread_runs", "INTEGER", "NULLABLE"],

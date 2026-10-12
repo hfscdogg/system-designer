@@ -53,7 +53,8 @@ packages/core/     Schemas, normalizer, blockers, receipts, state machine (pure 
 packages/store/    Postgres schema + Store (claims, receipts, atomic approvals, audit log), GCS evidence
 packages/channels/ Channel adapter interface + Google Chat (auth, parsing, cards, REST)
 packages/llm/      Claude calls (structured outputs) for extraction and clarification
-packages/dtools/   Read-only D-Tools Cloud client (GET only) + recorded-response reader for tests
+packages/dtools/   D-Tools Cloud client: reads, plus the one write (the retainer's opportunity); recorded fakes for tests
+packages/qbo/      QuickBooks Online client for the design-retainer invoice, OAuth with refresh-token rotation in Secret Manager
 packages/build/    Catalog admission, architecture patterns, materializer, compiler, binder, validator
 packages/render/   Customer HTML, Chromium PDF, PDF preflight
 .claude/skills/d-tools-skill/  Existing D-Tools tooling; its client and renderer get ported in M2/M3
@@ -109,6 +110,24 @@ gcloud run jobs execute sd-migrate-staging --region us-east4 --wait \
 ```
 
 Anyone with an active identity can DM the app. Each person's runs are their own: only the requester can answer questions on a run or approve its scope. Different people, and different threads in a shared space, run in parallel.
+
+### Design retainer
+
+Under each finished budget, **Send design retainer** collects the retainer (Henry, 2026-10-12): 4% of the likely range's low end, at least $100.
+1. The bot asks: "What email should the retainer invoice go to?" The requester replies with just the client's address, or `cancel`.
+   - The address is taken only from that reply, matched by a strict pattern with no model involved. Anything else is asked again.
+   - The ask lapses after 24 hours, or when the budget is revised or a new request starts.
+2. The worker creates a D-Tools opportunity, `Design Retainer · <client> · SD-xxxxxxxx`. It has no quote template; reps build the real quote under it later, and the hourly job reads that quote back for the run log.
+3. In QuickBooks Online it finds the client's customer by email. Failing that, it creates one named after the client, or "Client (email)" when that name is taken.
+4. It invoices one non-taxable line on the `DESIGN RETAINER` item, with card and bank payment on. The line reads "Design Retainer: 4% Deposit Against Estimated Total Budget of $14,075 – $17,200. Non-refundable; applied in full toward your final project value."
+   - The invoice number is the budget's `SD-` reference, so a retry finds the same invoice instead of making a second.
+   - The item id is `retainer.qbo_item_id` in the commercial policy (3649 when absent).
+5. QuickBooks emails the invoice with its Pay now link, and the bot confirms in the thread. If the send fails, the reply says so, and tapping again re-sends the same invoice.
+6. The hourly job checks each sent invoice. At a zero balance it records the payment and posts "✓ Design retainer paid" in the thread, once.
+
+The run log shows `retainer_opportunity`, `retainer_invoice` and `retainer_paid_at`. A paid retainer reads "retainer paid" in the score's reason.
+
+QuickBooks is on in production only, once it is set up (see [QuickBooks retainer invoice](docs/deploy.md#quickbooks-retainer-invoice-production)). Until then the bot creates the opportunity and says to invoice by hand.
 
 ## Deploy
 

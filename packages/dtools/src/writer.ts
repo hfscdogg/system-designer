@@ -1,16 +1,17 @@
 import { DToolsReadError, type DToolsHttpConfig } from "./reader.ts";
 
 /**
- * The one write System Designer makes to D-Tools (Henry, 2026-10-10): create an
- * opportunity from a design-retainer quote template, which D-Tools gives a draft
- * quote. A Livewire rep reviews it and sends it for e-signature from D-Tools.
- * Nothing else is created, changed or sent.
+ * The one write System Designer makes to D-Tools (Henry, 2026-10-10): create the
+ * opportunity a budget's design retainer is tracked under, where reps later
+ * build the real quote. The retainer itself is invoiced from QuickBooks
+ * (2026-10-12), so no quote template is sent. Nothing else is created, changed or sent.
  */
 export interface NewRetainerOpportunity {
   name: string;
   clientName: string;
   clientEmail?: string;
-  quoteTemplate: string;
+  /** A D-Tools quote template to start a draft quote from; unused since the retainer moved to QuickBooks. */
+  quoteTemplate?: string;
   /** Whole dollars, as D-Tools stores an opportunity budget. */
   budget: number;
 }

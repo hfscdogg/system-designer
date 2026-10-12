@@ -15,8 +15,11 @@ const acts = proxyActivities<RunActivities>({
   },
 });
 
-/** Creates a budget's design retainer in D-Tools; workflowId = `${runId}:retainer`. */
-export async function retainerRequest(input: { runId: string; tap: string }): Promise<void> {
+/**
+ * Sends a budget's design retainer (D-Tools opportunity, QuickBooks invoice); workflowId = `${runId}:retainer`.
+ * Inputs started before 2026-10-12 have no `email`; the activity then skips QuickBooks.
+ */
+export async function retainerRequest(input: { runId: string; tap: string; email?: string }): Promise<void> {
   await acts.createRetainer(input);
 }
 

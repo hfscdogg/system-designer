@@ -3,6 +3,7 @@ import type { Selection } from "./materialize.ts";
 /**
  * What happened to a budget after it was built, as a 1–5 score: left alone and
  * sent is a 5, small edits a 4, scope changes a 3, blocked a 2, dropped a 1.
+ * A paid retainer reads "retainer paid" but scores the same as one sent.
  * When the rep later presents or the client accepts the real quote in D-Tools,
  * that quote is the final answer: within ±20% of ours lifts the score, further
  * off caps it at 3. Pure; the run log reads it for the pilot review.
@@ -44,6 +45,8 @@ export interface BudgetVersion {
   /** Total, or the priced scope while tax is unknown. */
   total_cents: number | null;
   retainer_sent: boolean;
+  /** QuickBooks shows the retainer invoice paid. */
+  retainer_paid: boolean;
   final_quote: FinalQuote | null;
 }
 
@@ -127,6 +130,7 @@ export function scoreBudget(versions: BudgetVersion[], now: Date): Outcome {
   const built = versions.filter((v) => v.selection);
   const diffs = built.slice(1).map((v, i) => diffSelections(built[i]!.selection!, v.selection!, built[i]!.total_cents, v.total_cents));
   const sent = versions.some((v) => v.retainer_sent);
+  const paid = versions.some((v) => v.retainer_paid);
   const final = versions.map((v) => v.final_quote).filter((q): q is FinalQuote => q !== null).at(-1) ?? null;
   const ageDays = (now.getTime() - last.created_at.getTime()) / 86_400_000;
 
@@ -166,5 +170,5 @@ export function scoreBudget(versions: BudgetVersion[], now: Date): Outcome {
   }
   if (!sent && ageDays >= ABANDONED_DAYS) return { stars: 1, why: `${why}; no retainer after ${ABANDONED_DAYS} days`, final_quote_diff_pct: null };
   if (!sent) return { stars: null, why: `${why}; retainer not sent yet`, final_quote_diff_pct: null };
-  return { stars, why: `${why}; retainer sent`, final_quote_diff_pct: null };
+  return { stars, why: `${why}; retainer ${paid ? "paid" : "sent"}`, final_quote_diff_pct: null };
 }

@@ -6,7 +6,7 @@ import { httpDToolsReader, httpDToolsWriter } from "@sd/dtools";
 import { anthropicClarificationInterpreter, anthropicScopeExtractor } from "@sd/llm";
 import { fetchProductImage, htmlToPdf } from "@sd/render";
 import { createActivities } from "./activities.ts";
-import { productionAdapters, productionStore, releaseId, requireEnv, temporalSettings, workerBuildId } from "./config.ts";
+import { productionAdapters, productionQbo, productionStore, releaseId, requireEnv, temporalSettings, workerBuildId } from "./config.ts";
 import { taskQueue } from "./temporal.ts";
 
 /**
@@ -33,6 +33,8 @@ async function main() {
       dtools: httpDToolsReader({ apiKey: requireEnv("DTOOLS_API_KEY"), basicAuth: requireEnv("DTOOLS_BASIC_AUTH") }),
       // The one approved write, off unless SD_DTOOLS_RETAINER=on (Henry, 2026-10-10).
       dtoolsWriter: process.env.SD_DTOOLS_RETAINER === "on" ? httpDToolsWriter({ apiKey: requireEnv("DTOOLS_API_KEY"), basicAuth: requireEnv("DTOOLS_BASIC_AUTH") }) : null,
+      // The retainer invoice, off unless SD_QBO_RETAINER=on and QBO_REALM_ID is set (Henry, 2026-10-12).
+      qbo: productionQbo(store),
       patterns: await loadPatterns(),
       renderPdf: (html) => htmlToPdf(html),
       fetchImage: (url) => fetchProductImage(url),

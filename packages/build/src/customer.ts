@@ -17,13 +17,6 @@ export function retainerCents(c: { likely_range: { low_cents: number } | null; t
   return Math.max(RETAINER_MIN_CENTS, Math.round((basis * DESIGN_RETAINER_PCT) / 100 / 100) * 100);
 }
 
-/**
- * The D-Tools quote template the retainer opportunity is created from. D-Tools'
- * API can only name a template, not set a price, so the rep types the amount
- * into its one "Design Retainer" line before sending it (Henry, 2026-10-11).
- */
-export const RETAINER_TEMPLATE = "Design Retainer";
-
 export interface CustomerProposal {
   watermark: string;
   proposal_number: string;
@@ -63,7 +56,7 @@ export interface CustomerProposal {
     parts_cents: number;
     /** An admin-approved price reduction, shown in the Summary. */
     reduction: { pct: number; cents: number } | null;
-    /** The design retainer (see retainerCents), collected through D-Tools. */
+    /** The design retainer (see retainerCents), invoiced from QuickBooks Online (Henry, 2026-10-12). */
     retainer: { cents: number };
     /** Where similar Livewire jobs landed, shown under the total. */
     likely_range: { low_cents: number; high_cents: number } | null;

@@ -35,6 +35,8 @@ const COLUMNS: Array<keyof ScoredRow> = [
   "likely_high_usd",
   "retainer_usd",
   "retainer_opportunity",
+  "retainer_invoice",
+  "retainer_paid_at",
   "final_quote_usd",
   "final_quote_diff_pct",
   "thread_runs",
@@ -60,6 +62,7 @@ async function versionOf(store: Store, runId: string, state: string, createdAt: 
     selection,
     total_cents: view ? (view.commercial.total_cents ?? view.commercial.subtotal_cents) : null,
     retainer_sent: (await store.readArtifact(runId, "retainer", "opportunity")) !== null,
+    retainer_paid: (await store.readArtifact(runId, "retainer", "payment")) !== null,
     final_quote: await readFinalQuote(store, runId),
   };
 }
