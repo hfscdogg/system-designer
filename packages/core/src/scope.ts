@@ -115,6 +115,8 @@ export const ClarificationPatchSchema = z
     target_installation_date: z.string().nullable(),
     proposal: z.object({ number: z.string().nullable(), name: z.string().nullable() }).strict().nullable(),
     labor_hours: LaborHoursSchema.nullable(),
+    /** The complete open-items list, when the answer adds a requested product or settles an open item. Absent in patches from before it existed. */
+    unresolved_questions: z.array(z.string()).nullable().default(null),
     /** True when the answer could not be mapped to these fields. */
     unmapped: z.boolean(),
   })
@@ -288,6 +290,7 @@ export function applyClarification(base: ScopeExtraction, patch: ClarificationPa
   if (patch.budget !== null) next.budget = patch.budget;
   if (patch.target_installation_date !== null) next.target_installation_date = patch.target_installation_date;
   if (patch.labor_hours !== null) next.labor_hours = patch.labor_hours;
+  if (patch.unresolved_questions !== null) next.unresolved_questions = patch.unresolved_questions;
   if (patch.proposal !== null) {
     if (patch.proposal.number !== null) next.proposal.number = patch.proposal.number;
     if (patch.proposal.name !== null) next.proposal.name = patch.proposal.name;

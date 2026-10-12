@@ -95,13 +95,28 @@ export const SMOKE_SCENARIOS: SmokeScenario[] = [
     ],
   },
   {
-    // The Bretford cart was swapped for a wall mount without saying so.
+    // The Bretford cart was swapped for a wall mount without saying so; conduit and an outdoor outlet left the total blank (2026-10-12).
     name: "Rick Crowder (outdoor WiFi and TV cart)",
     steps: [
       {
-        say: `Rick Crowder, ${ADDRESS}. Residential. Outdoor WiFi for the back patio and pool, and the customer's TV on a Bretford rolling cart outside.`,
-        atLeast: { outdoor_access_point: 1 },
+        say:
+          `Rick Crowder, ${ADDRESS}. Residential. Outdoor WiFi for the back patio and pool, and the customer's TV on a Bretford rolling cart outside. ` +
+          "Run conduit from the house to the patio and add an outdoor outlet by the pool.",
+        // A TV on a cart needs no wall mount; the eeros are the ones the Wi-Fi asks for, none from wired or PoE wording.
+        expect: { tv_mount: 0, tv_mount_articulating: 0, wired_access_point: 0 },
+        atLeast: { outdoor_access_point: 1, mesh_wifi: 1 },
         receipt: ["Requested product: Bretford"],
+      },
+    ],
+  },
+  {
+    // Zack's test round (2026-10-12): an articulating mount was priced as the tilt mount.
+    name: "Britt (articulating mount)",
+    steps: [
+      {
+        say: `TV install for the Britt family, ${ADDRESS}. Residential. Mount the customer's 65-inch TV on an articulating mount in the living room.`,
+        pattern: "tv_media",
+        expect: { tv_mount_articulating: 1, tv_mount: 0, television: 0 },
       },
     ],
   },

@@ -1,4 +1,4 @@
-import { EXISTING_DETECTORS } from "@sd/core";
+import { EXISTING_DETECTORS, MARKETS } from "@sd/core";
 import { z } from "zod";
 
 /**
@@ -16,8 +16,25 @@ export const RoleSpecSchema = z
     critical: z.boolean(),
     /** Canonical functional systems this role serves (see @sd/core normalize). */
     systems: z.array(z.string()).min(1),
-    /** If set, include the role only when the request mentions one of these terms. */
+    /** If set, include the role only when the request mentions one of these terms (whole words, in its changes or stated counts). */
     mentions: z.array(z.string()).optional(),
+    /**
+     * A mention counts only when the same change also names one of these (an "outdoor" eero needs Wi-Fi
+     * words beside it, so "outdoor PoE cameras" adds no access point).
+     */
+    mentions_require: z.array(z.string()).min(1).optional(),
+    /**
+     * Include the role only when the request uses one of these words for its system ("Wi-Fi",
+     * "internet"). Unlike mentions they don't name the device, so "add Wi-Fi" is not an add-on of one eero.
+     */
+    asked_by: z.array(z.string()).min(1).optional(),
+    /** Include the role only when one of these roles is included (a switch and power protection for the eero network). */
+    with_roles: z.array(z.string()).min(1).optional(),
+    /**
+     * Roles in one count group are counted together ("only need 1 eero"): when a stated count
+     * goes to one of them, the others the request never named are dropped.
+     */
+    count_group: z.string().optional(),
     /** If set, include the role only when the answer about existing smoke/CO detectors is one of these. */
     existing_detectors: z.array(z.enum(EXISTING_DETECTORS)).min(1).optional(),
     /** Terms that identify this role in the retained-equipment list. */
@@ -35,6 +52,24 @@ export const RoleSpecSchema = z
     quantity_follows: z.array(z.string()).optional(),
     /** One more of this role for each existing item the request moves that matches these terms (a mount per moved TV). */
     per_moved: z.array(z.string()).optional(),
+    /**
+     * An amplifier's count follows the speakers it drives (Henry, 2026-10-12): one per `speakers_per_unit`
+     * passive speakers (pairs count as two), new or existing, once the request asks for speakers.
+     */
+    drives: z.object({ roles: z.array(z.string()).min(1), speakers_per_unit: z.number().int().positive() }).strict().optional(),
+    /** The approved record for one market instead of the standard (a 70V commercial amplifier), with its own speakers per unit. */
+    market_variants: z
+      .array(
+        z
+          .object({ market: z.enum(MARKETS), product_id: z.string().uuid(), label: z.string().min(1), speakers_per_unit: z.number().int().positive().optional() })
+          .strict(),
+      )
+      .optional(),
+    /**
+     * "verify": with no Livewire standard (product_id null), a request for this role is listed to verify
+     * as a requested product, priced in the final proposal, instead of withholding the budget total.
+     */
+    unpriced: z.literal("verify").optional(),
     /** Alternative approved records chosen by the size the request names ("75-inch" → the 77" model). */
     variants: z
       .array(z.object({ sizes: z.array(z.number().int().positive()).min(1), product_id: z.string().uuid(), label: z.string().min(1) }).strict())
@@ -85,6 +120,39 @@ export const LaborSpecSchema = z
   })
   .strict();
 
+/**
+ * Labor for work no pattern role covers (a conduit run, an outdoor outlet), priced as hours at the
+ * policy rate, with no invented parts prices: Design & Delivery covers materials. Templates live in
+ * patterns/allowances.json and ride along with every pattern, so a run freezes the ones it used.
+ */
+export const AllowanceSpecSchema = z
+  .object({
+    key: z.string().min(1),
+    label: z.string().min(1),
+    /** Whole words in one change (or an uncovered system) that ask for this work. */
+    mentions: z.array(z.string().min(1)).min(1),
+    /** The same change must also name one of these ("outdoor" for an outdoor outlet). */
+    require: z.array(z.string().min(1)).min(1).optional(),
+    /** A change naming one of these is about something else ("data outlet", "eero outlet mount"). */
+    exclude: z.array(z.string().min(1)).min(1).optional(),
+    /** Systems whose pattern prices this work itself (cable runs in a prewire). */
+    covered_by_systems: z.array(z.string().min(1)).optional(),
+    hours: z.number().positive(),
+    labor_type: z.string().min(1),
+    /** Where the hours come from, kept for review. */
+    basis: z.string().min(1),
+  })
+  .strict();
+
+export const AllowanceFileSchema = z
+  .object({
+    schema: z.literal("allowance_templates_v1"),
+    version: z.string().min(1),
+    labor_type: z.string().min(1),
+    allowances: z.array(AllowanceSpecSchema.omit({ labor_type: true })).min(1),
+  })
+  .strict();
+
 export const PatternSpecSchema = z
   .object({
     schema: z.literal("architecture_pattern_v1"),
@@ -102,6 +170,8 @@ export const PatternSpecSchema = z
       .optional(),
     /** D-Tools parts-and-materials record, sized from the policy's parts mix target. */
     parts: z.object({ product_id: z.string().uuid(), label: z.string().min(1) }).strict().optional(),
+    /** Labor allowances for out-of-pattern work (see AllowanceSpecSchema); attached by loadPatterns. */
+    allowances: z.array(AllowanceSpecSchema).optional(),
     assumptions: z.array(z.string()),
     exclusions: z.array(z.string()),
   })
@@ -118,6 +188,7 @@ export type RoleSpec = z.infer<typeof RoleSpecSchema>;
 export type ServiceSpec = z.infer<typeof ServiceSpecSchema>;
 export type LaborSpec = z.infer<typeof LaborSpecSchema>;
 export type PatternSpec = z.infer<typeof PatternSpecSchema>;
+export type AllowanceSpec = z.infer<typeof AllowanceSpecSchema>;
 
 /** Labor hours for a device count, rounded up to the half hour. */
 export function laborHours(spec: LaborSpec, devices: number): number {
@@ -192,6 +263,7 @@ export function combinePatterns(ps: PatternSpec[]): PatternSpec | null {
       : {}),
     ...(ps[0]!.parts ? { parts: ps[0]!.parts } : {}),
     ...(ps.some((p) => p.labor_extras?.length) ? { labor_extras: ps.flatMap((p) => p.labor_extras ?? []) } : {}),
+    ...(ps.some((p) => p.allowances?.length) ? { allowances: [...new Map(ps.flatMap((p) => p.allowances ?? []).map((a) => [a.key, a])).values()] } : {}),
     assumptions: uniq(ps.flatMap((p) => p.assumptions)),
     exclusions: uniq(ps.flatMap((p) => p.exclusions)),
   });
@@ -199,7 +271,9 @@ export function combinePatterns(ps: PatternSpec[]): PatternSpec | null {
 
 /** Every product record a pattern may need, for exact-record reads. */
 export function patternRecordIds(p: PatternSpec): string[] {
-  const ids = [...p.roles, ...p.services, ...p.roles.flatMap((r) => r.variants ?? [])].map((x) => x.product_id).filter((x): x is string => x !== null);
+  const ids = [...p.roles, ...p.services, ...p.roles.flatMap((r) => [...(r.variants ?? []), ...(r.market_variants ?? [])])]
+    .map((x) => x.product_id)
+    .filter((x): x is string => x !== null);
   if (p.parts) ids.push(p.parts.product_id);
   return [...new Set(ids)].sort();
 }
@@ -211,6 +285,21 @@ export function patternRecordIds(p: PatternSpec): string[] {
  */
 export async function loadPatterns(dir = new URL("../patterns/", import.meta.url)): Promise<PatternSpec[]> {
   const { readdir, readFile } = await import("node:fs/promises");
-  const files = (await readdir(dir)).filter((f) => f.endsWith(".json")).sort();
-  return Promise.all(files.map(async (f) => PatternSpecSchema.parse(JSON.parse(await readFile(new URL(f, dir), "utf8")))));
+  const files = (await readdir(dir)).filter((f) => f.endsWith(".json") && f !== ALLOWANCES_FILE).sort();
+  const allowances = await readFile(new URL(ALLOWANCES_FILE, dir), "utf8").then(
+    (text) => {
+      const file = AllowanceFileSchema.parse(JSON.parse(text));
+      return file.allowances.map((a) => ({ ...a, labor_type: file.labor_type }));
+    },
+    () => [],
+  );
+  return Promise.all(
+    files.map(async (f) => {
+      const p = PatternSpecSchema.parse(JSON.parse(await readFile(new URL(f, dir), "utf8")));
+      return allowances.length ? { ...p, allowances } : p;
+    }),
+  );
 }
+
+/** The allowance templates in the patterns directory (not a pattern itself). */
+export const ALLOWANCES_FILE = "allowances.json";

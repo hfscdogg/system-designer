@@ -458,20 +458,23 @@ export class Store {
     await this.db.query(`DELETE FROM pending_revisions WHERE platform = $1 AND space_id = $2 AND thread_id = $3`, [t.platform, t.spaceId, t.threadId]);
   }
 
-  /** The requester tapped "Send design retainer"; their next message in the thread names the invoice email. */
-  async setPendingRetainer(t: ThreadRef, runId: string, personId: string): Promise<void> {
+  /**
+   * The requester tapped "Send design retainer"; their next message in the thread names the invoice email,
+   * or says "yes" to `suggestedEmail` (the one address their own request text contained).
+   */
+  async setPendingRetainer(t: ThreadRef, runId: string, personId: string, suggestedEmail: string | null = null): Promise<void> {
     await this.db.query(
-      `INSERT INTO pending_retainers (platform, space_id, thread_id, run_id, person_id) VALUES ($1,$2,$3,$4,$5)
-       ON CONFLICT (platform, space_id, thread_id) DO UPDATE SET run_id = $4, person_id = $5, created_at = now()`,
-      [t.platform, t.spaceId, t.threadId, runId, personId],
+      `INSERT INTO pending_retainers (platform, space_id, thread_id, run_id, person_id, suggested_email) VALUES ($1,$2,$3,$4,$5,$6)
+       ON CONFLICT (platform, space_id, thread_id) DO UPDATE SET run_id = $4, person_id = $5, suggested_email = $6, created_at = now()`,
+      [t.platform, t.spaceId, t.threadId, runId, personId, suggestedEmail],
     );
-    await this.event(this.db, runId, "retainer_email_requested", personId, { thread: t });
+    await this.event(this.db, runId, "retainer_email_requested", personId, { thread: t, ...(suggestedEmail ? { suggested_email: suggestedEmail } : {}) });
   }
 
   /** The thread's pending retainer, unless it is older than `maxAgeHours`. */
-  async pendingRetainer(t: ThreadRef, maxAgeHours = 24): Promise<{ run_id: string; person_id: string } | null> {
-    const res = await this.db.query<{ run_id: string; person_id: string }>(
-      `SELECT run_id, person_id FROM pending_retainers WHERE platform = $1 AND space_id = $2 AND thread_id = $3
+  async pendingRetainer(t: ThreadRef, maxAgeHours = 24): Promise<{ run_id: string; person_id: string; suggested_email: string | null } | null> {
+    const res = await this.db.query<{ run_id: string; person_id: string; suggested_email: string | null }>(
+      `SELECT run_id, person_id, suggested_email FROM pending_retainers WHERE platform = $1 AND space_id = $2 AND thread_id = $3
          AND created_at > now() - make_interval(hours => $4)`,
       [t.platform, t.spaceId, t.threadId, maxAgeHours],
     );

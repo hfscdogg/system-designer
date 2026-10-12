@@ -1,5 +1,5 @@
 import type { ScopeDraftV1 } from "@sd/core";
-import type { DraftLabor, DraftLine, DraftParts, DraftService, ProposalDraft } from "./compile.ts";
+import type { DraftLabor, DraftLaborAllowance, DraftLine, DraftParts, DraftService, ProposalDraft } from "./compile.ts";
 import { sum } from "./money.ts";
 import { minimumMarginPct, type CommercialPolicy, type PolicyRecord } from "./policy.ts";
 import { likelyRange, type LikelyRange } from "./range.ts";
@@ -43,6 +43,13 @@ export interface PricedLabor extends DraftLabor {
   cost_cents: number;
 }
 
+/** Out-of-pattern work priced as hours at the policy labor rate (an allowance, verified on site). */
+export interface PricedLaborAllowance extends DraftLaborAllowance {
+  price_per_hour_cents: number;
+  price_cents: number;
+  cost_cents: number;
+}
+
 export interface PricedParts extends DraftParts {
   quantity: number;
   price_cents: number;
@@ -81,6 +88,8 @@ export interface Proposal {
   parts: PricedParts | null;
   requirements: ProposalDraft["requirements"];
   allowances: ProposalDraft["allowances"];
+  /** Priced labor allowances: they count toward the total and the margin. */
+  labor_allowances: PricedLaborAllowance[];
   unresolved: ProposalDraft["unresolved"];
   assumptions: string[];
   exclusions: string[];
@@ -92,6 +101,8 @@ export interface Proposal {
     labor_cents: number;
     services_cents: number;
     parts_cents: number;
+    /** Labor allowances for out-of-pattern work (absent on budgets from before 2026-10-13). */
+    allowances_cents?: number;
     /** An approved-only price reduction the requester asked for (equipment + labor + services + parts, then minus this). */
     discount: { pct: number; note: string; cents: number } | null;
     subtotal_cents: number;
@@ -170,16 +181,29 @@ export function bind(draft: ProposalDraft, ctx: BindContext): Proposal {
 
   const equipment = sum(sections.map((s) => s.equipment_cents));
   const labor = sum(sections.map((s) => s.labor_cents)) + (projectLabor?.price_cents ?? 0);
+  // Out-of-pattern work at the policy labor rate; without a rate it is a TBD allowance like labor.
+  const laborAllowances: PricedLaborAllowance[] = [];
+  for (const a of draft.labor_allowances ?? []) {
+    const rate = policy?.labor_rates.find((r) => r.labor_type === a.labor_type);
+    if (!rate) {
+      allowances.push({ label: `${a.label} (${a.hours} hours)`, reason: "no labor rate in the commercial policy; shown as a TBD allowance outside committed totals" });
+      continue;
+    }
+    const perHour = Math.round(rate.price_per_hour * 100);
+    laborAllowances.push({ ...a, price_per_hour_cents: perHour, price_cents: Math.round(perHour * a.hours), cost_cents: Math.round(Math.round(rate.cost_per_hour * 100) * a.hours) });
+  }
+  const allowanceCents = sum(laborAllowances.map((a) => a.price_cents));
   const services = sum(draft.services.map((s) => s.unit_price_cents));
   const floor = policy ? minimumMarginPct(policy, ctx.scope.market) : null;
   // Everything that depends on the parts line: totals, discount and margin.
   const priceWith = (parts: PricedParts | null) => {
     const partsCents = parts?.price_cents ?? 0;
-    const gross = equipment + labor + services + partsCents;
+    const gross = equipment + labor + services + allowanceCents + partsCents;
     const discount = ctx.scope.requested_discount ? { ...ctx.scope.requested_discount, cents: Math.round((gross * ctx.scope.requested_discount.pct) / 100) } : null;
     const costed = [...bound.map((l) => ({ id: l.label, price: l.extended_cents, cost: l.unit_cost_cents === null ? null : l.unit_cost_cents * l.quantity })),
       ...draft.services.map((s) => ({ id: s.label, price: s.unit_price_cents, cost: s.unit_cost_cents })),
       ...(projectLabor ? [{ id: "Labor", price: projectLabor.price_cents, cost: projectLabor.cost_cents }] : []),
+      ...laborAllowances.map((a) => ({ id: a.label, price: a.price_cents, cost: a.cost_cents })),
       ...(parts ? [{ id: parts.label, price: parts.price_cents, cost: parts.cost_cents }] : []),
       // The discount comes straight off the margin.
       ...(discount ? [{ id: "Discount", price: -discount.cents, cost: 0 }] : [])];
@@ -192,7 +216,8 @@ export function bind(draft: ProposalDraft, ctx: BindContext): Proposal {
   // Design & Delivery starts at its base share; below the margin floor it rises, up to its cap,
   // until the budget clears the floor (Henry, 2026-10-12). Past the cap the budget waits for an admin.
   const dd = policy?.design_delivery;
-  const productLabor = equipment + labor + services;
+  // Allowance labor is labor: Design & Delivery covers its materials too.
+  const productLabor = equipment + labor + services + allowanceCents;
   let priced = priceWith(draft.parts && policy ? sizeParts(draft.parts, productLabor, policy, dd?.base_pct) : null);
   if (dd && draft.parts && policy && floor !== null && priced.margin !== null && priced.margin < floor) {
     for (let pctOf = dd.base_pct + DESIGN_DELIVERY_STEP_PCT; pctOf <= dd.max_pct + 1e-9; pctOf += DESIGN_DELIVERY_STEP_PCT) {
@@ -246,14 +271,19 @@ export function bind(draft: ProposalDraft, ctx: BindContext): Proposal {
     parts,
     requirements: draft.requirements,
     allowances,
+    labor_allowances: laborAllowances,
     unresolved: draft.unresolved,
     assumptions: draft.assumptions,
     exclusions: [...draft.exclusions, ...ctx.scope.excluded_scope],
     remaining_verification: [
-      ...verifyQuantities,
-      ...(draft.labor?.extras ?? []).map((x) => `${x.label}: ${x.hours} hours included in labor`),
-      ...draft.unresolved.map((u) => `${u.item}: ${u.reason}`),
-      ...ctx.scope.unresolved_questions,
+      ...new Set([
+        ...verifyQuantities,
+        ...(draft.labor?.extras ?? []).map((x) => `${x.label}: ${x.hours} hours included in labor`),
+        ...draft.unresolved.map((u) => `${u.item}: ${u.reason}`),
+        ...(draft.to_verify ?? []),
+        // A product the request named and the budget prices is not left to verify.
+        ...ctx.scope.unresolved_questions.filter((q) => !pricedProduct(q, bound)),
+      ]),
     ],
     commercial: {
       complete,
@@ -262,6 +292,7 @@ export function bind(draft: ProposalDraft, ctx: BindContext): Proposal {
       labor_cents: labor,
       services_cents: services,
       parts_cents: partsCents,
+      allowances_cents: allowanceCents,
       discount,
       subtotal_cents: subtotal,
       tax,
@@ -277,11 +308,24 @@ export function bind(draft: ProposalDraft, ctx: BindContext): Proposal {
       minimum_gross_margin_pct: floor,
       mix: {
         equipment: categoryMix(bound.map((l) => ({ price: l.extended_cents, cost: l.unit_cost_cents === null ? null : l.unit_cost_cents * l.quantity })), subtotal),
-        labor: categoryMix(projectLabor ? [{ price: projectLabor.price_cents, cost: projectLabor.cost_cents }] : [], subtotal),
+        labor: categoryMix([...(projectLabor ? [projectLabor] : []), ...laborAllowances].map((x) => ({ price: x.price_cents, cost: x.cost_cents })), subtotal),
         parts: categoryMix(parts ? [{ price: parts.price_cents, cost: parts.cost_cents }] : [], subtotal),
       },
     },
   };
+}
+
+const compactText = (s: string) => s.toLowerCase().replace(/[^a-z0-9]/g, "");
+
+/** "Requested product: Araknis AN-520-AP-I" when a priced line is that product (its model, requested model or label). */
+function pricedProduct(question: string, lines: BoundLine[]): boolean {
+  const m = /^requested product:\s*(.+)$/i.exec(question.trim());
+  if (!m) return false;
+  const asked = compactText(m[1]!);
+  if (asked.length < 3) return false;
+  return lines.some((l) =>
+    [l.model, l.label].map(compactText).some((x) => x.length >= 4 && (asked.includes(x) || x.includes(asked))),
+  );
 }
 
 function categoryMix(items: Array<{ price: number; cost: number | null }>, subtotal: number) {

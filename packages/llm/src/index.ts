@@ -59,6 +59,7 @@ Rules:
 - requested_quantities: the complete list of stated counts, only when the answer states numbers; never estimate.
 - existing_detectors: "keep_and_monitor", "replace" or "none" when the answer says what happens to existing smoke/CO detectors.
 - requested_discount: {"pct","note"} when the answer asks for a percentage off this project's price.
+- unresolved_questions: the complete updated list of open items. When the answer says a product won't work or should be replaced ("the Sanus mount won't work", "swap the speakers for something better") but names no model, add "Requested product: <what the answer describes>" so it is checked before the budget is final. Remove an item the answer settles. Otherwise leave this field out.
 - labor_hours: the total labor hours as a number when the answer sets them ("hours to 7", "make labor 7 hours total", "15.5 hours is too high, use 7"). Only when the answer states a number; "too many hours" alone is not a number.
 - Never infer values the answer does not state.
 - If the answer cannot be mapped to these fields, set unmapped true and send no updates.
@@ -84,6 +85,7 @@ export const PATCH_FIELDS = [
   "target_installation_date",
   "proposal",
   "labor_hours",
+  "unresolved_questions",
 ] as const;
 
 /**

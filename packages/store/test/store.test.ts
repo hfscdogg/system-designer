@@ -173,9 +173,11 @@ describe("design retainer", () => {
   it("keeps one pending retainer per thread, cleared on reset and by the requester's next run", async () => {
     const { store, db } = await testStore();
     const run = await startRun(store, "m1");
+    await store.setPendingRetainer(thread, run.id, "zack", "jane@example.com");
+    expect(await store.pendingRetainer(thread)).toEqual({ run_id: run.id, person_id: "zack", suggested_email: "jane@example.com" });
+    // A second tap replaces the first, suggestion and all.
     await store.setPendingRetainer(thread, run.id, "zack");
-    await store.setPendingRetainer(thread, run.id, "zack");
-    expect(await store.pendingRetainer(thread)).toEqual({ run_id: run.id, person_id: "zack" });
+    expect(await store.pendingRetainer(thread)).toEqual({ run_id: run.id, person_id: "zack", suggested_email: null });
     await db.query(`UPDATE pending_retainers SET created_at = now() - interval '2 hours'`);
     expect(await store.pendingRetainer(thread, 1)).toBeNull();
     expect(await store.pendingRetainer(thread)).not.toBeNull();

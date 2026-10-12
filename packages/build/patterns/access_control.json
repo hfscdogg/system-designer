@@ -1,7 +1,7 @@
 {
   "schema": "architecture_pattern_v1",
   "pattern": "access_control",
-  "version": "2026-10-08.1",
+  "version": "2026-10-13.1",
   "title": "Access control",
   "applies_when_any": [
     "access_control"
@@ -142,7 +142,7 @@
     "label": "Design & Delivery"
   },
   "assumptions": [
-    "Doors and frames accept a standard electric strike.",
+    "Doors and frames are ready for a standard electric strike.",
     "Cable can be run from each door to the equipment location."
   ],
   "exclusions": [

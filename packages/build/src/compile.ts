@@ -39,6 +39,8 @@ const SelectionSchema = z
     ),
     allowances: z.array(z.object({ label: z.string(), reason: z.string() }).strict()),
     unresolved: z.array(z.object({ item: z.string(), role: z.string().nullable(), reason: z.string(), escalate: z.boolean() }).strict()),
+    labor_allowances: z.array(z.object({ key: z.string(), label: z.string(), hours: z.number().positive(), labor_type: z.string() }).strict()).default([]),
+    to_verify: z.array(z.string()).default([]),
   })
   .strict();
 
@@ -81,6 +83,15 @@ export interface DraftLabor {
   basis: string;
 }
 
+/** Labor for out-of-pattern work, from the pattern's allowance template: hours only, priced at the policy rate. */
+export interface DraftLaborAllowance {
+  key: string;
+  label: string;
+  hours: number;
+  labor_type: string;
+  basis: string;
+}
+
 export interface DraftParts {
   record_id: string;
   label: string;
@@ -102,7 +113,10 @@ export interface ProposalDraft {
   parts: DraftParts | null;
   requirements: Selection["requirements"];
   allowances: Selection["allowances"];
+  labor_allowances: DraftLaborAllowance[];
   unresolved: Selection["unresolved"];
+  /** Requested products with no Livewire standard, to verify (priced in the final proposal). */
+  to_verify: string[];
   assumptions: string[];
   exclusions: string[];
 }
@@ -139,7 +153,7 @@ export function compile(raw: unknown, catalog: Map<string, AdmittedProduct>, pat
     } else if (requestedRecords.has(`${line.role}:${line.record_id}`)) errors.push(`role ${line.role} names ${line.record_id} twice`);
     else requestedRecords.add(`${line.role}:${line.record_id}`);
     seenRoles.add(line.role);
-    const variant = role.variants?.find((v) => v.product_id === line.record_id);
+    const variant = role.variants?.find((v) => v.product_id === line.record_id) ?? role.market_variants?.find((v) => v.product_id === line.record_id);
     const product = catalog.get(line.record_id);
     // A product the request named by model replaces the standard only when the admitted record carries that model.
     const key = (s: string | null | undefined) => (s ?? "").toLowerCase().replace(/[^a-z0-9]/g, "");
@@ -234,6 +248,14 @@ export function compile(raw: unknown, catalog: Map<string, AdmittedProduct>, pat
     }
   }
 
+  // Allowances are the pattern's own templates, hours and all: never a free number.
+  const laborAllowances: DraftLaborAllowance[] = [];
+  for (const a of sel.labor_allowances) {
+    const spec = pattern.allowances?.find((x) => x.key === a.key);
+    if (!spec || spec.label !== a.label || spec.hours !== a.hours || spec.labor_type !== a.labor_type) errors.push(`allowance ${a.key} is not the pattern's template`);
+    else laborAllowances.push({ key: spec.key, label: spec.label, hours: spec.hours, labor_type: spec.labor_type, basis: spec.basis });
+  }
+
   // Critical role coverage: every critical role the selection implies is priced or explicitly unresolved.
   for (const req of sel.requirements) {
     for (const roleName of req.roles) {
@@ -263,7 +285,9 @@ export function compile(raw: unknown, catalog: Map<string, AdmittedProduct>, pat
       parts,
       requirements: sel.requirements,
       allowances: sel.allowances,
+      labor_allowances: laborAllowances,
       unresolved: sel.unresolved,
+      to_verify: sel.to_verify,
       assumptions: pattern.assumptions,
       exclusions: pattern.exclusions,
     },
