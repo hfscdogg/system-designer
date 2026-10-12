@@ -1,6 +1,6 @@
 import { isAddOnRequest, type ScopeDraftV1 } from "@sd/core";
 import type { NamedProduct } from "./named.ts";
-import { laborHoursFor, type PatternSpec, type RoleSpec } from "./pattern.ts";
+import { laborHoursFor, type AllowanceSpec, type PatternSpec, type RoleSpec } from "./pattern.ts";
 
 /**
  * Deterministic materializer (PRD §13.2): approved scope + approved pattern →
@@ -36,6 +36,10 @@ export interface Selection {
   requirements: Array<{ system: string; classification: Classification; roles: string[]; note: string }>;
   allowances: Array<{ label: string; reason: string }>;
   unresolved: Array<{ item: string; role: string | null; reason: string; escalate: boolean }>;
+  /** Labor for out-of-pattern work the request asks for (a conduit run), from the pattern's allowance templates; priced at the policy rate. */
+  labor_allowances: Array<{ key: string; label: string; hours: number; labor_type: string }>;
+  /** Requested products with no Livewire standard (a TV cart), listed to verify and priced in the final proposal. */
+  to_verify: string[];
 }
 
 const fold = (s: string) => s.toLowerCase();
@@ -165,7 +169,13 @@ function named(scope: ScopeDraftV1, role: RoleSpec, roles: RoleSpec[]): boolean 
  * cameras" names the floodlight camera, not the turret.
  */
 function namedSpecifically(scope: ScopeDraftV1, role: RoleSpec, roles: RoleSpec[]): boolean {
-  const changes = fold(scope.requested_changes.join(" | "));
+  let changes = fold(scope.requested_changes.join(" | "));
+  // Another alternative's words, and the words right after them, describe that alternative: an "articulating TV mount" is not the tilt "TV mount".
+  for (const r of roles.filter((x) => x !== role && role.alternative_group && x.alternative_group === role.alternative_group)) {
+    for (const t of [r.label, ...(r.mentions ?? []), ...(r.count_terms ?? [])].map(fold)) {
+      changes = changes.replace(new RegExp(`\\b${escape(t)}(s|es)?\\b(\\s+[\\w-]+){0,2}`, "g"), " ");
+    }
+  }
   return (
     [role.label, ...(role.mentions ?? [])].some((t) => changes.includes(fold(t))) ||
     (role.count_terms ?? []).some((t) => hasWord(changes, fold(t))) ||
@@ -342,6 +352,8 @@ export function materialize(original: ScopeDraftV1, pattern: PatternSpec, namedP
   const removedRoles = new Set<string>();
   // Roles left out because the request never asked for them (no mention, or the role they serve isn't priced).
   const notAsked = new Set<string>();
+  const toVerify: string[] = [];
+  const verifyOnly = new Set<string>();
   for (const role of candidates) {
     if (role.alternative_group && namedGroups.has(role.alternative_group) && !namedSpecifically(scope, role, pattern.roles)) continue;
     // In an add-on, a role is priced when the request names it or names its own system (smoke detection alongside sensors).
@@ -370,6 +382,13 @@ export function materialize(original: ScopeDraftV1, pattern: PatternSpec, namedP
       // Retained equipment awaiting field testing is unresolved, not supported (PRD §12).
       unresolved.push({ item: `${role.label} (retained: ${retained})`, role: role.role, reason: "existing equipment must be field-tested before it can be reused", escalate: false });
       blockedRoles.add(role.role);
+      continue;
+    }
+    if (!role.product_id && !product && role.unpriced === "verify") {
+      // Asked for, but Livewire has no standard to price: listed to verify instead of silently becoming something else.
+      const said = scope.unresolved_questions.some((q) => /^requested product:/i.test(q) && (role.mentions ?? []).some((t) => hasWord(fold(q), fold(t))));
+      if (!said) toVerify.push(`Requested product: ${role.label} (no Livewire standard; priced in the final proposal)`);
+      verifyOnly.add(role.role);
       continue;
     }
     if (!role.product_id && !product) {
@@ -405,7 +424,7 @@ export function materialize(original: ScopeDraftV1, pattern: PatternSpec, namedP
     const asOne = minimum && role.quantity.qty > 1 && namedAsOne(scope, role);
     lines.push({
       role: role.role,
-      record_id: product?.record_id ?? variantFor(scope, role)?.product_id ?? role.product_id!,
+      record_id: product?.record_id ?? variantFor(scope, role)?.product_id ?? marketVariant(scope, role)?.product_id ?? role.product_id!,
       quantity: (stated ?? (asOne ? 1 : role.quantity.qty)) + moved,
       quantity_basis: minimum && !asOne ? "minimum_to_verify" : "fixed",
       verify: asOne ? null : moved && verify ? `${verify}; includes ${moved} for moved existing equipment (confirm wall and power in the new room)` : verify,
@@ -450,6 +469,28 @@ export function materialize(original: ScopeDraftV1, pattern: PatternSpec, namedP
     }
   }
 
+  // Amplifiers follow the speakers they drive (Henry, 2026-10-12), once the request asks for speakers or counts existing ones.
+  for (const line of lines) {
+    const role = pattern.roles.find((r) => r.role === line.role);
+    if (!role?.drives || line.requested_model || statedQuantity(scope, role, pattern.roles) !== null) continue;
+    const driven = pattern.roles.filter((r) => role.drives!.roles.includes(r.role));
+    const existing = driven.reduce((n, r) => n + retainedUnits(scope, r, pattern.roles), 0);
+    if (!existing && !driven.some((r) => included.includes(r) && names(r))) continue;
+    const speakerLines = lines.filter((l) => role.drives!.roles.includes(l.role));
+    // A pair is two speakers; a named product in its place is sold each.
+    const perItem = (l: SelectionLine) => {
+      const r = driven.find((x) => x.role === l.role)!;
+      return l.record_id === r.product_id || r.variants?.some((v) => v.product_id === l.record_id) ? (r.units_per_item ?? 1) : 1;
+    };
+    const speakers = speakerLines.reduce((n, l) => n + l.quantity * perItem(l), 0) + existing;
+    if (!speakers) continue;
+    const per = marketVariant(scope, role)?.speakers_per_unit ?? role.drives.speakers_per_unit;
+    const toCheck = speakerLines.some((l) => l.quantity_basis === "minimum_to_verify");
+    line.quantity = Math.ceil(speakers / per);
+    line.quantity_basis = toCheck ? "minimum_to_verify" : "fixed";
+    line.verify = toCheck ? `one amplifier per ${per} speakers; ${speakers} speakers so far` : null;
+  }
+
   const devices = lines.reduce((n, l) => n + l.quantity, 0);
   // Labor-only allowances the request mentions (framing a niche), priced as hours at the pattern's labor rate.
   const extras = (pattern.labor_extras ?? []).filter((x) => mentioned(scope, x.mentions)).map((x) => x.id);
@@ -469,6 +510,10 @@ export function materialize(original: ScopeDraftV1, pattern: PatternSpec, namedP
     else allowances.push({ label: spec?.label ?? category, reason: "no authenticated price; shown as a TBD allowance outside committed totals" });
   }
 
+  // Out-of-pattern work the request asks for, in its changes or as a system no role covers: one allowance per template.
+  const uncovered = scope.functional_systems.filter((system) => !candidates.some((r) => r.systems.includes(system)));
+  const laborAllowances = allowancesFor(pattern.allowances ?? [], [...requestTexts(scope), ...uncovered.map(fold)], scope.functional_systems);
+
   // A system whose devices the request removed entirely is no longer required.
   const removedSystems = scope.functional_systems.filter(
     (system) => !included.some((r) => r.systems.includes(system)) && candidates.some((r) => r.systems.includes(system) && removedRoles.has(r.role)),
@@ -481,6 +526,9 @@ export function materialize(original: ScopeDraftV1, pattern: PatternSpec, namedP
       // Every device of the system is optional gear the request never asked for (no Wi-Fi asked on a camera job): nothing to price.
       return { system, classification: "removed", roles: [], note: "no device of this system was asked for" };
     }
+    // Work no role covers but an allowance template does (a conduit run) is priced as labor hours, not escalated.
+    const allowance = laborAllowances.find((a) => a.texts.includes(fold(system)));
+    if (!roles.length && allowance) return { system, classification: "allowance", roles: [], note: `allowance: ${allowance.label}` };
     if (!roles.length) {
       unresolved.push({ item: system, role: null, reason: `not covered by the ${pattern.title} pattern`, escalate: true });
       return { system, classification: "unresolved", roles: [], note: "no approved pattern role" };
@@ -489,7 +537,10 @@ export function materialize(original: ScopeDraftV1, pattern: PatternSpec, namedP
     if (blockedCritical.length) {
       return { system, classification: "unresolved", roles: roles.map((r) => r.role), note: `unresolved: ${blockedCritical.map((r) => r.label).join(", ")}` };
     }
-    const priced = roles.filter((r) => !blockedRoles.has(r.role));
+    const priced = roles.filter((r) => !blockedRoles.has(r.role) && !verifyOnly.has(r.role));
+    if (!priced.length && roles.some((r) => verifyOnly.has(r.role))) {
+      return { system, classification: "allowance", roles: roles.map((r) => r.role), note: `requested product to price: ${roles.filter((r) => verifyOnly.has(r.role)).map((r) => r.label).join(", ")}` };
+    }
     return { system, classification: priced.length ? "supported" : "unresolved", roles: roles.map((r) => r.role), note: priced.map((r) => r.capability).join("; ") };
   });
 
@@ -505,5 +556,40 @@ export function materialize(original: ScopeDraftV1, pattern: PatternSpec, namedP
     requirements,
     allowances,
     unresolved,
+    labor_allowances: laborAllowances.map(({ key, label, hours, labor_type }) => ({ key, label, hours, labor_type })),
+    to_verify: toVerify,
   };
+}
+
+/**
+ * The allowance templates these texts (each change, and each system no role covers) ask for,
+ * once each, in file order, with the texts that asked.
+ */
+function allowancesFor(templates: AllowanceSpec[], texts: string[], systems: string[]): Array<AllowanceSpec & { texts: string[] }> {
+  const any = (t: string, words?: string[]) => !!words?.some((w) => hasWord(t, fold(w)));
+  return templates.flatMap((a) => {
+    if (a.covered_by_systems?.some((s) => systems.includes(s))) return [];
+    const asking = texts.filter((t) => any(t, a.mentions) && (!a.require || any(t, a.require)) && !any(t, a.exclude));
+    return asking.length ? [{ ...a, texts: asking }] : [];
+  });
+}
+
+/** The role's approved record for the job's market (a 70V amplifier on a commercial job), if it has one. */
+function marketVariant(scope: ScopeDraftV1, role: RoleSpec) {
+  return role.market_variants?.find((v) => v.market === scope.market);
+}
+
+/** Existing units the request counts for this role ("5 existing in-ceiling speakers"), from its stated counts or the retained list. */
+function retainedUnits(scope: ScopeDraftV1, role: RoleSpec, roles: RoleSpec[]): number {
+  const best = (text: string) => {
+    const scores = roles.map((r) => matchScore(text, r));
+    const top = Math.max(...scores);
+    return top > 0 ? roles[scores.indexOf(top)] : undefined;
+  };
+  const stated = scope.requested_quantities.filter((q) => EXISTING_ITEM.test(fold(q.item)) && best(q.item) === role).reduce((n, q) => n + q.quantity, 0);
+  if (stated) return stated;
+  // "5 existing in-ceiling speakers" in the retained list; a size ("65-inch") is not a count.
+  return scope.retained_equipment
+    .filter((e) => (role.retained_match ?? []).some((t) => hasWord(fold(e), fold(t))) && best(e) === role)
+    .reduce((n, e) => n + Number(/^\D*?\b(\d{1,3})\b(?!\s*(-\s*)?(inch|in\b|"|”|″|ft|feet|'))/.exec(e)?.[1] ?? 0), 0);
 }

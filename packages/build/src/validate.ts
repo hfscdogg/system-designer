@@ -82,6 +82,13 @@ export function validateProposal(
     if (p.labor.price_cents !== Math.round(p.labor.price_per_hour_cents * p.labor.hours)) block("arithmetic", "labor total does not reconcile");
   }
 
+  // Labor allowances: the policy rate for exactly the template's hours.
+  for (const a of p.labor_allowances ?? []) {
+    const rate = policy?.policy.labor_rates.find((r) => r.labor_type === a.labor_type);
+    if (!rate || Math.round(rate.price_per_hour * 100) !== a.price_per_hour_cents) block("provenance", `${a.label} is not at the policy labor rate`);
+    if (a.price_cents !== Math.round(a.price_per_hour_cents * a.hours)) block("arithmetic", `${a.label} does not reconcile`);
+  }
+
   // Arithmetic reconciliation.
   for (const s of p.sections) {
     const eq = sum(s.lines.map((l) => l.unit_price_cents * l.quantity));
@@ -95,11 +102,12 @@ export function validateProposal(
     c.equipment_cents !== sum(p.sections.map((s) => s.equipment_cents)) ||
     c.labor_cents !== laborTotal ||
     c.services_cents !== servicesTotal ||
-    c.parts_cents !== (p.parts?.price_cents ?? 0)
+    c.parts_cents !== (p.parts?.price_cents ?? 0) ||
+    (c.allowances_cents ?? 0) !== sum((p.labor_allowances ?? []).map((a) => a.price_cents))
   ) {
     block("arithmetic", "commercial totals do not reconcile with sections");
   }
-  const gross = c.equipment_cents + c.labor_cents + c.services_cents + c.parts_cents;
+  const gross = c.equipment_cents + c.labor_cents + c.services_cents + (c.allowances_cents ?? 0) + c.parts_cents;
   if (c.discount && c.discount.cents !== Math.round((gross * c.discount.pct) / 100)) block("arithmetic", "discount does not reconcile");
   if (c.subtotal_cents !== gross - (c.discount?.cents ?? 0)) block("arithmetic", "subtotal does not reconcile");
 

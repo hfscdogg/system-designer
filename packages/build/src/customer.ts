@@ -44,6 +44,8 @@ export interface CustomerProposal {
   intro: { systems: string; rooms: string[]; labor_hours: number | null };
   services: string[];
   allowances: Array<{ label: string; note: string }>;
+  /** Labor for out-of-pattern work, priced and in the total: "Allowances — verify on site". */
+  labor_allowances: Array<{ label: string; note: string; amount_cents: number }>;
   assumptions: string[];
   exclusions: string[];
   remaining_verification: string[];
@@ -54,6 +56,8 @@ export interface CustomerProposal {
     total_cents: number | null;
     /** Design & Delivery: its own section and a Summary row, as Livewire lists it on proposals. */
     parts_cents: number;
+    /** The labor allowances' total, shown in the Summary. */
+    allowances_cents: number;
     /** An admin-approved price reduction, shown in the Summary. */
     reduction: { pct: number; cents: number } | null;
     /** The design retainer (see retainerCents), invoiced from QuickBooks Online (Henry, 2026-10-12). */
@@ -99,6 +103,7 @@ export function customerView(p: Proposal): CustomerProposal {
       ...(p.parts ? [p.parts.label] : []),
     ],
     allowances: p.allowances.map((a) => ({ label: a.label, note: "Allowance — TBD, not included in totals" })),
+    labor_allowances: (p.labor_allowances ?? []).map((a) => ({ label: a.label, note: `About ${a.hours} hours of labor, confirmed on site`, amount_cents: a.price_cents })),
     assumptions: p.assumptions,
     exclusions: p.exclusions,
     remaining_verification: p.remaining_verification,
@@ -108,6 +113,7 @@ export function customerView(p: Proposal): CustomerProposal {
       tax: p.commercial.tax.status === "calculated" ? { rate_pct: p.commercial.tax.rate_pct, cents: p.commercial.tax.cents } : "TBD",
       total_cents: p.commercial.total_cents,
       parts_cents: p.commercial.parts_cents,
+      allowances_cents: p.commercial.allowances_cents ?? 0,
       reduction: p.commercial.discount ? { pct: p.commercial.discount.pct, cents: p.commercial.discount.cents } : null,
       retainer: { cents: retainerCents(p.commercial) },
       likely_range: p.commercial.likely_range ? { low_cents: p.commercial.likely_range.low_cents, high_cents: p.commercial.likely_range.high_cents } : null,

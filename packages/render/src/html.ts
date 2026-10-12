@@ -136,6 +136,21 @@ export function renderProposalHtml(c: CustomerProposal, brand: Brand, images: Im
       <div class="section-total">${formatUsd(c.commercial.parts_cents)}</div>
     </div>`
       : "";
+  // Out-of-pattern work (a conduit run), priced as labor hours and included in the total.
+  const laborAllowances = c.labor_allowances?.length
+    ? `
+    <div class="quote-section">
+      <h3>Allowances — verify on site</h3>
+      <p class="scope">Work outside the systems above, budgeted as installation hours and confirmed during the site visit.</p>
+      <table class="items">
+        <thead><tr><th class="item">ITEM</th><th class="num amount">AMOUNT</th></tr></thead>
+        <tbody>${c.labor_allowances
+          .map((a) => `<tr class="line"><td class="name"><div class="item-name">${escapeHtml(a.label)}</div><div class="item-desc">${escapeHtml(a.note)}</div></td><td class="num amount">${formatUsd(a.amount_cents)}</td></tr>`)
+          .join("")}</tbody>
+      </table>
+      <div class="section-total">${formatUsd(c.commercial.allowances_cents)}</div>
+    </div>`
+    : "";
   const allowances = c.allowances.length
     ? `
     <div class="quote-section">
@@ -147,7 +162,8 @@ export function renderProposalHtml(c: CustomerProposal, brand: Brand, images: Im
   const k = c.commercial;
   const complete = k.total_cents !== null;
   const summaryRows = [
-    ["Product + Labor", formatUsd(k.subtotal_cents + (k.reduction?.cents ?? 0) - k.parts_cents), ""],
+    ["Product + Labor", formatUsd(k.subtotal_cents + (k.reduction?.cents ?? 0) - k.parts_cents - (k.allowances_cents ?? 0)), ""],
+    ...(k.allowances_cents ? [["Allowances (verify on site)", formatUsd(k.allowances_cents), ""]] : []),
     ...(k.parts_cents > 0 ? [["Design & Delivery", formatUsd(k.parts_cents), ""]] : []),
     ...(k.reduction ? [[`Discount (${k.reduction.pct}%)`, `(${formatUsd(k.reduction.cents)})`, ""]] : []),
     [complete ? "Subtotal" : k.label, formatUsd(k.subtotal_cents), "strong"],
@@ -219,6 +235,8 @@ img.product{width:46px;height:40px;object-fit:contain}
 .item-name{font-weight:600;font-size:12px}
 .item-desc{font-size:11px;margin-top:3px}
 .qty{width:70px;text-align:center;font-size:12px}
+.amount{width:90px;text-align:right;font-size:12px}
+table.items th.amount{text-align:right}
 .section-total{text-align:right;font-size:15px;margin:20px 0 10px}
 .warranty p{font-weight:500}
 .sum-row{display:flex;justify-content:space-between;padding:17px 0;border-bottom:1px solid var(--rule);font-size:12px}
@@ -276,6 +294,7 @@ ${brand.copy.intro_after.map((t) => `<p>${escapeHtml(t)}</p>`).join("")}
 <h2>Your Custom Quote:</h2>
 ${sections || "<p>No equipment priced yet.</p>"}
 ${labor}
+${laborAllowances}
 ${designDelivery}
 ${allowances}
 

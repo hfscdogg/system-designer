@@ -121,6 +121,7 @@ describe("PDF + preflight", () => {
       p.services.forEach((s) => add(`${p.pattern} service`, s.label));
       add(`${p.pattern} parts`, p.parts?.label);
       (p.labor_extras ?? []).forEach((x) => add(`${p.pattern} labor extra`, x.label));
+      (p.allowances ?? []).forEach((x) => add(`${p.pattern} allowance`, x.label));
       for (const r of p.roles) {
         add(`${p.pattern}.${r.role}`, r.label, r.location, r.capability, r.quantity.kind === "minimum" ? r.quantity.verify : undefined);
         (r.variants ?? []).forEach((v) => add(`${p.pattern}.${r.role} variant`, v.label));
@@ -140,6 +141,26 @@ describe("PDF + preflight", () => {
     const all = { ...c, assumptions: [...new Set(patterns.flatMap((p) => p.assumptions))], exclusions: [...new Set(patterns.flatMap((p) => p.exclusions))] };
     const pdf = await htmlToPdf(renderProposalHtml(all, brand, {}, meta));
     expect((await preflightPdf(pdf, { customer: all, runId: "run_r1", sha256: sha256Hex(pdf) })).failures).toEqual([]);
+  }, 60_000);
+
+  it("prints labor allowances in their own section with their amounts, and preflight checks them", async () => {
+    const c = await customer();
+    const withAllowances = {
+      ...c,
+      labor_allowances: [{ label: "Conduit run (allowance)", note: "About 6 hours of labor, confirmed on site", amount_cents: 107400 }],
+      commercial: { ...c.commercial, allowances_cents: 107400 },
+    };
+    const pdf = await htmlToPdf(renderProposalHtml(withAllowances, await loadBrand(), {}, meta));
+    expect((await preflightPdf(pdf, { customer: withAllowances, runId: "run_r1", sha256: sha256Hex(pdf) })).failures).toEqual([]);
+    const missing = { ...withAllowances, labor_allowances: [...withAllowances.labor_allowances, { label: "Trenching for buried cable (allowance)", note: "About 6 hours of labor, confirmed on site", amount_cents: 99_999 }] };
+    expect((await preflightPdf(pdf, { customer: missing, runId: "run_r1", sha256: sha256Hex(pdf) })).failures.join()).toMatch(/Trenching for buried cable .* not found/);
+    const pdfjs = await import("pdfjs-dist/legacy/build/pdf.mjs");
+    const doc = await pdfjs.getDocument({ data: new Uint8Array(pdf), disableFontFace: true, verbosity: 0 }).promise;
+    let text = "";
+    for (let n = 1; n <= doc.numPages; n++) text += " " + (await (await doc.getPage(n)).getTextContent()).items.map((i) => ("str" in i ? i.str : "")).join(" ");
+    text = text.replace(/\s+/g, " ");
+    expect(text).toContain("Allowances — verify on site");
+    expect(text).toContain("Allowances (verify on site) $1,074.00");
   }, 60_000);
 
   it("refuses to render anything that loads external resources", async () => {

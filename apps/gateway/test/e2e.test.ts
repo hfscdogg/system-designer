@@ -6,7 +6,7 @@ import { recordingQboClient, type QboClient } from "@sd/qbo";
 import { completeExtraction, noPatch } from "../../../packages/core/test/fixtures.ts";
 import { TEST_POLICY, testStore } from "../../../packages/store/test/helpers.ts";
 import { recordedDToolsReader, recordingDToolsWriter, type DToolsWriter } from "@sd/dtools";
-import { loadPatterns, patternRecordIds, selectPattern, type PatternSpec, type Selection } from "@sd/build";
+import { loadPatterns, patternRecordIds, selectPattern, type CustomerProposal, type PatternSpec, type Selection } from "@sd/build";
 import { CATALOG, product, testPattern } from "../../../packages/build/test/fixtures.ts";
 import { htmlToPdf, preflightPdf } from "@sd/render";
 import { sha256Hex } from "@sd/core";
@@ -948,6 +948,37 @@ describe("editing a scope and revising a finished budget", () => {
     const subtotal = async (runId: string) => (await t.store.readArtifact<{ commercial: { subtotal_cents: number } }>(runId, "validate", "customer_view"))!.commercial.subtotal_cents;
     expect(await subtotal(revised.id)).toBeLessThan(await subtotal(original!.id));
     expect(t.texts().some((x) => x.startsWith("I couldn't apply"))).toBe(false);
+  });
+
+  it("builds the Crowder job to a held PDF with a total: allowances for the conduit and outdoor outlet, the cart to price, no wall mount (Henry, 2026-10-12)", async () => {
+    const patterns = await loadPatterns();
+    const both = selectPattern(["networking", "audio_video"], patterns)!;
+    const catalog = Object.fromEntries(patternRecordIds(both).map((id, i) => [id, id === both.parts!.product_id ? product(id, "Livewire", "PARTS", 1, 0.01, { laborItems: [] }) : product(id, "TestCo", `DEV-${i}`, 300, 150, { laborItems: [] })]));
+    const crowder = completeExtraction({
+      client: "Rick Crowder",
+      project_type: "Outdoor WiFi and TV",
+      room_types: ["Patio"],
+      functional_systems: ["outdoor WiFi", "TV", "conduit", "outdoor outlet"],
+      requested_changes: ["Add outdoor WiFi for the back patio and pool", "Put the customer's TV on a Bretford rolling cart outside", "Run conduit from the house to the patio", "Add an outdoor outlet by the pool for the TV"],
+      existing_equipment: { status: "described", retained: ["TV"], removed_or_replaced: [] },
+      existing_detectors: "not_provided",
+      unresolved_questions: ["Requested product: Bretford rolling cart"],
+    });
+    const t = await setup([crowder], [], { catalog, patterns, policy: { ...TEST_POLICY, tax: { mode: "rate", rate_pct: 6, applies_to: "taxable_equipment" } } });
+    await t.send(chatMessage("Rick Crowder outdoor WiFi and TV cart"));
+    const [first] = t.receipts();
+    await t.send(click(first!.receiptId, first!.approve!.scopeHash));
+    const [run] = await t.store.listRunsForPerson("zack");
+    expect(run!.state).toBe("READY_HELD");
+    const view = (await t.store.readArtifact<CustomerProposal>(run!.id, "validate", "customer_view"))!;
+    expect(view.commercial.total_cents).not.toBeNull();
+    expect(view.labor_allowances.map((a) => a.label)).toEqual(["Outdoor electrical outlet (allowance)", "Conduit run (allowance)"]);
+    expect(view.remaining_verification).toContain("Requested product: Bretford rolling cart");
+    const roles = (await t.store.readArtifact<Selection>(run!.id, "selection", "selection"))!.lines.map((l) => l.role);
+    expect(roles).not.toContain("tv_mount");
+    expect(roles).not.toContain("wired_access_point");
+    expect(t.chat.files).toHaveLength(1);
+    expect(t.texts().some((x) => x.startsWith("⚠️ Needs Zack's review"))).toBe(false);
   });
 
   it("sets the labor hours in a revision (\"hours to 7\"), replacing the estimate", async () => {

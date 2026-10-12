@@ -113,7 +113,7 @@ export function createBuildStage(deps: BuildDeps) {
       lines: selection.lines.map((l) => `${l.role}|${l.record_id}|${l.quantity}|${l.location}`).sort(),
       labor_hours: selection.labor?.hours ?? null,
       services: selection.services.map((x) => x.record_id).sort(),
-      allowances: selection.allowances.map((a) => a.label).sort(),
+      allowances: [...selection.allowances.map((a) => a.label), ...(selection.labor_allowances ?? []).map((a) => a.key)].sort(),
       client: scope.client,
       property: scope.property,
       project_type: scope.project_type,
@@ -300,6 +300,7 @@ export function createBuildStage(deps: BuildDeps) {
         `Proposal validated for ${proposal.client}.`,
         `${c.label}: ${formatUsd(c.subtotal_cents)}${c.total_cents !== null ? ` (total ${formatUsd(c.total_cents)})` : ""}; tax ${c.tax.status === "calculated" ? formatUsd(c.tax.cents) : "TBD"}.`,
         c.likely_range ? `Likely range: ${formatUsd(c.likely_range.low_cents)} – ${formatUsd(c.likely_range.high_cents)} (middle half of ${c.likely_range.jobs} similar Livewire jobs).` : null,
+        proposal.labor_allowances?.length ? `Allowances (verify on site): ${proposal.labor_allowances.map((x) => `${x.label} ${x.hours} h, ${formatUsd(x.price_cents)}`).join("; ")}.` : null,
         proposal.allowances.length ? `Allowances (TBD): ${proposal.allowances.map((x) => x.label).join(", ")}.` : null,
         proposal.remaining_verification.length ? `To verify: ${proposal.remaining_verification.join("; ")}.` : null,
       ].filter(Boolean);

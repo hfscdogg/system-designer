@@ -81,11 +81,15 @@ describe("patterns", () => {
       "security_modernization", "smart_locks", "surveillance", "tv_media", "video_doorbell", "whole_home_audio",
     ]);
     for (const p of patterns) {
-      expect(p.roles.every((r) => r.product_id !== null), p.pattern).toBe(true);
+      // A role without a standard (the TV cart) is only ever listed to verify, never left unresolved.
+      expect(p.roles.every((r) => r.product_id !== null || r.unpriced === "verify"), p.pattern).toBe(true);
       expect(p.services.every((s) => s.product_id === null), p.pattern).toBe(true);
       expect(p.labor?.labor_type, p.pattern).toBe("07LABOR1MAN");
-      // Each role, its size variants and the parts record.
-      expect(patternRecordIds(p), p.pattern).toHaveLength(p.roles.length + p.roles.reduce((n, r) => n + (r.variants?.length ?? 0), 0) + 1);
+      // Each priced role, its size and market variants and the parts record.
+      const records = p.roles.filter((r) => r.product_id).length + p.roles.reduce((n, r) => n + (r.variants?.length ?? 0) + (r.market_variants?.length ?? 0), 0) + 1;
+      expect(patternRecordIds(p), p.pattern).toHaveLength(records);
+      // The allowance templates ride along with every pattern.
+      expect(p.allowances?.map((a) => a.key), p.pattern).toEqual(["outdoor_outlet", "electrical_outlet", "conduit", "trenching", "wiring_run"]);
     }
     const network = patterns.find((p) => p.pattern === "home_network")!;
     expect(network.applies_when_any).toEqual(["networking"]);
@@ -816,7 +820,11 @@ describe("Zack's test round (2026-10-12)", () => {
     expect(v.filter((x) => /PANEL-1/.test(x))).toEqual([]);
     expect(v.filter((x) => /Bretford/.test(x))).toEqual(["Requested product: Bretford cart"]);
     // "Replace the amplifier": the rep's one amp is not a minimum to verify.
-    const amp = await job({ functional_systems: ["Sonos"], requested_changes: ["Replace the amplifier for the existing ceiling speakers"] });
+    const amp = await job({
+      functional_systems: ["Sonos"],
+      requested_changes: ["Replace the amplifier for the existing ceiling speakers"],
+      existing_equipment: { status: "described", retained: ["ceiling speakers"], removed_or_replaced: ["amplifier"] },
+    });
     expect(amp.lines.find((l) => l.role === "zone_amplifier")).toMatchObject({ quantity: 1, quantity_basis: "fixed", verify: null });
   });
 
@@ -834,5 +842,123 @@ describe("Zack's test round (2026-10-12)", () => {
     });
     expect(quantities(more).in_ceiling_speakers).toBe(1);
     expect(more.unresolved.map((u) => u.role)).not.toContain("in_ceiling_speakers");
+  });
+});
+
+describe("pricing decisions (Henry, 2026-10-12)", () => {
+  const none = { existing_detectors: "not_provided" as const, existing_equipment: { status: "none" as const, retained: [], removed_or_replaced: [] } };
+  const quantities = (sel: ReturnType<typeof materialize>) => Object.fromEntries(sel.lines.map((l) => [l.role, l.quantity]));
+  async function job(o: object, named: Parameters<typeof materialize>[2] = []) {
+    const patterns = await loadPatterns();
+    const { scope } = approvedScope({ ...none, ...o });
+    return materialize(scope, selectPattern(scope.functional_systems, patterns)!, named);
+  }
+  const CSA180Z = "fb79a157-4da4-45b2-a5b0-83c69fd3e778";
+
+  it("sizes amplifiers by the speakers they drive: a Sonos Amp per 4 at home, a JBL CSA180Z per 8 on a commercial job", async () => {
+    const audio = (o: object) => job({ functional_systems: ["in-ceiling speakers"], requested_changes: ["Install in-ceiling speakers in the kitchen and great room"], ...o });
+    const home = await audio({ requested_quantities: [{ item: "in-ceiling speakers", quantity: 10 }] });
+    expect(home.lines.find((l) => l.role === "zone_amplifier")).toMatchObject({ quantity: 3, quantity_basis: "fixed", record_id: "2f4f4038-cb86-4a7d-ba17-4919c5f2725f" });
+    // Existing speakers the new amps drive count too: 1 new pair + 5 existing = 7 speakers, 2 amps.
+    const more = await audio({
+      requested_changes: ["Install 2 more in-ceiling speakers in the kitchen"],
+      requested_quantities: [{ item: "in-ceiling speakers", quantity: 2 }],
+      existing_equipment: { status: "described", retained: ["5 existing in-ceiling speakers"], removed_or_replaced: [] },
+    });
+    expect(quantities(more)).toMatchObject({ in_ceiling_speakers: 1, zone_amplifier: 2 });
+    // Commercial: one 70V amplifier for up to 8 speakers.
+    const office = await audio({ market: "commercial", requested_quantities: [{ item: "in-ceiling speakers", quantity: 6 }] });
+    expect(office.lines.find((l) => l.role === "zone_amplifier")).toMatchObject({ record_id: CSA180Z, quantity: 1 });
+    const big = await audio({ market: "commercial", requested_quantities: [{ item: "in-ceiling speakers", quantity: 12 }] });
+    expect(big.lines.find((l) => l.role === "zone_amplifier")).toMatchObject({ record_id: CSA180Z, quantity: 2 });
+    // An amplifier the rep names by model wins; its channels are its own, so the speakers don't set its count.
+    const AMP = "abababab-abab-4bab-8bab-abababababab";
+    const withModel = await job(
+      { functional_systems: ["in-ceiling speakers"], requested_changes: ["Install in-ceiling speakers powered by a Sonos AMPG2"], requested_quantities: [{ item: "in-ceiling speakers", quantity: 10 }] },
+      [{ record_id: AMP, model: "AMPG2", label: "Sonos Amp G2", category: "Amplifiers > Stereo (2-Channel)", text: "Install in-ceiling speakers powered by a Sonos AMPG2" }],
+    );
+    expect(withModel.lines.find((l) => l.role === "zone_amplifier")).toMatchObject({ record_id: AMP, quantity: 2, quantity_basis: "minimum_to_verify", requested_model: "AMPG2" });
+    // Speakers nobody asked for (an amp-only job) leave the amp count as it was.
+    expect(quantities(await job({ functional_systems: ["Sonos"], requested_changes: ["Replace the amps"] })).zone_amplifier).toBe(2);
+  });
+
+  it("mounts a TV on an articulating mount instead of the tilt mount, and a TV on a cart on no mount at all", async () => {
+    const tv = (change: string, o: object = {}) => job({ functional_systems: ["TV"], requested_changes: [change], ...o });
+    const swing = await tv("Mount the customer's 65-inch TV on an articulating TV mount in the den");
+    expect(quantities(swing)).toMatchObject({ tv_mount_articulating: 1 });
+    expect(swing.lines.map((l) => l.role)).not.toContain("tv_mount");
+    const both = await tv("An articulating mount in the den and a tilt mount in the bedroom");
+    expect(both.lines.map((l) => l.role)).toEqual(expect.arrayContaining(["tv_mount", "tv_mount_articulating"]));
+    // A cart has no Livewire standard: no wall mount, and the cart is listed to price rather than swapped for a mount.
+    const cart = await tv("Put the customer's TV on a rolling cart on the patio");
+    expect(cart.lines.map((l) => l.role)).toEqual([]);
+    expect(cart.to_verify).toEqual(["Requested product: TV cart (rolling stand) (no Livewire standard; priced in the final proposal)"]);
+    expect(cart.unresolved).toEqual([]);
+    expect(cart.requirements).toEqual([expect.objectContaining({ system: "audio_video", classification: "allowance" })]);
+    // The rep's own "Requested product: Bretford cart" already says it.
+    const bretford = await tv("Put the customer's TV on a Bretford rolling cart", { unresolved_questions: ["Requested product: Bretford cart"] });
+    expect(bretford.to_verify).toEqual([]);
+  });
+
+  it("prices out-of-pattern work as labor allowances, and the Crowder job gets a total", async () => {
+    const patterns = await loadPatterns();
+    const { scope, scopeHash, receiptId } = approvedScope({
+      ...none,
+      client: "Rick Crowder",
+      functional_systems: ["outdoor WiFi", "TV", "conduit", "outdoor outlet"],
+      room_types: ["Patio"],
+      requested_changes: [
+        "Add outdoor WiFi for the back patio and pool",
+        "Put the customer's TV on a Bretford rolling cart outside",
+        "Run conduit from the house to the patio",
+        "Add an outdoor outlet by the pool for the TV",
+      ],
+      unresolved_questions: ["Requested product: Bretford rolling cart"],
+    });
+    const pattern = selectPattern(scope.functional_systems, patterns)!;
+    const selection = materialize(scope, pattern);
+    expect(selection.labor_allowances.map((a) => [a.key, a.hours])).toEqual([["outdoor_outlet", 4.5], ["conduit", 6]]);
+    expect(selection.requirements.filter((r) => r.classification === "allowance").map((r) => r.system).sort()).toEqual(["audio_video", "conduit", "outdoor outlet"]);
+    expect(selection.unresolved).toEqual([]);
+    const roles = selection.lines.map((l) => l.role);
+    expect(roles).not.toContain("tv_mount");
+    expect(roles).not.toContain("wired_access_point");
+    expect(quantities(selection)).toMatchObject({ outdoor_access_point: 1 });
+
+    // Synthetic records for the shipped patterns: $300 a device at half cost, the $1 parts record.
+    const catalog = Object.fromEntries(
+      patternRecordIds(pattern).map((id, i) => [id, id === pattern.parts!.product_id ? product(id, "Livewire", "PARTS", 1, 0.01, { laborItems: [] }) : product(id, "TestCo", `DEV-${i}`, 300, 150, { laborItems: [] })]),
+    );
+    const { admitted } = await admitAll(pattern, catalog);
+    const compiled = compile(selection, admitted, pattern);
+    if (!compiled.ok) throw new Error(compiled.errors.join("\n"));
+    const taxed: PolicyRecord = { ...POLICY, policy: { ...POLICY.policy, tax: { mode: "rate", rate_pct: 6, applies_to: "taxable_equipment" } } };
+    const proposal = bind(compiled.draft, { runId: "run_test", receiptId, approvalId: "ap_1", scopeHash, scope, policy: taxed, releaseId: "rel" });
+    // 10.5 hours at $179: in the subtotal, the margin (at the $89.50 cost rate) and the total.
+    expect(proposal.labor_allowances.map((a) => [a.label, a.price_cents, a.cost_cents])).toEqual([
+      ["Outdoor electrical outlet (allowance)", 80550, 40275],
+      ["Conduit run (allowance)", 107400, 53700],
+    ]);
+    expect(proposal.commercial.allowances_cents).toBe(187950);
+    expect(proposal.commercial).toMatchObject({ complete: true, label: "Total" });
+    expect(proposal.commercial.total_cents).not.toBeNull();
+    expect(proposal.commercial.subtotal_cents).toBe(proposal.commercial.equipment_cents + proposal.commercial.labor_cents + 187950 + proposal.commercial.parts_cents);
+    expect(proposal.remaining_verification).toContain("Requested product: Bretford rolling cart");
+    expect(validateProposal(proposal, scope, scopeHash, admitted, taxed)).toMatchObject({ ok: true });
+    const customer = customerView(proposal);
+    expect(customer.labor_allowances).toEqual([
+      { label: "Outdoor electrical outlet (allowance)", note: "About 4.5 hours of labor, confirmed on site", amount_cents: 80550 },
+      { label: "Conduit run (allowance)", note: "About 6 hours of labor, confirmed on site", amount_cents: 107400 },
+    ]);
+    expect(forbiddenCustomerKeys(customer)).toEqual([]);
+
+    // A system no template covers is still escalated, and a prewire job prices its own cable runs.
+    expect((await job({ functional_systems: ["TV", "pool automation"], requested_changes: ["Mount the TV", "Pool automation"] })).unresolved).toEqual([expect.objectContaining({ item: "pool automation", escalate: true })]);
+    expect((await job({ functional_systems: ["prewire"], requested_changes: ["Run cable to 6 data drops"] })).labor_allowances).toEqual([]);
+    // One change can ask for two kinds of work; an outdoor outlet is not also an indoor one.
+    const one = await job({ functional_systems: ["TV"], requested_changes: ["Mount the TV", "Run conduit from the house to the patio and add an outdoor outlet by the pool"] });
+    expect(one.labor_allowances.map((a) => a.key)).toEqual(["outdoor_outlet", "conduit"]);
+    // "Data outlets" and an eero "outlet mount" are not electrical work.
+    expect((await job({ functional_systems: ["Wi-Fi"], requested_changes: ["Add eero Wi-Fi with an outlet mount in the hall"] })).labor_allowances).toEqual([]);
   });
 });

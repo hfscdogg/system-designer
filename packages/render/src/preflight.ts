@@ -109,6 +109,10 @@ export async function preflightPdf(bytes: Uint8Array, expected: PreflightExpecta
     failures.push("an incomplete budget shows a total");
   }
   if (c.tax === "TBD" && !/Tax TBD/.test(all)) failures.push("tax is not shown as TBD");
+  // Each allowance prints its amount, in its own section with its total.
+  const laborAllowances = expected.customer.labor_allowances ?? [];
+  for (const a of laborAllowances) if (!all.includes(formatUsd(a.amount_cents))) failures.push(`allowance ${a.label} ${formatUsd(a.amount_cents)} not found`);
+  if (laborAllowances.length && !all.includes("Allowances — verify on site")) failures.push("allowances are not in their own section");
   if (!all.includes(`Design Retainer ${formatUsd(c.retainer.cents)}`)) failures.push(`design retainer ${formatUsd(c.retainer.cents)} not found`);
 
   // Images: exact-model image or a visible pending notice for each item.
