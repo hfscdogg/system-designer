@@ -1209,4 +1209,74 @@ describe("Zack's round 3 (2026-10-13)", () => {
     });
     expect(proposal.remaining_verification.filter((x) => x.startsWith("Requested product"))).toEqual(["Requested product: Ubiquiti U7 Outdoor"]);
   });
+
+  it("Baker: customer's Sony TV, Sony mount named, Leon frame — same lines as before and margin at or above the floor", async () => {
+    const tv = (await loadPatterns()).find((p) => p.pattern === "tv_media")!;
+    const mount = tv.roles.find((r) => r.role === "tv_mount")!;
+    const tvIds = new Set([tv.roles.find((r) => r.role === "television")!, ...(tv.roles.find((r) => r.role === "television")!.variants ?? [])].map((x) => x.product_id));
+    // Synthetic records: the Sanus mount at a healthy margin, a Sony TV at a thin one (as TVs are), the $1 parts record.
+    const catalog = Object.fromEntries(
+      patternRecordIds(tv).map((id, i) => [
+        id,
+        id === tv.parts!.product_id
+          ? product(id, "Livewire", "PARTS", 1, 0.01, { laborItems: [] })
+          : id === mount.product_id
+            ? product(id, "Sanus", "CILT4-B1", 249.99, 125, { laborItems: [] })
+            : tvIds.has(id)
+              ? product(id, "Sony", `TV-${i}`, 1599, 1312, { laborItems: [] })
+              : product(id, "TestCo", `DEV-${i}`, 300, 150, { laborItems: [] }),
+      ]),
+    );
+    const { admitted } = await admitAll(tv, catalog);
+    const policy: PolicyRecord = {
+      ...POLICY,
+      policy: { ...POLICY.policy, margin: { residential_min_gross_margin_pct: 40, commercial_min_gross_margin_pct: 37.5 }, design_delivery: { base_pct: 10, max_pct: 15 } },
+    };
+    const said = "Mount the customer's 65-inch Sony TV on the living room wall with a Sony ultra slim mount, inside a Leon frame.";
+    const baker = {
+      client: "Richard Baker",
+      functional_systems: ["TV"],
+      requested_changes: [said],
+      existing_equipment: { status: "described" as const, retained: ["65-inch Sony TV"], removed_or_replaced: [] },
+      existing_detectors: "not_provided" as const,
+      unresolved_questions: ["Requested product: Sony ultra slim mount", "Requested product: Leon frame"],
+    };
+    const run = async (o: object) => {
+      const { scope, scopeHash, receiptId } = approvedScope({ ...baker, ...o });
+      const compiled = compile(materialize(scope, tv), admitted, tv);
+      if (!compiled.ok) throw new Error(compiled.errors.join("\n"));
+      const proposal = bind(compiled.draft, { runId: "run_test", receiptId, approvalId: "ap_1", scopeHash, scope, policy, releaseId: "rel" });
+      return { proposal, validation: validateProposal(proposal, scope, scopeHash, admitted, policy) };
+    };
+    const variants: Record<string, object> = {
+      // As b2b6865 read it: the TV kept, the mount and frame left to verify.
+      before: {},
+      // The Sony mount counted ("names the model, states the count"): Sony is the mount's brand, not a new Sony TV.
+      "mount counted": { requested_quantities: [{ item: "Sony ultra slim mount", quantity: 1 }] },
+      // The customer's TV not listed as kept equipment, only in the request's words.
+      "TV not listed as kept": { existing_equipment: { status: "none", retained: [], removed_or_replaced: [] } },
+      "customer's TV counted": { requested_quantities: [{ item: "customer's 65-inch Sony TV", quantity: 1 }] },
+      "client-supplied TV": {
+        requested_changes: ["Mount the client-supplied 65-inch Sony TV on the living room wall with a Sony ultra slim mount, inside a Leon frame."],
+        existing_equipment: { status: "none", retained: [], removed_or_replaced: [] },
+        requested_quantities: [{ item: "TV", quantity: 1 }],
+      },
+    };
+    for (const [name, o] of Object.entries(variants)) {
+      const { proposal, validation } = await run(o);
+      expect(proposal.sections.flatMap((s) => s.lines.map((l) => `${l.brand} ${l.model} × ${l.quantity}`)), name).toEqual(["Sanus CILT4-B1 × 1"]);
+      // $249.99 mount + 4 h at $179 + 10% Design & Delivery: $1,062.99, as on b2b6865.
+      expect(proposal.commercial.subtotal_cents, name).toBe(106299);
+      expect(proposal.internal.gross_margin_pct!, name).toBeGreaterThanOrEqual(40);
+      expect(validation.findings.map((f) => f.code), name).not.toContain("margin_exception");
+      expect(proposal.remaining_verification, name).toEqual(
+        expect.arrayContaining([
+          "Sanus tilt TV wall mount: one mount per wall-mounted TV",
+          expect.stringMatching(/^Sony BRAVIA 8 65" OLED TV \(retained: .*65-inch Sony TV\): existing equipment must be field-tested before it can be reused$/),
+          "Requested product: Leon frame",
+          "Requested product: Sony ultra slim mount",
+        ]),
+      );
+    }
+  });
 });
