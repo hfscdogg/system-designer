@@ -39,7 +39,9 @@ const SelectionSchema = z
     ),
     allowances: z.array(z.object({ label: z.string(), reason: z.string() }).strict()),
     unresolved: z.array(z.object({ item: z.string(), role: z.string().nullable(), reason: z.string(), escalate: z.boolean() }).strict()),
-    labor_allowances: z.array(z.object({ key: z.string(), label: z.string(), hours: z.number().positive(), labor_type: z.string() }).strict()).default([]),
+    labor_allowances: z
+      .array(z.object({ key: z.string(), label: z.string(), hours: z.number().positive(), labor_type: z.string(), quantity: z.number().int().min(2).optional() }).strict())
+      .default([]),
     to_verify: z.array(z.string()).default([]),
   })
   .strict();
@@ -90,6 +92,8 @@ export interface DraftLaborAllowance {
   hours: number;
   labor_type: string;
   basis: string;
+  /** How many of a counted template the hours cover (4 Ethernet ports); absent for one. */
+  quantity?: number;
 }
 
 export interface DraftParts {
@@ -252,8 +256,10 @@ export function compile(raw: unknown, catalog: Map<string, AdmittedProduct>, pat
   const laborAllowances: DraftLaborAllowance[] = [];
   for (const a of sel.labor_allowances) {
     const spec = pattern.allowances?.find((x) => x.key === a.key);
-    if (!spec || spec.label !== a.label || spec.hours !== a.hours || spec.labor_type !== a.labor_type) errors.push(`allowance ${a.key} is not the pattern's template`);
-    else laborAllowances.push({ key: spec.key, label: spec.label, hours: spec.hours, labor_type: spec.labor_type, basis: spec.basis });
+    // A counted template (one cable run per Ethernet port) takes its hours once per unit; others are priced once.
+    const units = a.quantity ?? 1;
+    if (!spec || spec.label !== a.label || spec.hours * units !== a.hours || spec.labor_type !== a.labor_type || (units > 1 && !spec.counted)) errors.push(`allowance ${a.key} is not the pattern's template`);
+    else laborAllowances.push({ key: spec.key, label: spec.label, hours: a.hours, labor_type: spec.labor_type, basis: spec.basis, ...(units > 1 ? { quantity: units } : {}) });
   }
 
   // Critical role coverage: every critical role the selection implies is priced or explicitly unresolved.

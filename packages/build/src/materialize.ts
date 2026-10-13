@@ -37,7 +37,8 @@ export interface Selection {
   allowances: Array<{ label: string; reason: string }>;
   unresolved: Array<{ item: string; role: string | null; reason: string; escalate: boolean }>;
   /** Labor for out-of-pattern work the request asks for (a conduit run), from the pattern's allowance templates; priced at the policy rate. */
-  labor_allowances: Array<{ key: string; label: string; hours: number; labor_type: string }>;
+  /** quantity: how many of a counted template the hours cover (4 Ethernet ports); absent for one. */
+  labor_allowances: Array<{ key: string; label: string; hours: number; labor_type: string; quantity?: number }>;
   /** Requested products with no Livewire standard (a TV cart), listed to verify and priced in the final proposal. */
   to_verify: string[];
 }
@@ -96,7 +97,8 @@ function matchScore(text: string, role: RoleSpec): number {
   // The model number printed on the budget is the most specific way to name a device.
   if (role.model && compact(text).includes(compact(role.model))) return 2000 + role.model.length;
   if (t.includes(fold(role.label))) return 1000 + role.label.length;
-  const terms = deviceTerms(role).filter((term) => t.includes(term));
+  // Whole words: the WattBox's "ups" is not in "upstairs" (Zack's Britt job, 2026-10-13).
+  const terms = deviceTerms(role).filter((term) => hasWord(t, term));
   const words = (role.count_terms ?? []).map(fold).filter((term) => hasAllWords(t, term));
   // A brand alone is the weakest match: any device word for another role wins.
   const brandOnly = roleTerms(role).some((term) => BRANDS.has(term) && hasWord(t, term)) ? 1 : 0;
@@ -115,14 +117,30 @@ function statedQuantity(scope: ScopeDraftV1, role: RoleSpec, roles: RoleSpec[]):
 /** A count of what the customer already has ("5 existing speakers") is not a count of new devices. */
 const EXISTING_ITEM = /\b(existing|current|currently|retained|keep|kept|keeping|reuse|reused|old)\b/;
 
+/** "/", "&", "+" and "and" between words read as a space: "smoke/CO", "smoke & CO" and "smoke and CO" are all "smoke co". */
+const joined = (s: string) => fold(s).replace(/\s*[/&+]\s*|\s+and\s+/g, " ");
+
+/** Where an item is, not what it is: "smoke/CO detectors upstairs" and "… in the living room" are the same device. */
+const PLACE = /\s+\b(upstairs|downstairs|in|at|on|by|near|above|below|behind|outside|inside|for|facing|over|under|of)\b.*$/;
+const deviceOf = (item: string) => fold(item).replace(PLACE, "").trim();
+
 function statedItem(scope: ScopeDraftV1, role: RoleSpec, roles: RoleSpec[]): { item: string; quantity: number } | null {
+  const mine: Array<{ item: string; quantity: number }> = [];
   for (const q of scope.requested_quantities) {
     if (EXISTING_ITEM.test(fold(q.item))) continue;
+    // A count for devices sold as one thing elsewhere ("4 smoke/CO detectors") counts for each of them.
+    if (role.shared_count_terms?.some((t) => hasWord(joined(q.item), joined(t)))) {
+      mine.push(q);
+      continue;
+    }
     const scores = roles.map((r) => matchScore(q.item, r));
     const best = Math.max(...scores);
-    if (best > 0 && roles[scores.indexOf(best)] === role) return q;
+    if (best > 0 && roles[scores.indexOf(best)] === role) mine.push(q);
   }
-  return null;
+  if (!mine.length) return null;
+  // The same device counted room by room ("2 upstairs", "2 downstairs") adds up; a count of something else stays apart.
+  const same = mine.filter((q) => deviceOf(q.item) === deviceOf(mine[0]!.item));
+  return same.length > 1 ? { item: mine[0]!.item, quantity: same.reduce((n, q) => n + q.quantity, 0) } : mine[0]!;
 }
 
 /**
@@ -155,7 +173,7 @@ function withoutModifiers(text: string, role: RoleSpec, roles: RoleSpec[]): stri
 function named(scope: ScopeDraftV1, role: RoleSpec, roles: RoleSpec[]): boolean {
   const changes = withoutModifiers(fold(scope.requested_changes.join(" | ")), role, roles);
   const byModel = !!role.model && compact(changes).includes(compact(role.model));
-  const byDevice = (r: RoleSpec, c: string) => deviceTerms(r).some((t) => c.includes(t)) || (r.count_terms ?? []).some((t) => hasWord(c, fold(t)));
+  const byDevice = (r: RoleSpec, c: string) => deviceTerms(r).some((t) => hasWord(c, t)) || (r.count_terms ?? []).some((t) => hasWord(c, fold(t)));
   // A change that names only the brand ("add Control4") names the role; one that also names another device doesn't.
   const byBrand = scope.requested_changes.map(fold).some(
     (c) => roleTerms(role).some((t) => BRANDS.has(t) && hasWord(c, t)) && !roles.some((r) => r !== role && byDevice(r, c)),
@@ -361,7 +379,14 @@ export function materialize(original: ScopeDraftV1, pattern: PatternSpec, namedP
     const products = requested.get(role.role) ?? [];
     const product = products[0];
     if (addOn && !names(role) && !ownSystemRequested) continue;
-    const asked = (role.mentions && mentioned(scope, role.mentions, role.mentions_require)) || (role.asked_by && mentioned(scope, role.asked_by));
+    // A stated count of the device ("3 doors" of contacts) asks for it too, and so does existing alarm
+    // gear the rep says stays (it is field-tested before reuse).
+    const keptHere = role.critical && !!role.retained_match?.length && scope.retained_equipment.some((e) => role.retained_match!.some((t) => hasWord(fold(e), fold(t))));
+    const asked =
+      (role.mentions && mentioned(scope, role.mentions, role.mentions_require)) ||
+      (role.asked_by && mentioned(scope, role.asked_by)) ||
+      statedQuantity(scope, role, pattern.roles) !== null ||
+      keptHere;
     if ((role.mentions || role.asked_by) && !asked && !modelNamed(scope, role) && !product) {
       notAsked.add(role.role);
       continue;
@@ -491,6 +516,23 @@ export function materialize(original: ScopeDraftV1, pattern: PatternSpec, namedP
     line.verify = toCheck ? `one amplifier per ${per} speakers; ${speakers} speakers so far` : null;
   }
 
+  // One product priced by two combined patterns (the network's PoE switch and the cameras') is one line, at
+  // the larger count, or the rep's own count (Zack's Britt and Bowen-Rees jobs, 2026-10-13).
+  const merged = new Set<string>();
+  const roleOf = (l: SelectionLine) => pattern.roles.find((r) => r.role === l.role)!;
+  for (let i = 0; i < lines.length; i++) {
+    for (let j = lines.length - 1; j > i; j--) {
+      const [a, b] = [lines[i]!, lines[j]!];
+      if (a.record_id !== b.record_id || a.role === b.role) continue;
+      const stated = [a, b].find((l) => statedQuantity(scope, roleOf(l), pattern.roles) !== null);
+      const keep = stated ?? (b.quantity > a.quantity ? b : a);
+      Object.assign(a, { quantity: keep.quantity, quantity_basis: keep.quantity_basis, verify: keep.verify });
+      lines.splice(j, 1);
+      merged.add(b.role);
+    }
+  }
+  if (merged.size) included.splice(0, included.length, ...included.filter((r) => !merged.has(r.role) || lines.some((l) => l.role === r.role)));
+
   const devices = lines.reduce((n, l) => n + l.quantity, 0);
   // Labor-only allowances the request mentions (framing a niche), priced as hours at the pattern's labor rate.
   const extras = (pattern.labor_extras ?? []).filter((x) => mentioned(scope, x.mentions)).map((x) => x.id);
@@ -512,7 +554,7 @@ export function materialize(original: ScopeDraftV1, pattern: PatternSpec, namedP
 
   // Out-of-pattern work the request asks for, in its changes or as a system no role covers: one allowance per template.
   const uncovered = scope.functional_systems.filter((system) => !candidates.some((r) => r.systems.includes(system)));
-  const laborAllowances = allowancesFor(pattern.allowances ?? [], [...requestTexts(scope), ...uncovered.map(fold)], scope.functional_systems);
+  const laborAllowances = allowancesFor(pattern.allowances ?? [], scope, uncovered.map(fold));
 
   // A system whose devices the request removed entirely is no longer required.
   const removedSystems = scope.functional_systems.filter(
@@ -556,21 +598,26 @@ export function materialize(original: ScopeDraftV1, pattern: PatternSpec, namedP
     requirements,
     allowances,
     unresolved,
-    labor_allowances: laborAllowances.map(({ key, label, hours, labor_type }) => ({ key, label, hours, labor_type })),
+    labor_allowances: laborAllowances.map(({ key, label, hours, labor_type, quantity }) => ({ key, label, hours: hours * quantity, labor_type, ...(quantity > 1 ? { quantity } : {}) })),
     to_verify: toVerify,
   };
 }
 
 /**
- * The allowance templates these texts (each change, and each system no role covers) ask for,
- * once each, in file order, with the texts that asked.
+ * The allowance templates the request (each change and stated count, and each system no role covers)
+ * asks for, in file order, with the texts that asked. Each is priced once, or, when the template is
+ * counted, once per stated unit or per change that asks ("Ethernet port in the dining room", "… in the living room").
  */
-function allowancesFor(templates: AllowanceSpec[], texts: string[], systems: string[]): Array<AllowanceSpec & { texts: string[] }> {
+function allowancesFor(templates: AllowanceSpec[], scope: ScopeDraftV1, uncovered: string[]): Array<AllowanceSpec & { texts: string[]; quantity: number }> {
   const any = (t: string, words?: string[]) => !!words?.some((w) => hasWord(t, fold(w)));
   return templates.flatMap((a) => {
-    if (a.covered_by_systems?.some((s) => systems.includes(s))) return [];
-    const asking = texts.filter((t) => any(t, a.mentions) && (!a.require || any(t, a.require)) && !any(t, a.exclude));
-    return asking.length ? [{ ...a, texts: asking }] : [];
+    if (a.covered_by_systems?.some((s) => scope.functional_systems.includes(s))) return [];
+    const asks = (t: string) => any(t, a.mentions) && (!a.require || any(t, a.require)) && !any(t, a.exclude);
+    const asking = [...requestTexts(scope), ...uncovered].filter(asks);
+    if (!asking.length) return [];
+    const stated = scope.requested_quantities.filter((q) => asks(fold(q.item))).reduce((n, q) => n + q.quantity, 0);
+    const changes = new Set(scope.requested_changes.map(fold).filter(asks)).size;
+    return [{ ...a, texts: asking, quantity: a.counted ? Math.max(1, stated || changes) : 1 }];
   });
 }
 

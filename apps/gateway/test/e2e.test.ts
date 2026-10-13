@@ -166,7 +166,10 @@ describe("Google Chat → scope approval vertical slice", () => {
     expect(t.statusCard()?.note).toBe("Held for internal review — not sent to the customer.");
     const summary = t.texts().find((x) => x.startsWith("Proposal validated"));
     expect(summary).toContain("Proposal validated for Smith Family.");
-    expect(summary).toContain("Priced scope to date: $3,099.00");
+    // Zack's round 3 (2026-10-13): no "Total (total)"; why the total is withheld, and what was priced, model × count.
+    expect(summary).toContain("Priced so far $3,099.00 — total withheld: tax TBD; unresolved: Door/window contact (retained: Door contacts).");
+    expect(summary).toContain("Items:\n• TestCo PANEL-1 × 1\n• TestCo KEYPAD-1 × 1");
+    expect(summary).not.toMatch(/\+\d+ more/);
 
     const events = (await t.store.listEvents(runs[0]!.id)).map((e) => e.type);
     expect(events).toEqual(

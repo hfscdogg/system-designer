@@ -27,6 +27,22 @@ describe("products the request names by model", () => {
     expect(found("Add an X1")).toEqual([]);
   });
 
+  it("finds a product by its brand and model words in any order, and never a smaller product inside it (Bowen-Rees: \"Eero 7 Pro\")", () => {
+    const eeros = catalogIndex([
+      { id: "f9267d39-99d7-4906-8b19-081be5132697", name: "eero Pro 7 B0C6RBS846", brand: "eero", model: "Pro 7", partNumber: "B0C6RBS846" },
+      { id: "b73b3608-eaf1-4517-b129-222a794f4f74", name: "eero eero 7 B0D954FD8R", brand: "eero", model: "eero 7", partNumber: "B0D954FD8R" },
+      { id: "4372a3e8-dcae-404f-85e8-73a0ffe59747", name: "eero Outdoor PoE 7 SN11111", brand: "eero", model: "Outdoor PoE 7", partNumber: "SN11111" },
+    ]);
+    const found = (text: string) => findNamedProducts(scopeWith({ requested_changes: [text] }), eeros).map((n) => n.model);
+    expect(found("Add an additional Eero 7Pro to the son's bedroom")).toEqual(["Pro 7"]);
+    expect(found("1 x Eero 7 Pro in the son's bedroom")).toEqual(["Pro 7"]);
+    expect(found("Add an eero Pro 7 upstairs")).toEqual(["Pro 7"]);
+    expect(found("Add an eero 7 upstairs")).toEqual(["eero 7"]);
+    expect(found("1 Outdoor Eero PoE 7 at the post")).toEqual(["Outdoor PoE 7"]);
+    // Words far apart name nothing: "eero" here and "7" there.
+    expect(found("Add eero Wi-Fi to the house and mount the TV at 7 feet")).toEqual([]);
+  });
+
   it("prices the named product in the role it fills, through the compiler", async () => {
     const pattern = testPattern();
     const scope = scopeWith({ requested_changes: ["Add 2 Qolsys IQKP2-PG keypads"], requested_quantities: [{ item: "IQKP2-PG", quantity: 2 }] });
