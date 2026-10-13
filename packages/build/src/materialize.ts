@@ -117,6 +117,26 @@ function statedQuantity(scope: ScopeDraftV1, role: RoleSpec, roles: RoleSpec[]):
 /** A count of what the customer already has ("5 existing speakers") is not a count of new devices. */
 const EXISTING_ITEM = /\b(existing|current|currently|retained|keep|kept|keeping|reuse|reused|old)\b/;
 
+/** Whose it is: "the customer's", "client-supplied", "their own". What the customer supplies is never sold. */
+const OWNER = String.raw`(?:(?:customer|client|owner|homeowner)(?:'s|’s|s'|s)?(?:[- ](?:supplied|provided|owned))?|their(?: own)?)`;
+const OWNED_ITEM = new RegExp(String.raw`\b${OWNER}(?=\s|$)`, "i");
+const OWNED_PHRASE = new RegExp(String.raw`\b${OWNER}(?=\s|$)`, "gi");
+
+/**
+ * The request's words for this device when they say the customer supplies it ("Mount the customer's
+ * 65-inch Sony TV"): the device is theirs, whether or not the extractor listed it as kept equipment
+ * (Baker, 2026-10-13: the customer's Sony TV was priced as a new Sony TV).
+ */
+function customerOwned(scope: ScopeDraftV1, role: RoleSpec): string | undefined {
+  for (const text of [...scope.requested_changes, ...scope.requested_quantities.map((q) => q.item)]) {
+    for (const term of role.retained_match ?? []) {
+      const m = new RegExp(String.raw`\b${OWNER}\s+(?:[\w"”.-]+\s+){0,3}?${escape(fold(term))}(s|es)?\b`, "i").exec(text);
+      if (m) return m[0];
+    }
+  }
+  return undefined;
+}
+
 /** "/", "&", "+" and "and" between words read as a space: "smoke/CO", "smoke & CO" and "smoke and CO" are all "smoke co". */
 const joined = (s: string) => fold(s).replace(/\s*[/&+]\s*|\s+and\s+/g, " ");
 
@@ -127,7 +147,8 @@ const deviceOf = (item: string) => fold(item).replace(PLACE, "").trim();
 function statedItem(scope: ScopeDraftV1, role: RoleSpec, roles: RoleSpec[]): { item: string; quantity: number } | null {
   const mine: Array<{ item: string; quantity: number }> = [];
   for (const q of scope.requested_quantities) {
-    if (EXISTING_ITEM.test(fold(q.item))) continue;
+    // Nor is a count of what the customer supplies ("1 customer's 65-inch Sony TV").
+    if (EXISTING_ITEM.test(fold(q.item)) || OWNED_ITEM.test(q.item)) continue;
     // A count for devices sold as one thing elsewhere ("4 smoke/CO detectors") counts for each of them.
     if (role.shared_count_terms?.some((t) => hasWord(joined(q.item), joined(t)))) {
       mine.push(q);
@@ -243,9 +264,14 @@ const otherChanges = (scope: ScopeDraftV1) => changes(scope).filter((c) => !MOVE
  * ("sell a new 75-inch TV", "add 2 more in-ceiling speakers"), or states a count of new ones.
  */
 function wantsNew(scope: ScopeDraftV1, role: RoleSpec, roles: RoleSpec[]): boolean {
-  if (statedItem(scope, role, roles)) return true;
+  const q = statedItem(scope, role, roles);
+  // A count asks for a new one of a kept device only when it names the device itself and the request doesn't
+  // say the customer supplies it: in "1 Sony ultra slim mount", Sony is the mount's brand, not a new Sony TV.
+  if (q && !customerOwned(scope, role) && (!role.retained_match?.length || role.retained_match.some((t) => hasWord(fold(q.item), fold(t))))) return true;
   const more = (c: string, t: string) => new RegExp(`\\b(more|additional|another|extra)\\s+(?:[\\w-]+\\s+){0,2}${escape(t)}`).test(c);
-  return otherChanges(scope).some((c) => roleTerms(role).some((t) => c.includes(t) && (NEW_DEVICE.test(c) || more(c, t))));
+  // "Customer-supplied" is who supplies it, not a sale.
+  const sold = (c: string) => NEW_DEVICE.test(c.replace(OWNED_PHRASE, " "));
+  return otherChanges(scope).some((c) => roleTerms(role).some((t) => c.includes(t) && (sold(c) || more(c, t))));
 }
 
 /** How many existing items matching these terms the request moves ("move the existing TV and soundbar upstairs"). */
@@ -399,7 +425,7 @@ export function materialize(original: ScopeDraftV1, pattern: PatternSpec, namedP
     included.push(role);
 
     const retained = role.retained_match?.length
-      ? scope.retained_equipment.find((e) => role.retained_match!.some((t) => fold(e).includes(fold(t))))
+      ? (scope.retained_equipment.find((e) => role.retained_match!.some((t) => fold(e).includes(fold(t)))) ?? customerOwned(scope, role))
       : undefined;
     if (retained && !wantsNew(scope, role, pattern.roles) && !product) {
       // Existing equipment being moved stays the customer's: its mount and labor are priced on the roles that carry it.
