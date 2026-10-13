@@ -35,11 +35,12 @@ GROUP BY pattern ORDER BY runs DESC;
 
 -- What went wrong: low scores, blocks, revisions that changed nothing, final quotes far off
 SELECT run_id, requester, client, pattern, state, stars, why, changes, last_error,
+       subtotal_usd, total_usd, ARRAY_TO_STRING(total_withheld, ' | ') total_withheld,
        final_quote_diff_pct, LEFT(request, 400) request, ARRAY_TO_STRING(later_messages, ' | ') later
 FROM `livewire-system-designer-deux.sd_runlog_prod.runs`
 WHERE created_at >= TIMESTAMP_SUB(CURRENT_TIMESTAMP(), INTERVAL 7 DAY)
   AND (stars <= 3 OR state IN ('BLOCKED','FAILED') OR changes = 'total 0%'
-       OR ABS(final_quote_diff_pct) > 20)
+       OR ABS(final_quote_diff_pct) > 20 OR ARRAY_LENGTH(total_withheld) > 0)
 ORDER BY created_at;
 
 -- Money: retainers sent and paid
@@ -48,6 +49,8 @@ SELECT COUNTIF(retainer_invoice IS NOT NULL) sent, COUNTIF(retainer_paid_at IS N
 FROM `livewire-system-designer-deux.sd_runlog_prod.runs`
 WHERE created_at >= TIMESTAMP_SUB(CURRENT_TIMESTAMP(), INTERVAL 30 DAY);
 ```
+
+For any run worth a closer look, read what it priced: `items` ("Manufacturer Model × qty"), `allowances`, `total_withheld` (why there is no total) and `to_verify`. Rows exported before 2026-10-13 have these empty.
 
 From Gmail, read-only: search for rep feedback to Henry from the last 8 days, e.g. `from:getlivewire.com ("System Designer" OR "D&E Agent" OR budget) newer_than:8d`. Read whole threads.
 

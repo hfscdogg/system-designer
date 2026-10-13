@@ -161,6 +161,14 @@ export interface RunReportRow {
   retainer_invoice: string | null;
   /** When the hourly check found the retainer invoice paid. */
   retainer_paid_at: string | null;
+  /** What the budget priced, one "Manufacturer Model × qty" per line, in PDF order. */
+  items: string[];
+  /** Labor allowances priced into the total: "Conduit run $1,074". */
+  allowances: string[];
+  /** Why the total is withheld (empty when there is a total): TBD tax, TBD allowances, or what is left to verify. */
+  total_withheld: string[];
+  /** The PDF's "to verify" list, including unresolved roles. */
+  to_verify: string[];
   pdf_sha256: string | null;
   last_error: string | null;
 }
@@ -788,13 +796,30 @@ export class Store {
           ORDER BY captured_at`,
         [r.space_id, r.thread_id, r.person_id, r.created_at, r.updated_at],
       );
-      const view = await this.readArtifact<{ client?: string; commercial?: { subtotal_cents?: number; total_cents?: number | null; likely_range?: { low_cents: number; high_cents: number } | null; retainer?: { cents: number } } }>(r.id, "validate", "customer_view");
+      const view = await this.readArtifact<{
+        client?: string;
+        sections?: Array<{ items: Array<{ manufacturer: string | null; model: string | null; description: string; quantity: number }> }>;
+        allowances?: Array<{ label: string }>;
+        labor_allowances?: Array<{ label: string; amount_cents: number }>;
+        remaining_verification?: string[];
+        commercial?: { subtotal_cents?: number; total_cents?: number | null; tax?: unknown; likely_range?: { low_cents: number; high_cents: number } | null; retainer?: { cents: number } };
+      }>(r.id, "validate", "customer_view");
       const pattern = await this.readArtifact<{ pattern?: string }>(r.id, "prebuild", "pattern");
       const retainer = await this.readArtifact<{ number?: string | null; opportunity_id?: string }>(r.id, "retainer", "opportunity");
       const invoice = await this.readArtifact<{ qbo_doc_number?: string; qbo_invoice_id?: string }>(r.id, "retainer", "invoice");
       const payment = await this.readArtifact<{ paid_at?: string }>(r.id, "retainer", "payment");
       const pdf = (await this.listArtifacts(r.id)).find((a) => a.stage === "render" && a.name === "pdf");
       const c = view?.commercial;
+      const usd = (cents: number) => `$${Math.round(cents / 100).toLocaleString("en-US")}`;
+      const toVerify = view?.remaining_verification ?? [];
+      const withheld =
+        view && c?.total_cents == null
+          ? [
+              ...(c?.tax === "TBD" ? ["tax TBD"] : []),
+              ...(view.allowances ?? []).map((a) => `TBD allowance: ${a.label}`),
+              ...(c?.tax !== "TBD" && !(view.allowances ?? []).length ? ["unresolved items (see to_verify)"] : []),
+            ]
+          : [];
       rows.push({
         run_id: r.id,
         created_at: r.created_at.toISOString(),
@@ -815,6 +840,12 @@ export class Store {
         retainer_opportunity: retainer ? (retainer.number ?? retainer.opportunity_id ?? null) : null,
         retainer_invoice: invoice ? (invoice.qbo_doc_number ?? invoice.qbo_invoice_id ?? null) : null,
         retainer_paid_at: payment?.paid_at ?? null,
+        items: (view?.sections ?? []).flatMap((sec) =>
+          sec.items.map((i) => `${[i.manufacturer, i.model].filter(Boolean).join(" ") || i.description} × ${i.quantity}`),
+        ),
+        allowances: (view?.labor_allowances ?? []).map((a) => `${a.label} ${usd(a.amount_cents)}`),
+        total_withheld: withheld,
+        to_verify: toVerify,
         pdf_sha256: pdf?.sha256 ?? null,
         last_error: r.last_error,
       });
