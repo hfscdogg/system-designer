@@ -1,7 +1,8 @@
 import type { ScopeDraftV1 } from "@sd/core";
 import type { DraftLabor, DraftLaborAllowance, DraftLine, DraftParts, DraftService, ProposalDraft } from "./compile.ts";
-import { sum } from "./money.ts";
+import { formatUsd, sum } from "./money.ts";
 import { minimumMarginPct, type CommercialPolicy, type PolicyRecord } from "./policy.ts";
+import { modelWords } from "./named.ts";
 import { likelyRange, type LikelyRange } from "./range.ts";
 
 /**
@@ -281,8 +282,8 @@ export function bind(draft: ProposalDraft, ctx: BindContext): Proposal {
         ...(draft.labor?.extras ?? []).map((x) => `${x.label}: ${x.hours} hours included in labor`),
         ...draft.unresolved.map((u) => `${u.item}: ${u.reason}`),
         ...(draft.to_verify ?? []),
-        // A product the request named and the budget prices is not left to verify.
-        ...ctx.scope.unresolved_questions.filter((q) => !pricedProduct(q, bound)),
+        // A product the request named and the budget prices, or the client supplies, is not left to verify.
+        ...ctx.scope.unresolved_questions.filter((q) => !settled(q, bound)),
       ]),
     ],
     commercial: {
@@ -315,16 +316,72 @@ export function bind(draft: ProposalDraft, ctx: BindContext): Proposal {
   };
 }
 
-const compactText = (s: string) => s.toLowerCase().replace(/[^a-z0-9]/g, "");
+/** Why a budget has no total, in the words the run log uses (empty when it has one). */
+export function totalWithheld(p: Proposal): string[] {
+  if (p.commercial.total_cents !== null) return [];
+  return [
+    ...(p.commercial.tax.status === "tbd" ? ["tax TBD"] : []),
+    ...p.allowances.map((a) => `TBD allowance: ${a.label}`),
+    ...p.unresolved.map((u) => `unresolved: ${u.item}`),
+  ];
+}
 
-/** "Requested product: Araknis AN-520-AP-I" when a priced line is that product (its model, requested model or label). */
+/** Line items listed in the budget-ready message before "+N more". */
+const READY_ITEMS = 12;
+
+/**
+ * The message the rep reads when the budget is validated: the total in plain words, or why there is
+ * none, and what was priced, "Model × count" (Zack's round 3, 2026-10-13: "Total (total)" confused him).
+ */
+export function budgetReadyLines(p: Proposal): string[] {
+  const c = p.commercial;
+  const items = p.sections.flatMap((s) => s.lines.map((l) => `• ${[l.brand, l.model].filter(Boolean).join(" ")} × ${l.quantity}`));
+  return [
+    `Proposal validated for ${p.client}.`,
+    c.total_cents !== null
+      ? `Total ${formatUsd(c.total_cents)} incl. tax (subtotal ${formatUsd(c.subtotal_cents)}, tax ${c.tax.status === "calculated" ? formatUsd(c.tax.cents) : "TBD"}).`
+      : `Priced so far ${formatUsd(c.subtotal_cents)} — total withheld: ${totalWithheld(p).join("; ") || "the scope is incomplete"}.`,
+    c.likely_range ? `Likely range: ${formatUsd(c.likely_range.low_cents)} – ${formatUsd(c.likely_range.high_cents)} (middle half of ${c.likely_range.jobs} similar Livewire jobs).` : null,
+    items.length ? ["Items:", ...items.slice(0, READY_ITEMS), ...(items.length > READY_ITEMS ? [`+${items.length - READY_ITEMS} more`] : [])].join("\n") : null,
+    p.labor_allowances?.length
+      ? `Allowances (verify on site): ${p.labor_allowances.map((x) => `${x.label}${x.quantity ? ` × ${x.quantity}` : ""} ${x.hours} h, ${formatUsd(x.price_cents)}`).join("; ")}.`
+      : null,
+    p.allowances.length ? `Allowances (TBD): ${p.allowances.map((x) => x.label).join(", ")}.` : null,
+    p.remaining_verification.length ? `To verify: ${p.remaining_verification.join("; ")}.` : null,
+  ].filter((x): x is string => x !== null);
+}
+
+const compactText = (s: string) => s.toLowerCase().replace(/[^a-z0-9]/g, "");
+const CLIENT_SUPPLIED = /\b(client|customer|owner|homeowner)[- ](supplied|provided|owned)\b/i;
+const POE_SWITCH = /\bpoe\b.*\bswitch\b|\bswitch\b.*\bpoe\b/i;
+
+/**
+ * An open item the budget already settles (Zack's round 3, 2026-10-13): a requested product it prices,
+ * one the client supplies, or "PoE switch or injector?" once a PoE switch is priced.
+ */
+function settled(question: string, lines: BoundLine[]): boolean {
+  if (/poe (switch|injector)/i.test(question) && lines.some((l) => POE_SWITCH.test(`${l.label} ${l.brand} ${l.model}`))) return true;
+  return pricedProduct(question, lines);
+}
+
+/**
+ * "Requested product: Araknis AN-520-AP-I" when a priced line is that product (its model, requested model or label),
+ * in any word order ("Outdoor Eero PoE 7" is the eero Outdoor PoE 7), or a product the client supplies.
+ */
 function pricedProduct(question: string, lines: BoundLine[]): boolean {
   const m = /^requested product:\s*(.+)$/i.exec(question.trim());
   if (!m) return false;
+  if (CLIENT_SUPPLIED.test(m[1]!)) return true;
   const asked = compactText(m[1]!);
   if (asked.length < 3) return false;
-  return lines.some((l) =>
-    [l.model, l.label].map(compactText).some((x) => x.length >= 4 && (asked.includes(x) || x.includes(asked))),
+  const askedWords = new Set(modelWords(m[1]!));
+  const within = (xs: string[], set: Set<string>) => xs.length > 0 && xs.every((x) => set.has(x));
+  return lines.some(
+    (l) =>
+      [l.model, l.label].map(compactText).some((x) => x.length >= 4 && (asked.includes(x) || x.includes(asked))) ||
+      // The line's brand and model are all named, or every word named is the line's own (two words at least).
+      within(modelWords(`${l.brand} ${l.model}`), askedWords) ||
+      (askedWords.size >= 2 && within([...askedWords], new Set(modelWords(`${l.brand} ${l.model} ${l.label}`)))),
   );
 }
 

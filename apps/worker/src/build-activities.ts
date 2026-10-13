@@ -10,6 +10,7 @@ import {
   materialize,
   patternRecordIds,
   PatternSpecSchema,
+  budgetReadyLines,
   selectPattern,
   validateProposal,
   type AdmittedProduct,
@@ -295,15 +296,7 @@ export function createBuildStage(deps: BuildDeps) {
         ),
       });
       await advance(runId, "VALIDATED");
-      const c = proposal.commercial;
-      const summary = [
-        `Proposal validated for ${proposal.client}.`,
-        `${c.label}: ${formatUsd(c.subtotal_cents)}${c.total_cents !== null ? ` (total ${formatUsd(c.total_cents)})` : ""}; tax ${c.tax.status === "calculated" ? formatUsd(c.tax.cents) : "TBD"}.`,
-        c.likely_range ? `Likely range: ${formatUsd(c.likely_range.low_cents)} – ${formatUsd(c.likely_range.high_cents)} (middle half of ${c.likely_range.jobs} similar Livewire jobs).` : null,
-        proposal.labor_allowances?.length ? `Allowances (verify on site): ${proposal.labor_allowances.map((x) => `${x.label} ${x.hours} h, ${formatUsd(x.price_cents)}`).join("; ")}.` : null,
-        proposal.allowances.length ? `Allowances (TBD): ${proposal.allowances.map((x) => x.label).join(", ")}.` : null,
-        proposal.remaining_verification.length ? `To verify: ${proposal.remaining_verification.join("; ")}.` : null,
-      ].filter(Boolean);
+      const summary = budgetReadyLines(proposal);
       await deps.notify(run, summary.join("\n"), `${runId}:validated`);
       return { ok: true, summary: summary[1]! };
     },

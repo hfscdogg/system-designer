@@ -107,6 +107,14 @@ Pricing decisions (Henry, 2026-10-12):
 - An articulating mount (Strong SM-CS-ART2-L) replaces the tilt mount when the request asks for one, and a TV on a cart gets no wall mount. Livewire has no standard cart (`unpriced: "verify"`), so it is listed to verify as a requested product, priced in the final proposal, without blanking the total.
 - Work no pattern role covers (an outdoor outlet, a conduit run, trenching, a low-voltage cable run) is priced from the templates in `packages/build/patterns/allowances.json`: labor hours at the policy's 07LABOR1MAN rate, with no parts price (Design & Delivery covers materials). Each template's hours and their basis come from Livewire's accepted and presented D-Tools quotes. The lines print under "Allowances — verify on site", count toward the subtotal, total and margin, and keep the total. A requested system that matches no template still goes to Zack.
 
+Zack's round 3 (2026-10-13):
+- A doorbell camera the rep asks for adds the video doorbell even when the model filed it under cameras, and "streaming" or an Apple TV is the TV's source.
+- An SVR, NVR or DVR the request names is priced as Livewire's most quoted Alarm.com recorder (ADC-SVR210-2TB; the commercial PoE recorder on commercial jobs) in place of a memory card per camera.
+- A keypad and door/window contacts are priced only when asked for (each is on about 60% of Livewire's IQ Panel 5 quotes). "4 smoke/CO detectors" prices 4 smoke/heat and 4 CO detectors: Livewire has no PowerG combination detector.
+- One product two combined patterns both price (the network's and the cameras' PoE switch) is one line, at the larger count or the rep's own.
+- Each Ethernet port or data drop asked for is one low-voltage cable-run allowance.
+- The verify list leaves out products the budget prices (in any word order), products the client supplies, and the PoE switch question once a PoE switch is priced. The budget-ready message says "Total $X incl. tax", or "Priced so far $X — total withheld: <why>", and lists up to 12 items.
+
 Design & Delivery (the parts line) is `design_delivery.base_pct` of product + labor + services, costed at the parts margin. When a budget would fall under the margin floor, it rises in half-point steps up to `design_delivery.max_pct` until the budget clears the floor; past that, the budget waits for an admin's approval. Without `design_delivery`, parts are sized to the parts share of the subtotal. `tax` can also be `{ "mode": "rate", "rate_pct": <n>, "applies_to": "taxable_equipment" }`.
 
 The file ships in the image. Publish it with the admin job (see `docs/deploy.md`):

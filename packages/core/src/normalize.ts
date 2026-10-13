@@ -14,11 +14,13 @@ const FUNCTIONAL_SYSTEMS: Array<[canonical: string, patterns: RegExp[]]> = [
   ["co_detection", [/\b(co|carbon monoxide)( detection| detectors?| alarms?| sensors?)\b/]],
   ["climate_control", [/\b(thermostats?|hvac control|climate( control)?)\b/]],
   ["video_doorbell", [/\b(video )?door ?bell\b/]],
-  ["video_surveillance", [/\b((?<!door ?bell )cameras?|cctv|surveillance|nvr)\b/]],
+  // An SVR/NVR records the cameras: "a streaming video recorder" is surveillance, not a TV.
+  ["video_surveillance", [/\b((?<!door ?bell )cameras?|cctv|surveillance|nvr|svr|dvr|(streaming |stream )?video recorders?)\b/]],
   // Music through the house is its own system (Sonos amps and architectural speakers); TVs and theaters are audio_video.
   ["whole_home_audio", [/\b(sonos|whole[- ](home|house) (audio|music)|distributed audio|multi[- ]room (audio|music)|background music|(in|on)[- ](ceiling|wall) speakers?|ceiling speakers?|outdoor speakers?|landscape speakers?|patio speakers?|speakers?|music|sonos amps?|(?<!\d ?)amps?|amplifiers?)\b/]],
-  // Bare "video" is a TV; "video doorbell" and "video cameras" are their own systems.
-  ["audio_video", [/\b(tvs?|television|home theater|theatre|media room|audio[/ -]?video|a\/v|av|soundbar|surround( sound)?|video(?! ?(door ?bell|surveillance|cameras?|security)))\b/]],
+  // Bare "video" is a TV; "video doorbell" and "video cameras" are their own systems. Streaming is the TV's
+  // source (an Apple TV), priced by the TV pattern (Zack's Crowder job, 2026-10-13).
+  ["audio_video", [/\b(tvs?|television|home theater|theatre|media room|audio[/ -]?video|a\/v|av|soundbar|surround( sound)?|video(?! ?(door ?bell|surveillance|cameras?|security|recorders?))|streaming(?! video recorders?)( devices?| media| players?| boxes?| sticks?)?|streamers?|apple ?tv( 4k)?|roku|fire ?tv( stick)?|chromecast|media players?)\b/]],
   // New-construction cabling; listed before networking so "network drops" are wiring, not Wi-Fi.
   ["structured_wiring", [/\b(structured wiring|pre-?wire|prewiring|pre-?wired|low[- ]voltage wiring|cat ?6 (runs?|drops?|wiring)|data (drops?|outlets?|runs?)|network (drops?|outlets?|wiring)|rough[- ]?in)\b/]],
   // "wireless" alone names how a device connects (wireless contacts, sensors), not a network.
@@ -70,7 +72,7 @@ function matchAll(table: Array<[string, RegExp[]]>, text: string): string[] {
  * cameras" are not lighting control. Dropped before matching when the item is
  * about cameras.
  */
-const CAMERA_ITEM = /\b(cameras?|cams?|surveillance|cctv|nvr)\b/;
+const CAMERA_ITEM = /\b(cameras?|cams?|surveillance|cctv|nvr|svr)\b/;
 const CAMERA_FEATURES = /\b(security|wi-?fi|wireless|hard-?wired|lighting|lights?|flood ?lights?|motion|power(ed)?|poe)\b/g;
 
 function systemHits(item: string): string[] {
@@ -125,6 +127,24 @@ export function normalizeFunctionalSystems(items: string[]): string[] {
       return [fold(item)];
     }),
   );
+}
+
+/** Smoke and CO in one device ("2 smoke/CO detectors", "smoke and carbon monoxide detectors", "combo detectors"). */
+export const SMOKE_CO_COMBO = /\b(smoke ?(\/|&|\+|-|and)? ?(co|carbon monoxide)|(co|carbon monoxide) ?(\/|&|\+|and) ?smoke|(combo|combination) (smoke |smoke\/co )?(detectors?|alarms?))\b/;
+
+/**
+ * Systems a device the rep asks for implies, whatever the model listed as systems: the extractor
+ * folds "1 x wired smart doorbell camera" into the cameras (Zack's Britt and Bowen-Rees jobs,
+ * 2026-10-13), and "smoke/CO detectors" are both smoke and CO detection.
+ */
+const REQUESTED_SYSTEMS: Array<[systems: string[], pattern: RegExp]> = [
+  [["video_doorbell"], /\b((?<!(existing|current|old) )(video|smart|wired|wi-?fi|camera) door ?bells?|door ?bell cam(era)?s?)\b/],
+  [["fire_detection", "co_detection"], SMOKE_CO_COMBO],
+];
+
+function requestedSystems(requests: string[]): string[] {
+  const texts = requests.map(fold);
+  return REQUESTED_SYSTEMS.filter(([, p]) => texts.some((t) => p.test(t))).flatMap(([systems]) => systems);
 }
 
 export interface ServiceNormalization {
@@ -185,10 +205,8 @@ export function normalizeExtraction(input: ScopeExtraction): NormalizedExtractio
   let proposalNumber = nullableClean(input.proposal.number);
   if (proposalNumber !== null && /^unassigned$/i.test(proposalNumber)) proposalNumber = "UNASSIGNED";
 
-  const systems = tvSoundOnly(normalizeFunctionalSystems(input.functional_systems), [
-    ...input.requested_changes,
-    ...input.requested_quantities.map((q) => q.item),
-  ]);
+  const requests = [...input.requested_changes, ...input.requested_quantities.map((q) => q.item)];
+  const systems = uniqSorted([...tvSoundOnly(normalizeFunctionalSystems(input.functional_systems), requests), ...requestedSystems(requests)]);
   const scope: ScopeExtraction = {
     client: nullableClean(input.client),
     property: {

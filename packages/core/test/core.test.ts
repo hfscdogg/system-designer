@@ -198,6 +198,25 @@ describe("generic audio and video", () => {
   });
 });
 
+describe("Zack's round 3 (2026-10-13)", () => {
+  it("reads streaming and an Apple TV as the TV's source (Crowder), and an SVR as the cameras' recorder", () => {
+    expect(normalizeFunctionalSystems(["streaming"])).toEqual(["audio_video"]);
+    expect(normalizeFunctionalSystems(["Apple TV", "streaming device"])).toEqual(["audio_video"]);
+    expect(normalizeFunctionalSystems(["SVR"])).toEqual(["video_surveillance"]);
+    expect(normalizeFunctionalSystems(["streaming video recorder"])).toEqual(["video_surveillance"]);
+  });
+
+  it("adds a doorbell camera (Britt, Bowen-Rees) and smoke/CO combos the requests ask for to the systems", () => {
+    const systems = (o: object) => normalizeExtraction(completeExtraction({ functional_systems: ["video surveillance"], ...o })).scope.functional_systems;
+    expect(systems({ requested_changes: ["Install wired camera at the back"], requested_quantities: [{ item: "wired smart doorbell camera", quantity: 1 }] })).toEqual(["video_doorbell", "video_surveillance"]);
+    expect(systems({ requested_changes: ["Install a camera at the front door (current doorbell and chime is operational)"] })).toEqual(["video_surveillance"]);
+    expect(systems({ requested_changes: ["Install 2 smoke/CO detectors upstairs"] })).toEqual(["co_detection", "fire_detection", "video_surveillance"]);
+    // Normalizing twice changes nothing.
+    const once = normalizeExtraction(completeExtraction({ requested_changes: ["Add a video doorbell"] })).scope;
+    expect(normalizeExtraction(once).scope).toEqual(once);
+  });
+});
+
 describe("tap-to-answer choices", () => {
   it("maps every system and service choice to exactly one canonical term", () => {
     for (const o of ANSWER_CHOICES.functional_systems!.options) expect(normalizeFunctionalSystems([o.value]), o.value).toHaveLength(1);

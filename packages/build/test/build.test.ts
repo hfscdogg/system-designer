@@ -4,9 +4,13 @@ import { recordedDToolsReader } from "@sd/dtools";
 import {
   admitProduct,
   bind,
+  budgetReadyLines,
+  catalogIndex,
   compile,
   customerView,
+  findNamedProducts,
   forbiddenCustomerKeys,
+  formatUsd,
   laborHoursFor,
   loadPatterns,
   materialize,
@@ -960,5 +964,249 @@ describe("pricing decisions (Henry, 2026-10-12)", () => {
     expect(one.labor_allowances.map((a) => a.key)).toEqual(["outdoor_outlet", "conduit"]);
     // "Data outlets" and an eero "outlet mount" are not electrical work.
     expect((await job({ functional_systems: ["Wi-Fi"], requested_changes: ["Add eero Wi-Fi with an outlet mount in the hall"] })).labor_allowances).toEqual([]);
+  });
+});
+
+describe("Zack's round 3 (2026-10-13)", () => {
+  const none = { existing_equipment: { status: "none" as const, retained: [], removed_or_replaced: [] } };
+  const quantities = (sel: ReturnType<typeof materialize>) => Object.fromEntries(sel.lines.map((l) => [l.role, l.quantity]));
+  const SVR210 = "5df9bd7b-85fa-4b0b-841a-d68e9550fd9b";
+  const SWITCH = "de42b9ff-167d-438c-88e0-df8afd6b46c9";
+  const EERO_PRO_7 = "f9267d39-99d7-4906-8b19-081be5132697";
+  // The eero records in Livewire's D-Tools catalog the Bowen-Rees request could name.
+  const EEROS = catalogIndex([
+    { id: EERO_PRO_7, name: "eero Pro 7 B0C6RBS846", brand: "eero", model: "Pro 7", partNumber: "B0C6RBS846", category: "Networking > Routers & Gateways" },
+    { id: "b73b3608-eaf1-4517-b129-222a794f4f74", name: "eero eero 7 B0D954FD8R", brand: "eero", model: "eero 7", partNumber: "B0D954FD8R", category: "Networking > Routers & Gateways" },
+    { id: "4372a3e8-dcae-404f-85e8-73a0ffe59747", name: "eero Outdoor PoE 7 SN11111", brand: "eero", model: "Outdoor PoE 7", partNumber: "SN11111", category: "Uncategorized" },
+    { id: "9761ac74-f94c-4c62-bc5c-a166eb2d3266", name: "eero PoE 7", brand: "eero", model: "PoE 7", category: "Networking > Wireless Access Points" },
+  ]);
+  /** Synthetic records for the shipped patterns with their real brands and models: $300 a device at half cost, the $1 parts record. */
+  const REAL: Record<string, [string, string]> = {
+    [SWITCH]: ["Araknis Networks", "AN-220-SW-R-8-POE"],
+    "4372a3e8-dcae-404f-85e8-73a0ffe59747": ["eero", "Outdoor PoE 7"],
+    [EERO_PRO_7]: ["eero", "Pro 7"],
+    "a73b7e0d-155a-45e3-80e1-5b5784dd77ea": ["Apple", "APPLE TV WIFI-ETHERNET"],
+  };
+  async function build(pattern: PatternSpec, scopeOverrides: object, named: Parameters<typeof materialize>[2] = []) {
+    const { scope, scopeHash, receiptId } = approvedScope({ ...none, ...scopeOverrides });
+    const selection = materialize(scope, pattern, named);
+    const catalog = Object.fromEntries(
+      patternRecordIds(pattern).map((id, i) => [
+        id,
+        id === pattern.parts!.product_id ? product(id, "Livewire", "PARTS", 1, 0.01, { laborItems: [] }) : product(id, REAL[id]?.[0] ?? "TestCo", REAL[id]?.[1] ?? `DEV-${i}`, 300, 150, { laborItems: [] }),
+      ]),
+    );
+    const { admitted } = await admitAll(pattern, catalog);
+    const compiled = compile(selection, admitted, pattern);
+    if (!compiled.ok) throw new Error(compiled.errors.join("\n"));
+    const taxed: PolicyRecord = { ...POLICY, policy: { ...POLICY.policy, tax: { mode: "rate", rate_pct: 6, applies_to: "taxable_equipment" } } };
+    const proposal = bind(compiled.draft, { runId: "run_test", receiptId, approvalId: "ap_1", scopeHash, scope, policy: taxed, releaseId: "rel" });
+    return { scope, selection, proposal, validation: validateProposal(proposal, scope, scopeHash, admitted, taxed) };
+  }
+
+  // Ted Britt (run_837a7a53): network, outdoor TV, security, cameras and smoke/CO, as the extractor read it (no doorbell system).
+  const BRITT = {
+    client: "Ted Britt",
+    existing_detectors: "none" as const,
+    functional_systems: ["networking", "outdoor TV", "security system", "video surveillance", "smoke/CO detectors", "smart thermostat"],
+    room_types: ["Master bedroom", "Hallway", "Dining room", "Living room", "Porch"],
+    requested_changes: [
+      "Add Ethernet port in master bedroom on top floor",
+      "Add PoE access point in hallway of the top floor",
+      "Add Ethernet port in dining room",
+      "Add Ethernet port in living room",
+      "Add Ethernet port behind the outdoor TV location on the back porch",
+      "Install 55-inch outdoor rated TV with cover",
+      "Install articulated mounting bracket for the outdoor TV",
+      "Install SVR in the dining room",
+      "Install security panel in hallway leading from carriage to the kitchen",
+      "Install wired smart doorbell camera; the current doorbell is wired and the chime is working",
+      "Install wired floodlight camera at the back of the house above the garage",
+      "Install wired camera in the front of the house",
+      "Install wired camera on the back corner of the house",
+      "Install 2 smoke/CO detectors upstairs",
+      "Install 2 smoke/CO detectors downstairs",
+      "Install smart thermostat downstairs in the hallway between the kitchen and the front door",
+    ],
+    requested_quantities: [
+      { item: "wired smart doorbell camera", quantity: 1 },
+      { item: "wired floodlight camera", quantity: 1 },
+      { item: "wired camera in the front of the house", quantity: 1 },
+      { item: "wired camera on the back corner of the house", quantity: 1 },
+      { item: "smoke/CO detectors upstairs", quantity: 2 },
+      { item: "smoke/CO detectors downstairs", quantity: 2 },
+      { item: "smart thermostat", quantity: 1 },
+    ],
+  };
+
+  // Melissa Bowen-Rees (run_a770a3f5): cameras, a doorbell, an SVR and one more eero.
+  const BOWEN_REES = {
+    client: "Melissa Bowen-Rees",
+    existing_detectors: "not_provided" as const,
+    functional_systems: ["video surveillance", "networking"],
+    requested_changes: [
+      "Add 3 cameras and 1 video doorbell",
+      "Add an additional Eero 7Pro to the son's bedroom",
+      "Install wired Smart doorbell camera at front door (current doorbell and chime is operational)",
+      "Install wired camera on the side of the house, facing the parking lot",
+      "Install wired camera at the back of the house, facing the back yard",
+      "Install wired floodlight camera above the garage, replacing the current floodlight",
+      "Install SVR in the basement closet",
+      "Add Eero 7 Pro in the son's bedroom below his desk; his room is a dead spot",
+    ],
+    requested_quantities: [
+      { item: "wired Smart doorbell camera", quantity: 1 },
+      { item: "wired camera on the side of the house", quantity: 1 },
+      { item: "wired camera at the back of the house", quantity: 1 },
+      { item: "wired floodlight camera", quantity: 1 },
+      { item: "SVR", quantity: 1 },
+      { item: "Eero 7 Pro", quantity: 1 },
+    ],
+  };
+
+  it("prices Crowder's Apple TV for \"streaming\" and keeps the total, and drops verify lines the budget settles", async () => {
+    const patterns = await loadPatterns();
+    const crowder = {
+      client: "Rick Crowder",
+      existing_detectors: "not_provided" as const,
+      functional_systems: ["outdoor WiFi", "TV cart", "streaming", "conduit and cabling", "outdoor electrical"],
+      requested_changes: [
+        "Add 2 eero Pro 7 and 1 outdoor eero PoE 7 for WiFi at the front yard post",
+        "Add a PoE switch to power the outdoor eero",
+        "Put the customer's LG 75UN7070PUC TV on a Bretford Explorer rolling cart",
+        "Add an Apple TV connected via WiFi for streaming",
+        "Run conduit from the head end to the post",
+        "Add an outdoor receptacle at the post",
+      ],
+      requested_quantities: [
+        { item: "eero Pro 7", quantity: 2 },
+        { item: "outdoor eero PoE 7", quantity: 1 },
+        { item: "Apple TV", quantity: 1 },
+      ],
+      unresolved_questions: [
+        "Requested product: Bretford Explorer display cart ETCMV-SB*",
+        "Requested product: LG 75UN7070PUC (client supplied)",
+        "Requested product: Outdoor Eero PoE 7",
+        "Requested product: Apple TV",
+        "PoE switch vs 5 port switch with PoE injector undecided",
+        "Is a second outdoor AP needed for TV use on the pool deck?",
+      ],
+    };
+    const { scope } = approvedScope({ ...none, ...crowder });
+    expect(scope.functional_systems).toContain("audio_video");
+    expect(scope.functional_systems).not.toContain("streaming");
+    const pattern = selectPattern(scope.functional_systems, patterns)!;
+    expect(pattern.pattern).toBe("home_network+tv_media");
+    const { selection, proposal, validation } = await build(pattern, crowder);
+    expect(selection.unresolved).toEqual([]);
+    expect(quantities(selection)).toMatchObject({ streamer: 1, mesh_wifi: 2, outdoor_access_point: 1, network_switch: 1 });
+    expect(proposal.commercial.total_cents).not.toBeNull();
+    expect(validation.ok).toBe(true);
+    // The priced outdoor eero, the client's own TV and the PoE switch question are settled; the cart and the open question stay.
+    const v = proposal.remaining_verification;
+    expect(v.filter((x) => /Outdoor Eero|LG 75UN|Apple TV|PoE (switch|injector)/i.test(x))).toEqual([]);
+    expect(v).toEqual(expect.arrayContaining(["Requested product: Bretford Explorer display cart ETCMV-SB*", "Is a second outdoor AP needed for TV use on the pool deck?"]));
+  });
+
+  it("prices Britt's doorbell, SVR, articulating mount, 4 smoke/CO pairs, 4 cable runs and one switch, with no unasked keypad or contacts", async () => {
+    const patterns = await loadPatterns();
+    const { scope } = approvedScope({ ...none, ...BRITT });
+    const pattern = selectPattern(scope.functional_systems, patterns)!;
+    expect(pattern.pattern).toBe("home_network+security_modernization+surveillance+tv_media+video_doorbell");
+    const { selection, proposal, validation } = await build(pattern, BRITT);
+    expect(quantities(selection)).toMatchObject({
+      doorbell_camera: 1,
+      nvr: 1,
+      tv_mount_articulating: 1,
+      smoke_heat_detector: 4,
+      co_detector: 4,
+      outdoor_camera: 2,
+      floodlight_camera: 1,
+      thermostat: 1,
+      network_switch: 1,
+      power_protection: 1,
+    });
+    const roles = selection.lines.map((l) => l.role);
+    for (const role of ["tv_mount", "camera_storage", "camera_poe_switch", "keypad", "door_window_contact"]) expect(roles).not.toContain(role);
+    expect(selection.lines.find((l) => l.role === "nvr")!.record_id).toBe(SVR210);
+    expect(selection.lines.filter((l) => l.record_id === SWITCH)).toHaveLength(1);
+    // The rep's detector counts leave nothing to verify; the eero minimum (no count stated) still does.
+    const v = proposal.remaining_verification;
+    expect(v.filter((x) => /detector count|Keypad|Door\/window/.test(x))).toEqual([]);
+    expect(v).toContain("eero Pro 7 mesh Wi-Fi: one node per floor and about every 1,500 sq ft; the first node is the router");
+    // Four Ethernet ports, one cable-run allowance each: 4 × 2 h at $179.
+    expect(proposal.labor_allowances.map((a) => [a.key, a.quantity, a.hours, a.price_cents])).toEqual([["wiring_run", 4, 8, 143200]]);
+    expect(customerView(proposal).labor_allowances[0]!.note).toBe("4 × about 2 hours of labor (8 hours), confirmed on site");
+    expect(validation.ok).toBe(true);
+    expect(proposal.commercial.total_cents).not.toBeNull();
+  });
+
+  it("prices Bowen-Rees's doorbell, SVR, one switch and the eero Pro 7 she named, not the eero 7", async () => {
+    const patterns = await loadPatterns();
+    const { scope } = approvedScope({ ...none, ...BOWEN_REES });
+    const named = findNamedProducts(scope, EEROS);
+    expect(named.map((n) => n.record_id)).toEqual([EERO_PRO_7]);
+    const pattern = selectPattern(scope.functional_systems, patterns)!;
+    expect(pattern.pattern).toBe("home_network+surveillance+video_doorbell");
+    const { selection, validation } = await build(pattern, BOWEN_REES, named);
+    expect(quantities(selection)).toMatchObject({ doorbell_camera: 1, nvr: 1, outdoor_camera: 2, floodlight_camera: 1, mesh_wifi: 1, network_switch: 1 });
+    expect(selection.lines.find((l) => l.role === "mesh_wifi")).toMatchObject({ record_id: EERO_PRO_7, quantity_basis: "fixed", verify: null });
+    const roles = selection.lines.map((l) => l.role);
+    for (const role of ["camera_storage", "camera_poe_switch", "wired_access_point", "outdoor_access_point"]) expect(roles).not.toContain(role);
+    expect(selection.lines.filter((l) => l.record_id === SWITCH)).toHaveLength(1);
+    expect(validation.ok).toBe(true);
+  });
+
+  it("keeps smoke and CO separate when asked separately, and a keypad or contacts when the request asks for them", async () => {
+    const security = async (o: object) => {
+      const patterns = await loadPatterns();
+      const { scope } = approvedScope({ ...none, existing_detectors: "none", functional_systems: ["alarm panel", "smoke detectors", "CO detectors"], ...o });
+      return quantities(materialize(scope, selectPattern(scope.functional_systems, patterns)!));
+    };
+    const separate = await security({ requested_changes: ["Replace the alarm panel", "Add 3 smoke detectors and 1 CO detector"], requested_quantities: [{ item: "smoke detectors", quantity: 3 }, { item: "CO detector", quantity: 1 }] });
+    expect(separate).toMatchObject({ smoke_heat_detector: 3, co_detector: 1 });
+    expect(separate).not.toHaveProperty("keypad");
+    expect(separate).not.toHaveProperty("door_window_contact");
+    expect(await security({ requested_changes: ["Replace the alarm panel and keypad", "Add contacts on the doors and windows"] })).toMatchObject({ keypad: 1, door_window_contact: 1 });
+    expect(await security({ requested_changes: ["Replace the alarm panel"], requested_quantities: [{ item: "doors", quantity: 3 }] })).toMatchObject({ door_window_contact: 3 });
+  });
+
+  it("dedupes a product two combined patterns price, at the larger count or the rep's own", async () => {
+    const patterns = await loadPatterns();
+    const job = (o: object) => {
+      const { scope } = approvedScope({ ...none, existing_detectors: "not_provided", functional_systems: ["Wi-Fi", "cameras"], ...o });
+      return materialize(scope, selectPattern(scope.functional_systems, patterns)!);
+    };
+    const both = job({ requested_changes: ["Add eero Wi-Fi to the house", "Install 2 turret cameras"] });
+    expect(both.lines.filter((l) => l.record_id === SWITCH).map((l) => [l.role, l.quantity])).toEqual([["network_switch", 1]]);
+    expect(both.requirements.find((r) => r.system === "video_surveillance")!.roles).not.toContain("camera_poe_switch");
+    const two = job({ requested_changes: ["Add eero Wi-Fi to the house", "Install 2 turret cameras", "Add 2 PoE switches"], requested_quantities: [{ item: "PoE switches", quantity: 2 }] });
+    expect(two.lines.filter((l) => l.record_id === SWITCH).map((l) => l.quantity)).toEqual([2]);
+  });
+
+  it("tells the rep the total in plain words, or why it is withheld, with up to 12 items", async () => {
+    const patterns = await loadPatterns();
+    const { scope } = approvedScope({ ...none, ...BRITT });
+    const { proposal } = await build(selectPattern(scope.functional_systems, patterns)!, BRITT);
+    const text = budgetReadyLines(proposal).join("\n");
+    expect(text).toMatch(/^Proposal validated for Ted Britt\.\nTotal \$[\d,.]+ incl\. tax \(subtotal \$[\d,.]+, tax \$[\d,.]+\)\./);
+    expect(text).not.toContain("(total");
+    const items = text.split("\n").filter((l) => l.startsWith("• "));
+    expect(items).toHaveLength(12);
+    expect(items[0]).toBe("• eero Pro 7 × 3");
+    expect(text).toContain(`+${proposal.sections.reduce((n, s) => n + s.lines.length, 0) - 12} more`);
+    expect(text).toContain("Allowances (verify on site): Low-voltage cable run (allowance) × 4 8 h, $1,432.00.");
+    const withheld = { ...proposal, unresolved: [{ item: "pool automation", role: null, reason: "not covered", escalate: true }], commercial: { ...proposal.commercial, complete: false, total_cents: null } };
+    expect(budgetReadyLines(withheld)[1]).toBe(`Priced so far ${formatUsd(proposal.commercial.subtotal_cents)} — total withheld: unresolved: pool automation.`);
+  });
+
+  it("matches a requested product to a priced line in any word order, case and punctuation", async () => {
+    const pattern = selectPattern(["networking"], await loadPatterns())!;
+    const { proposal } = await build(pattern, {
+      functional_systems: ["outdoor WiFi"],
+      requested_changes: ["Add outdoor WiFi for the back patio and pool"],
+      unresolved_questions: ["Requested product: Outdoor Eero PoE 7", "Requested product: EERO outdoor-poe 7", "Requested product: Ubiquiti U7 Outdoor"],
+    });
+    expect(proposal.remaining_verification.filter((x) => x.startsWith("Requested product"))).toEqual(["Requested product: Ubiquiti U7 Outdoor"]);
   });
 });

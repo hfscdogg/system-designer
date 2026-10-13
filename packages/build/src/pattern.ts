@@ -44,6 +44,11 @@ export const RoleSpecSchema = z
     /** Extra terms that identify this role in a stated count ("3 doors" → door/window contacts). */
     count_terms: z.array(z.string()).optional(),
     /**
+     * A stated count naming one of these is this role's count too, whichever role it names best:
+     * "4 smoke/CO detectors" is 4 smoke/heat and 4 CO detectors ("/", "&" and "and" read as spaces).
+     */
+    shared_count_terms: z.array(z.string().min(1)).min(1).optional(),
+    /**
      * Roles that are alternatives for one job (turret vs floodlight cameras).
      * When a request names any role in the group, only the named ones are priced.
      */
@@ -138,6 +143,11 @@ export const AllowanceSpecSchema = z
     /** Systems whose pattern prices this work itself (cable runs in a prewire). */
     covered_by_systems: z.array(z.string().min(1)).optional(),
     hours: z.number().positive(),
+    /**
+     * Priced once per thing asked for, not once per job: "Ethernet port in the dining room" and
+     * "… in the living room" are two cable runs. The count is the stated count when there is one.
+     */
+    counted: z.boolean().optional(),
     labor_type: z.string().min(1),
     /** Where the hours come from, kept for review. */
     basis: z.string().min(1),

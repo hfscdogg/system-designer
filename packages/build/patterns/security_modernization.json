@@ -1,7 +1,7 @@
 {
   "schema": "architecture_pattern_v1",
   "pattern": "security_modernization",
-  "version": "2026-10-10.1",
+  "version": "2026-10-14.1",
   "title": "Security modernization",
   "applies_when_any": [
     "intrusion_security"
@@ -38,6 +38,10 @@
       "systems": [
         "intrusion_security"
       ],
+      "mentions": [
+        "keypad",
+        "keypads"
+      ],
       "retained_match": [
         "keypad"
       ],
@@ -49,7 +53,7 @@
         "verify": "number of keypads (one per primary entry)"
       },
       "location": "Primary entry",
-      "capability": "Local arming and disarming",
+      "capability": "Local arming and disarming; priced when asked for (a keypad is on 20 of Livewire's 34 accepted or presented IQ Panel 5 quotes, 59%)",
       "escalate_if_unresolved": false
     },
     {
@@ -62,6 +66,16 @@
       "systems": [
         "intrusion_security"
       ],
+      "mentions": [
+        "contact",
+        "contacts",
+        "door sensor",
+        "window sensor",
+        "door/window",
+        "entry protection",
+        "doors and windows",
+        "perimeter"
+      ],
       "retained_match": [
         "contact"
       ],
@@ -73,7 +87,7 @@
         "verify": "count of protected doors and windows"
       },
       "location": "Perimeter openings",
-      "capability": "Perimeter intrusion detection",
+      "capability": "Perimeter intrusion detection; priced when asked for (door/window contacts are on 21 of Livewire's 34 accepted or presented IQ Panel 5 quotes, 62%)",
       "escalate_if_unresolved": false
     },
     {
@@ -136,6 +150,19 @@
       "categories": ["Security Systems > Smoke Detectors", "Fire Systems > Smoke"],
       "label": "Smoke/heat detector",
       "model": "PG9936",
+      "count_terms": [
+        "smoke",
+        "smoke detector",
+        "heat detector"
+      ],
+      "shared_count_terms": [
+        "smoke co",
+        "smoke carbon monoxide",
+        "co smoke",
+        "combo detector",
+        "combination detector",
+        "combo smoke"
+      ],
       "critical": true,
       "systems": [
         "fire_detection"
@@ -152,7 +179,7 @@
         "verify": "detector count per code and floor plan"
       },
       "location": "Per code",
-      "capability": "Monitored wireless smoke and heat detection",
+      "capability": "Monitored wireless smoke and heat detection; a smoke/CO location gets this and a CO detector (no PowerG smoke/CO combination detector is in Livewire's catalog or on its quotes; 9 of the 14 quotes with both price as many of each)",
       "escalate_if_unresolved": true
     },
     {
@@ -160,6 +187,20 @@
       "categories": ["Security Systems > CO2 Detectors", "Security Systems > CO Detectors"],
       "label": "Carbon monoxide detector",
       "model": "PG9933",
+      "count_terms": [
+        "co detector",
+        "co alarm",
+        "co sensor",
+        "carbon monoxide"
+      ],
+      "shared_count_terms": [
+        "smoke co",
+        "smoke carbon monoxide",
+        "co smoke",
+        "combo detector",
+        "combination detector",
+        "combo smoke"
+      ],
       "critical": true,
       "systems": [
         "co_detection"

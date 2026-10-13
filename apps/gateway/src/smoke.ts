@@ -8,7 +8,7 @@
  * Only the Google signature check is skipped: the job already runs inside the
  * project, as the worker's service account.
  */
-import type { Selection } from "@sd/build";
+import type { Proposal, Selection } from "@sd/build";
 import type { ChannelAdapter } from "@sd/channels";
 import type { RunState, ThreadRef } from "@sd/core";
 import { allowSpace, upsertPerson, type Db, type Store } from "@sd/store";
@@ -28,6 +28,8 @@ export interface SmokeStep {
   pattern?: string;
   /** Text the approved receipt must contain (case-insensitive). */
   receipt?: string[];
+  /** The budget must carry a total (nothing left unresolved that withholds it). */
+  total?: boolean;
 }
 
 export interface SmokeScenario {
@@ -106,6 +108,8 @@ export const SMOKE_SCENARIOS: SmokeScenario[] = [
         expect: { tv_mount: 0, tv_mount_articulating: 0, wired_access_point: 0 },
         atLeast: { outdoor_access_point: 1, mesh_wifi: 1 },
         receipt: ["Requested product: Bretford"],
+        // The cart is listed to price, and an Apple TV for streaming is the TV's source: neither withholds the total (2026-10-13).
+        total: true,
       },
     ],
   },
@@ -117,6 +121,22 @@ export const SMOKE_SCENARIOS: SmokeScenario[] = [
         say: `TV install for the Britt family, ${ADDRESS}. Residential. Mount the customer's 65-inch TV on an articulating mount in the living room.`,
         pattern: "tv_media",
         expect: { tv_mount_articulating: 1, tv_mount: 0, television: 0 },
+      },
+    ],
+  },
+  {
+    // Zack's round 3 (2026-10-13): no doorbell, microSD cards for the SVR, two switches, a tilt mount for "articulated",
+    // an unasked keypad and contact, and one smoke and one CO detector for 4 smoke/CO detectors.
+    name: "Britt (security, cameras, network and outdoor TV)",
+    steps: [
+      {
+        say:
+          `Ted Britt, ${ADDRESS}. Residential. Network: Ethernet port in the master bedroom, dining room and living room, and one behind the outdoor TV on the back porch; ` +
+          "PoE access point in the top floor hallway. Outdoor TV: customer's 55-inch outdoor TV on an articulated mounting bracket. " +
+          "Security: SVR in the dining room; security panel in the hallway from the garage to the kitchen; 1 x wired smart doorbell camera (current doorbell and chime work); " +
+          "1 x wired floodlight camera above the garage; 1 x wired camera at the front of the house; 1 x wired camera on the back corner; " +
+          "2 x smoke/CO detectors upstairs and 2 x smoke/CO detectors downstairs, replacing none; 1 x smart thermostat downstairs.",
+        expect: { doorbell_camera: 1, nvr: 1, camera_storage: 0, network_switch: 1, camera_poe_switch: 0, power_protection: 1, tv_mount_articulating: 1, tv_mount: 0, keypad: 0, door_window_contact: 0, smoke_heat_detector: 4, co_detector: 4 },
       },
     ],
   },
@@ -317,6 +337,7 @@ export async function runSmoke(deps: SmokeDeps): Promise<{ runs: string[]; failu
             .filter(([role, q]) => got(role) < q)
             .map(([role, q]) => `${role} expected at least ${q}, got ${got(role)}`),
           ...(s.receipt ?? []).filter((text) => !lines.some((l) => l.includes(text.toLowerCase()))).map((text) => `receipt is missing "${text}"`),
+          ...(s.total && (await deps.store.readArtifact<Proposal>(run.id, "bind", "proposal"))?.commercial.total_cents == null ? ["the budget has no total"] : []),
         ];
         if (wrong.length) throw new SmokeFailure(`${step}: ${wrong.join("; ")}`);
         log(`${step}: ok (${selection?.pattern}: ${[...qty].map(([r, q]) => `${r} ${q}`).join(", ")})`);
