@@ -715,6 +715,12 @@ describe("editing a scope and revising a finished budget", () => {
     });
     const ours = row!.total_usd ?? row!.subtotal_usd!;
     expect(ours).toBeGreaterThan(0);
+    // Line items, and why a total is withheld, so a review can see what was priced without the PDF.
+    expect(row!.items.length).toBeGreaterThan(0);
+    expect(row!.items.every((i) => / × \d+$/.test(i))).toBe(true);
+    if (row!.total_usd === null) expect(row!.total_withheld.length).toBeGreaterThan(0);
+    else expect(row!.total_withheld).toEqual([]);
+    expect(Array.isArray(row!.to_verify)).toBe(true);
     // Left as built and the retainer sent: 5 stars.
     const [scored] = await scoreRuns(t.store, [row!], new Date());
     expect(scored).toMatchObject({ changes: null, stars: 5, why: "left as built; retainer sent", final_quote_usd: null });

@@ -37,6 +37,10 @@ const COLUMNS: Array<keyof ScoredRow> = [
   "retainer_opportunity",
   "retainer_invoice",
   "retainer_paid_at",
+  "items",
+  "allowances",
+  "total_withheld",
+  "to_verify",
   "final_quote_usd",
   "final_quote_diff_pct",
   "thread_runs",
@@ -46,7 +50,7 @@ const COLUMNS: Array<keyof ScoredRow> = [
   "last_error",
 ];
 
-/** RFC 4180 CSV: every field quoted, quotes doubled; later messages joined with " | ". */
+/** RFC 4180 CSV: every field quoted, quotes doubled; lists (later messages, items, …) joined with " | ". */
 export function runsCsv(rows: ScoredRow[]): string {
   const cell = (v: unknown) => `"${(Array.isArray(v) ? v.join(" | ") : v == null ? "" : String(v)).replace(/"/g, '""')}"`;
   return [COLUMNS.join(","), ...rows.map((r) => COLUMNS.map((c) => cell(r[c])).join(","))].join("\n") + "\n";
