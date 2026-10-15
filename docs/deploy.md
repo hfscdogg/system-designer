@@ -7,9 +7,9 @@ Everything runs in the Google Cloud project you created, in **us-east4**. You ru
 | Piece | What it is | Notes |
 |---|---|---|
 | `sd-gateway-{staging,prod}` | Cloud Run service receiving Google Chat events | Public URL. Every request is checked against Google's signed token; unauthenticated calls get 401. Scales to zero. |
-| `sd-worker-{env}-sha-…` | Cloud Run service running the Temporal worker | One service per release. Older releases stay up until their pinned runs finish, then are deleted automatically. Private. |
+| `sd-worker-{staging,prod}` | Cloud Run service running the Temporal worker | One per environment, updated in place by each deploy; in-flight runs move to the new release (AUTO_UPGRADE). Always on in prod; staging is parked after its deploy's smoke test. Private. |
 | `sd-migrate-{env}` | Cloud Run job | Runs database migrations before each release. |
-| `sd-reconcile-{env}` | Cloud Run job, hourly | Restarts any saved run whose workflow never started. Reads real quotes under retainer opportunities, checks retainer invoices for payment, and copies the run log to BigQuery. |
+| `sd-reconcile-{env}` | Cloud Run job, hourly | Restarts any saved run whose workflow never started. Parks old `sd-worker-{env}-sha-…` builds and deletes them once drained. Reads real quotes under retainer opportunities, checks retainer invoices for payment, and copies the run log to BigQuery. |
 | Cloud SQL `system-designer` | Postgres 16, databases `sd_staging` and `sd_prod` | Daily backups, point-in-time recovery, deletion protection. |
 | `<project>-sd-evidence-{env}` | Storage buckets | Intake, catalog evidence, PDFs. Versioned. The app can create and read objects but never delete them. |
 | Secret Manager | API keys and database URLs | Values never live in GitHub or the repo. |
@@ -137,27 +137,52 @@ It uses its own Intuit app, so the data warehouse's and Outgrow's QuickBooks con
 
 ## Rollback
 
-Run **CI** manually on `main` (Actions → CI → Run workflow) with `rollback_image` set to an earlier `…@sha256:…` reference, from a previous run's `release-*.txt`. It goes through the same staging → approval → production path. Runs already in flight stay pinned to the release they started on.
+Run **CI** manually on `main` (Actions → CI → Run workflow) with `rollback_image` set to an earlier `…@sha256:…` reference, from a previous run's `release-*.txt`. It goes through the same staging → approval → production path. Runs already in flight move to the rolled-back release too, so roll back across a workflow-code change only if that change was guarded with `patched()` (see `apps/worker/src/workflows/index.ts`).
 
 ## Cost (rough, check GCP pricing)
 
 | Item | Approx. per month |
 |---|---|
 | Cloud SQL `db-g1-small` | $25–30 |
-| One always-on worker build per environment (1 vCPU, 2 GiB, CPU always allocated) | ~$57 each |
+| One always-on worker (prod; 1 vCPU, 2 GiB, CPU always allocated) | ~$58 |
+| Staging worker | parked between deploys: ~$0 |
 | Gateway, storage and secrets | a few dollars |
 | Temporal Cloud | separate |
 | Anthropic usage | separate |
 
-**Watch the worker count.** Each deploy starts a new worker service, and older ones stay up, always on, until
-Temporal reports their pinned runs drained. A run waiting on a reply stays open up to 14 days, and old builds are
-only cleaned up by the next deploy. So a day of many merges can leave dozens of ~$57/month workers running.
+**One worker per environment.** Until October 2026 each deploy started a new always-on worker service
+(`sd-worker-{env}-sha-…`) and workflows were PINNED to it, so old builds stayed up while any run on them waited for
+a reply (up to 14 days). 57 deploys in a week left 93 workers running, ~$177/day. Now:
+- Workflows run AUTO_UPGRADE, so each deploy updates the one `sd-worker-{env}` service in place.
+  **Workflow-code changes need `patched()`**: see the comment at the top of `apps/worker/src/workflows/index.ts`.
+- The staging worker is parked (min 0, CPU only during requests) right after the deploy's smoke test.
+- Each deploy parks its environment's leftover `sd-worker-{env}-sha-…` services, then **fails if more than 2
+  always-on workers exist** in the region.
+- The hourly `sd-reconcile-{env}` job parks any always-on leftover build and deletes it once Temporal reports it
+  drained (or never used). It needs the IAM in `infra/terraform/iam.tf` (`worker_retire_own_services`): run
+  `terraform apply` after pulling this change, or the job logs a 403 and exits non-zero.
+
+**An old conversation stuck on a parked build.** Runs pinned to a parked `sd-worker-{env}-sha-…` build wait; they
+don't fail. To let one finish, unpark that build and label it so neither the deploy nor the hourly job parks it again:
+```bash
+gcloud run services update sd-worker-prod-sha-<build> --region us-east4 \
+  --min-instances 1 --no-cpu-throttling --update-labels sd-keep=true
+# when done (the hourly job deletes it once drained):
+gcloud run services update sd-worker-prod-sha-<build> --region us-east4 \
+  --min-instances 0 --cpu-throttling --remove-labels sd-keep
+```
+Or move those runs onto the current release, if no workflow code changed between the two builds:
+```bash
+temporal workflow update-options --versioning-override-behavior auto_upgrade \
+  --query "TemporalWorkerDeploymentVersion='system-designer-prod:sha-<build>' AND ExecutionStatus='Running'"
+```
+
 - `scripts/cloud-run-audit.sh <project-id>` lists every service, job and worker pool with its min instances,
   CPU allocation, size and revision date, plus each worker build's Temporal drainage. It changes nothing.
-- `scripts/retire-workers.sh <project-id> <staging|prod>` keeps the newest worker and, for each older one, lets you
-  park it (min 0, request-based CPU, reversible) or delete it after you type its name.
+- `scripts/retire-workers.sh <project-id> <staging|prod>` walks the leftover `sd-worker-{env}-sha-…` builds and
+  lets you park each (reversible) or delete it after you type its name.
 
 ## Known gaps
 
-- **Not yet exercised against real Temporal Cloud:** the Temporal CLI commands that promote a release and detect drained releases (`set-current-version`, `describe-version`). Check the first staging deploy's log; drained-worker cleanup keeps old workers when unsure, never deletes them.
+- **Not yet exercised against real Temporal Cloud:** the version lookup the hourly job uses to find drained builds (`DescribeWorkerDeploymentVersion`). Check the first `sd-reconcile-{env}` log line `retire_workers`; when Temporal can't be asked, a build is parked, never deleted.
 - **Evidence retention:** the policy is created **unlocked** at 365 days. Locking is irreversible, so it waits for your decision on the period.

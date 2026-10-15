@@ -73,15 +73,14 @@ TEMPORAL_API_KEY="$(gcloud secrets versions access latest --secret temporal-api-
 export TEMPORAL_API_KEY
 for env in staging prod; do
   deployment="system-designer-${env}"
-  for svc in $(gcloud run services list --project "${PROJECT}" --region "${REGION}" \
-      --filter "metadata.labels.sd-env=${env} AND metadata.labels.sd-role=worker" --format 'value(metadata.name)'); do
-    build="${svc#sd-worker-"${env}"-}"
+  while read -r svc build; do
     status="$(temporal worker deployment describe-version --address "${TEMPORAL_ADDRESS}" --namespace "${TEMPORAL_NAMESPACE}" \
       --deployment-name "${deployment}" --build-id "${build}" -o json 2>/dev/null \
       | jq -r '[.. | objects | (.drainageStatus? // .status? // empty) | strings] | join(",")' || true)"
     running="$(temporal workflow count --address "${TEMPORAL_ADDRESS}" --namespace "${TEMPORAL_NAMESPACE}" \
       --query "TemporalWorkerDeploymentVersion='${deployment}:${build}' AND ExecutionStatus='Running'" -o json 2>/dev/null \
       | jq -r '.count // empty' || true)"
-    printf '%s\tstatus=%s\trunning_workflows=%s\n' "${svc}" "${status:-unknown}" "${running:-unknown}"
-  done
+    printf '%s\t%s\tstatus=%s\trunning_workflows=%s\n' "${svc}" "${build}" "${status:-unknown}" "${running:-unknown}"
+  done < <(gcloud run services list --project "${PROJECT}" --region "${REGION}" \
+      --filter "metadata.labels.sd-env=${env} AND metadata.labels.sd-role=worker" --format 'value(metadata.name,metadata.labels.sd-build)')
 done | column -t -s $'\t'
