@@ -254,7 +254,8 @@ describe("patterns", () => {
     expect(roles.has("automation_controller")).toBe(false);
     // Only the new TV needs a mount: the moved one has its own.
     expect(roles.get("tv_mount")).toBe(1);
-    expect(roles.get("streamer")).toBe(1);
+    // The Apple TV is left out of the budget (Henry, 2026-10-15).
+    expect(roles.has("streamer")).toBe(false);
 
     // If the interpreter leaves Control4 in the systems, the excluded remote is still removed.
     const kept = approvedScope({
@@ -747,8 +748,8 @@ describe("HDMI on TV jobs (Henry, 2026-10-12)", () => {
     const tv = patterns.find((p) => p.pattern === "tv_media")!;
     const roles = (functional_systems: string[], requested_changes: string[]) =>
       new Map(materialize(approvedScope({ functional_systems, requested_changes, existing_detectors: "not_provided" }).scope, tv).lines.map((l) => [l.role, l.quantity]));
-    // Soundbar + Apple TV: two cables, like most Livewire TV-and-soundbar quotes.
-    expect(roles(["TV", "Sonos Arc Ultra", "Sonos Sub"], ['Provide a 77" OLED TV with a Sonos Arc Ultra and Sonos Sub', "Use the Apple TV remote to control everything"]).get("hdmi_cable")).toBe(2);
+    // One per priced source: the soundbar. The Apple TV is left out of the budget (Henry, 2026-10-15).
+    expect(roles(["TV", "Sonos Arc Ultra", "Sonos Sub"], ['Provide a 77" OLED TV with a Sonos Arc Ultra and Sonos Sub', "Use the Apple TV remote to control everything"]).get("hdmi_cable")).toBe(1);
     // A TV hang with no new sources needs no new cable (Zack's test round, 2026-10-12).
     expect(roles(["TV"], ["Mount the customer's TV on the living room wall"]).has("hdmi_cable")).toBe(false);
     expect(roles(["TV"], ["Mount the customer's TV on the living room wall with a new Apple TV"]).get("hdmi_cable")).toBe(1);
@@ -1064,7 +1065,7 @@ describe("Zack's round 3 (2026-10-13)", () => {
     ],
   };
 
-  it("prices Crowder's Apple TV for \"streaming\" and keeps the total, and drops verify lines the budget settles", async () => {
+  it("leaves Crowder's Apple TV for \"streaming\" out of the budget and keeps the total, and drops verify lines the budget settles", async () => {
     const patterns = await loadPatterns();
     const crowder = {
       client: "Rick Crowder",
@@ -1099,13 +1100,14 @@ describe("Zack's round 3 (2026-10-13)", () => {
     expect(pattern.pattern).toBe("home_network+tv_media");
     const { selection, proposal, validation } = await build(pattern, crowder);
     expect(selection.unresolved).toEqual([]);
-    expect(quantities(selection)).toMatchObject({ streamer: 1, mesh_wifi: 2, outdoor_access_point: 1, network_switch: 1 });
+    expect(quantities(selection)).toMatchObject({ mesh_wifi: 2, outdoor_access_point: 1, network_switch: 1 });
+    expect(quantities(selection)).not.toHaveProperty("streamer");
     expect(proposal.commercial.total_cents).not.toBeNull();
     expect(validation.ok).toBe(true);
-    // The priced outdoor eero, the client's own TV and the PoE switch question are settled; the cart and the open question stay.
+    // The priced outdoor eero, the client's own TV and the PoE switch question are settled; the cart, the unpriced Apple TV and the open question stay.
     const v = proposal.remaining_verification;
-    expect(v.filter((x) => /Outdoor Eero|LG 75UN|Apple TV|PoE (switch|injector)/i.test(x))).toEqual([]);
-    expect(v).toEqual(expect.arrayContaining(["Requested product: Bretford Explorer display cart ETCMV-SB*", "Is a second outdoor AP needed for TV use on the pool deck?"]));
+    expect(v.filter((x) => /Outdoor Eero|LG 75UN|PoE (switch|injector)/i.test(x))).toEqual([]);
+    expect(v).toEqual(expect.arrayContaining(["Requested product: Bretford Explorer display cart ETCMV-SB*", "Requested product: Apple TV", "Is a second outdoor AP needed for TV use on the pool deck?"]));
   });
 
   it("prices Britt's doorbell, SVR, articulating mount, 4 smoke/CO pairs, 4 cable runs and one switch, with no unasked keypad or contacts", async () => {
