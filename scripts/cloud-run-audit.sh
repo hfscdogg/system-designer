@@ -12,10 +12,13 @@ PROJECT="${1:?project id}"
 REGION="${2:-us-east4}"
 
 echo "== Cloud Run services in ${PROJECT} / ${REGION}"
-REVISIONS="$(gcloud run revisions list --project "${PROJECT}" --region "${REGION}" --format json)"
+# Revisions go through a file: with many deploys the list is too long to pass as an argument.
+REVISIONS="$(mktemp)"
+trap 'rm -f "${REVISIONS}"' EXIT
+gcloud run revisions list --project "${PROJECT}" --region "${REGION}" --format json >"${REVISIONS}"
 gcloud run services list --project "${PROJECT}" --region "${REGION}" --format json \
-  | jq -r --argjson revs "${REVISIONS}" '
-      ($revs | map({key: .metadata.name, value: .metadata.creationTimestamp}) | from_entries) as $created
+  | jq -r --slurpfile revfile "${REVISIONS}" '
+      ($revfile[0] | map({key: .metadata.name, value: .metadata.creationTimestamp}) | from_entries) as $created
       | ["SERVICE", "MIN", "MAX", "CPU_ALLOCATION", "VCPU", "MEMORY", "CONCURRENCY", "LATEST_REVISION", "REVISION_CREATED"],
         (.[] | .spec.template as $t | ($t.metadata.annotations // {}) as $a | (.metadata.annotations // {}) as $sa
           | [ .metadata.name,
