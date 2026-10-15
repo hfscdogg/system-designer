@@ -553,6 +553,11 @@ describe("materialize → compile → bind → validate", () => {
     expect(validation.ok).toBe(true);
   });
 
+  it("prices new detectors the rep counts even when existing ones are kept (staging smoke, 2026-10-15)", async () => {
+    const { selection } = await pipeline({ existing_detectors: "keep_and_monitor", requested_quantities: [{ item: "smoke/CO detectors upstairs", quantity: 2 }] });
+    expect(Object.fromEntries(selection.lines.map((l) => [l.role, l.quantity]))).toMatchObject({ smoke_heat_detector: 2, co_detector: 2, detector_listener: 1 });
+  });
+
   it("uses the counts the requester stated, and verifies only the rest", async () => {
     const { selection, proposal } = await pipeline({ requested_quantities: [{ item: "Keypads", quantity: 2 }, { item: "glass-break sensors", quantity: 3 }] });
     expect(selection.lines.find((l) => l.role === "keypad")).toMatchObject({ quantity: 2, quantity_basis: "fixed", verify: null });

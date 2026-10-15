@@ -513,7 +513,9 @@ export function materialize(stated: ScopeDraftV1, pattern: PatternSpec, namedPro
       notAsked.add(role.role);
       continue;
     }
-    if (role.existing_detectors && !(role.existing_detectors as string[]).includes(scope.existing_detectors)) continue;
+    // New detectors the rep counts ("2 x smoke/CO detectors upstairs") are priced whatever the answer about existing
+    // ones reads as: "replacing none" is not "keep the existing detectors instead" (staging smoke, 2026-10-15).
+    if (role.existing_detectors && !(role.existing_detectors as string[]).includes(scope.existing_detectors) && !(role.existing_detectors.includes("none") && statedQuantity(scope, role, pattern.roles) !== null)) continue;
     if (excluded(scope, role)) {
       removedRoles.add(role.role);
       continue;
