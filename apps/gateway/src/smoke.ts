@@ -108,7 +108,7 @@ export const SMOKE_SCENARIOS: SmokeScenario[] = [
         expect: { tv_mount: 0, tv_mount_articulating: 0, wired_access_point: 0 },
         atLeast: { outdoor_access_point: 1, mesh_wifi: 1 },
         receipt: ["Requested product: Bretford"],
-        // The cart is listed to price, and an Apple TV for streaming is the TV's source: neither withholds the total (2026-10-13).
+        // The cart is listed to price, and an Apple TV for streaming is listed but left out of the budget: neither withholds the total (2026-10-15).
         total: true,
       },
     ],
