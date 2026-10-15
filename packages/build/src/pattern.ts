@@ -28,6 +28,8 @@ export const RoleSpecSchema = z
      * "internet"). Unlike mentions they don't name the device, so "add Wi-Fi" is not an add-on of one eero.
      */
     asked_by: z.array(z.string()).min(1).optional(),
+    /** When priced without any of these roles, `verify` is listed to check (an eero access point with no eero router priced). */
+    verify_without: z.object({ roles: z.array(z.string()).min(1), verify: z.string().min(1) }).strict().optional(),
     /** Include the role only when one of these roles is included (a switch and power protection for the eero network). */
     with_roles: z.array(z.string()).min(1).optional(),
     /**
@@ -62,6 +64,18 @@ export const RoleSpecSchema = z
      * passive speakers (pairs count as two), new or existing, once the request asks for speakers.
      */
     drives: z.object({ roles: z.array(z.string()).min(1), speakers_per_unit: z.number().int().positive() }).strict().optional(),
+    /**
+     * Another brand's approved record, priced when the request names that brand for this device ("Klipsch
+     * in-ceiling speakers" on Biscuit Belly, 2026-10-15) instead of the standard's. Sold each, like a product
+     * named by model. With `market`, only on that market's jobs.
+     */
+    brand_variants: z
+      .array(
+        z
+          .object({ brand: z.string().min(1), market: z.enum(MARKETS).optional(), product_id: z.string().uuid(), model: z.string().min(1), label: z.string().min(1) })
+          .strict(),
+      )
+      .optional(),
     /** The approved record for one market instead of the standard (a 70V commercial amplifier), with its own speakers per unit. */
     market_variants: z
       .array(
@@ -75,9 +89,13 @@ export const RoleSpecSchema = z
      * as a requested product, priced in the final proposal, instead of withholding the budget total.
      */
     unpriced: z.literal("verify").optional(),
-    /** Alternative approved records chosen by the size the request names ("75-inch" → the 77" model). */
+    /**
+     * Alternative approved records chosen by the size the request names ("75-inch" → the 77" model).
+     * An `outdoor` variant is chosen only for a request that says the device goes outside (and only one is):
+     * an outdoor TV is never priced as an indoor one.
+     */
     variants: z
-      .array(z.object({ sizes: z.array(z.number().int().positive()).min(1), product_id: z.string().uuid(), label: z.string().min(1) }).strict())
+      .array(z.object({ sizes: z.array(z.number().int().positive()).min(1), product_id: z.string().uuid(), label: z.string().min(1), outdoor: z.boolean().optional() }).strict())
       .optional(),
     /** D-Tools product record. Null until Livewire chooses a standard product. */
     product_id: z.string().uuid().nullable(),
@@ -148,6 +166,21 @@ export const AllowanceSpecSchema = z
      * "… in the living room" are two cable runs. The count is the stated count when there is one.
      */
     counted: z.boolean().optional(),
+    /**
+     * Roles each priced unit of which needs one more of this counted allowance (a cable run per wired access point),
+     * unless the request states its own count of runs or drops, which already includes them.
+     */
+    per_role: z.array(z.string().min(1)).min(1).optional(),
+    /**
+     * Hours per foot when the request gives a length ("120 ft of hand trench"): the allowance is the larger of
+     * `hours` and the feet (times the runs it names, "two conduits") at this rate (Henry, 2026-10-15).
+     */
+    hours_per_foot: z.number().positive().optional(),
+    /**
+     * Laid in a trench the request also asks for (conduit in an open trench): the trench's length times the
+     * runs named, at this lower per-foot rate, at least `hours` (Henry, 2026-10-15).
+     */
+    in_trench: z.object({ trench: z.string().min(1), hours_per_foot: z.number().positive() }).strict().optional(),
     labor_type: z.string().min(1),
     /** Where the hours come from, kept for review. */
     basis: z.string().min(1),
@@ -281,7 +314,7 @@ export function combinePatterns(ps: PatternSpec[]): PatternSpec | null {
 
 /** Every product record a pattern may need, for exact-record reads. */
 export function patternRecordIds(p: PatternSpec): string[] {
-  const ids = [...p.roles, ...p.services, ...p.roles.flatMap((r) => [...(r.variants ?? []), ...(r.market_variants ?? [])])]
+  const ids = [...p.roles, ...p.services, ...p.roles.flatMap((r) => [...(r.variants ?? []), ...(r.market_variants ?? []), ...(r.brand_variants ?? [])])]
     .map((x) => x.product_id)
     .filter((x): x is string => x !== null);
   if (p.parts) ids.push(p.parts.product_id);
@@ -309,6 +342,13 @@ export async function loadPatterns(dir = new URL("../patterns/", import.meta.url
       return allowances.length ? { ...p, allowances } : p;
     }),
   );
+}
+
+/** An allowance's hours: per unit for a counted one, or by length at its per-foot rate when it has one and a length is given. */
+export function allowanceHours(spec: Pick<AllowanceSpec, "hours" | "hours_per_foot" | "in_trench">, units = 1, feet?: number, inTrench = false): number {
+  const rate = inTrench ? spec.in_trench?.hours_per_foot : spec.hours_per_foot;
+  if (feet && rate) return Math.max(spec.hours, Math.ceil(Math.round(feet * rate * 1000) / 1000 * 2) / 2);
+  return spec.hours * units;
 }
 
 /** The allowance templates in the patterns directory (not a pattern itself). */

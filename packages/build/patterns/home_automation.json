@@ -1,7 +1,7 @@
 {
   "schema": "architecture_pattern_v1",
   "pattern": "home_automation",
-  "version": "2026-10-10.2",
+  "version": "2026-10-15.1",
   "title": "Control4 home automation",
   "applies_when_any": [
     "home_automation"
@@ -39,6 +39,11 @@
       "critical": true,
       "systems": [
         "home_automation"
+      ],
+      "mentions": [
+        "remote",
+        "halo",
+        "handheld"
       ],
       "retained_match": [
         "remote"

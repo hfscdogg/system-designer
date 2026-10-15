@@ -108,7 +108,7 @@ export const SMOKE_SCENARIOS: SmokeScenario[] = [
         expect: { tv_mount: 0, tv_mount_articulating: 0, wired_access_point: 0 },
         atLeast: { outdoor_access_point: 1, mesh_wifi: 1 },
         receipt: ["Requested product: Bretford"],
-        // The cart is listed to price, and an Apple TV for streaming is listed but left out of the budget: neither withholds the total (2026-10-15).
+        // The cart is listed to price, and an Apple TV for streaming is the TV's source (the 2026 SKU at $339): neither withholds the total (2026-10-15).
         total: true,
       },
     ],
@@ -137,6 +137,32 @@ export const SMOKE_SCENARIOS: SmokeScenario[] = [
           "1 x wired floodlight camera above the garage; 1 x wired camera at the front of the house; 1 x wired camera on the back corner; " +
           "2 x smoke/CO detectors upstairs and 2 x smoke/CO detectors downstairs, replacing none; 1 x smart thermostat downstairs.",
         expect: { doorbell_camera: 1, nvr: 1, camera_storage: 0, network_switch: 1, camera_poe_switch: 0, power_protection: 1, tv_mount_articulating: 1, tv_mount: 0, keypad: 0, door_window_contact: 0, smoke_heat_detector: 4, co_detector: 4 },
+      },
+    ],
+  },
+  {
+    // Zack's round 4 (2026-10-15): the kept Control4 controller withheld the total, a Halo remote nobody asked for was added,
+    // and the 75" full-weather outdoor TV was priced as the indoor 77" Sony.
+    name: "McGetrick (outdoor TV, existing Control4)",
+    steps: [
+      {
+        say:
+          `McGetrick family, ${ADDRESS}. Residential. Sell a new 75" full weather outdoor TV for the covered patio on an articulated mount, ` +
+          "and add it to their existing Control4 system; the Control4 controller stays.",
+        expect: { automation_remote: 0, tv_mount_articulating: 1, tv_mount: 0 },
+        total: true,
+      },
+    ],
+  },
+  {
+    // Zack's round 4 (2026-10-15): "4 exterior cameras" was priced on top of the four it then listed.
+    name: "Bowen-Rees (camera total, itemized)",
+    steps: [
+      {
+        say:
+          `Melissa Bowen-Rees, ${ADDRESS}. Residential. 4 exterior cameras: 1 x wired smart doorbell camera at the front door (current doorbell and chime work); ` +
+          "1 x wired camera on the side of the house; 1 x wired camera at the back of the house; 1 x wired floodlight camera above the garage. SVR in the basement closet.",
+        expect: { outdoor_camera: 2, floodlight_camera: 1, doorbell_camera: 1, nvr: 1 },
       },
     ],
   },

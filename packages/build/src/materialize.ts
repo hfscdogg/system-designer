@@ -1,6 +1,6 @@
 import { isAddOnRequest, type ScopeDraftV1 } from "@sd/core";
 import type { NamedProduct } from "./named.ts";
-import { laborHoursFor, type AllowanceSpec, type PatternSpec, type RoleSpec } from "./pattern.ts";
+import { allowanceHours, laborHoursFor, type AllowanceSpec, type PatternSpec, type RoleSpec } from "./pattern.ts";
 
 /**
  * Deterministic materializer (PRD §13.2): approved scope + approved pattern →
@@ -38,7 +38,7 @@ export interface Selection {
   unresolved: Array<{ item: string; role: string | null; reason: string; escalate: boolean }>;
   /** Labor for out-of-pattern work the request asks for (a conduit run), from the pattern's allowance templates; priced at the policy rate. */
   /** quantity: how many of a counted template the hours cover (4 Ethernet ports); absent for one. */
-  labor_allowances: Array<{ key: string; label: string; hours: number; labor_type: string; quantity?: number }>;
+  labor_allowances: Array<{ key: string; label: string; hours: number; labor_type: string; quantity?: number; feet?: number; trenched?: true }>;
   /** Requested products with no Livewire standard (a TV cart), listed to verify and priced in the final proposal. */
   to_verify: string[];
 }
@@ -60,8 +60,26 @@ const requestTexts = (scope: ScopeDraftV1) => [...scope.requested_changes, ...sc
  * With `require`, the same change must also name one of those ("outdoor" counts for
  * an eero only beside Wi-Fi words, not in "outdoor PoE cameras").
  */
-function mentioned(scope: ScopeDraftV1, terms: string[], require?: string[]): boolean {
-  return requestTexts(scope).some((t) => terms.some((term) => hasWord(t, fold(term))) && (!require || require.some((r) => hasWord(t, fold(r)))));
+function mentioned(scope: ScopeDraftV1, terms: string[], require?: string[], without: string[] = []): boolean {
+  const strip = (t: string) => without.reduce((x, p) => x.replace(new RegExp(`\\b${escape(p)}(s|es)?\\b`, "g"), " "), t);
+  return requestTexts(scope)
+    .map(strip)
+    .some((t) => terms.some((term) => hasWord(t, fold(term))) && (!require || require.some((r) => hasWord(t, fold(r)))));
+}
+
+/**
+ * Phrases that name another role of the same count group ("PoE access point" for the wired eero):
+ * their words ask for that role, not this one. A PoE access point is not a request for mesh Wi-Fi
+ * or an outdoor eero (Zack's Britt job, 2026-10-15).
+ */
+function siblingPhrases(role: RoleSpec, roles: RoleSpec[]): string[] {
+  if (!role.count_group) return [];
+  const own = new Set([...(role.mentions ?? []), ...(role.asked_by ?? []), ...(role.count_terms ?? [])].map(fold));
+  return roles
+    .filter((r) => r !== role && r.count_group === role.count_group)
+    .flatMap((r) => [...(r.mentions ?? []), ...(r.count_terms ?? [])].map(fold))
+    .filter((p) => /\s/.test(p) && !own.has(p))
+    .sort((a, b) => b.length - a.length);
 }
 
 /** Every word of a multi-word term appears in the text, in any order: "mount for the soundbar" names a "soundbar mount". */
@@ -142,7 +160,42 @@ const joined = (s: string) => fold(s).replace(/\s*[/&+]\s*|\s+and\s+/g, " ");
 
 /** Where an item is, not what it is: "smoke/CO detectors upstairs" and "… in the living room" are the same device. */
 const PLACE = /\s+\b(upstairs|downstairs|in|at|on|by|near|above|below|behind|outside|inside|for|facing|over|under|of)\b.*$/;
-const deviceOf = (item: string) => fold(item).replace(PLACE, "").trim();
+/** Place words on their own, wherever they stand: "upstairs smoke/CO detectors", "smoke/CO detectors (downstairs)" (Zack's Britt job, 2026-10-15). */
+const PLACE_WORD = /\b(upstairs|downstairs|basement|attic|first|second|third|top|main|lower|upper|floor|level)\b/g;
+const deviceOf = (item: string) =>
+  fold(item)
+    .replace(/\([^)]*\)/g, " ")
+    .replace(PLACE, "")
+    .replace(PLACE_WORD, " ")
+    .replace(/\s+/g, " ")
+    .trim();
+
+/** Words that say what kind of thing, not which one: a total of "4 exterior cameras" counts doorbell and wired cameras alike. */
+const KIND_WORDS = new Set(["exterior", "interior", "outdoor", "indoor", "outside", "inside", "wired", "wireless", "hardwired", "new", "total", "additional", "more", "smart", "security"]);
+const itemWords = (item: string) =>
+  deviceOf(item)
+    .split(/[^a-z0-9]+/)
+    .filter(Boolean)
+    .map((w) => w.replace(/(?<=[a-z]{3})(es|s)$/, ""));
+
+/**
+ * A stated total the request then itemizes ("4 exterior cameras": a doorbell camera, a floodlight
+ * camera and 2 wired cameras; "4 smoke/CO detectors": 2 upstairs and 2 downstairs) is not more
+ * devices on top of its items (Zack's Bowen-Rees job, 2026-10-15). A count is a total when two or
+ * more other counts each name all of its device words and add up to it exactly.
+ */
+function withoutTotals(scope: ScopeDraftV1): ScopeDraftV1 {
+  const qs = scope.requested_quantities;
+  const totals = new Set(
+    qs.filter((q) => {
+      const words = itemWords(q.item).filter((w) => !KIND_WORDS.has(w));
+      if (!words.length) return false;
+      const parts = qs.filter((o) => o !== q && words.every((w) => itemWords(o.item).includes(w)));
+      return parts.length >= 2 && parts.reduce((n, o) => n + o.quantity, 0) === q.quantity;
+    }),
+  );
+  return totals.size ? { ...scope, requested_quantities: qs.filter((q) => !totals.has(q)) } : scope;
+}
 
 function statedItem(scope: ScopeDraftV1, role: RoleSpec, roles: RoleSpec[]): { item: string; quantity: number } | null {
   const mine: Array<{ item: string; quantity: number }> = [];
@@ -315,10 +368,28 @@ function excluded(scope: ScopeDraftV1, role: RoleSpec): boolean {
   });
 }
 
-/** The approved record for the size the request names for a new device, if the role has size variants. */
+/** Words that put a device outside: "75\" full weather outdoor TV", "weatherproof TV on the patio". */
+const OUTDOOR = /\b(outdoors?|outside|exterior|weather[- ]?proof|weather[- ]?rated|all[- ]weather|full[- ]weather|full[- ]sun|partial[- ]sun|full[- ]shade|patio|porch|pool ?deck|pergola|terrace|veranda)\b/;
+
+/** The request's changes that name this role's device (its label or retained-equipment terms), for size and placement. */
+const deviceChanges = (scope: ScopeDraftV1, role: RoleSpec) =>
+  otherChanges(scope).filter((c) => [fold(role.label), ...(role.retained_match ?? []).map(fold)].some((t) => hasWord(c, t)));
+
+/** The request puts this device outside (McGetrick, 2026-10-15: a 75" full-weather outdoor TV was priced as an indoor Sony). */
+function outdoorAsked(scope: ScopeDraftV1, role: RoleSpec): boolean {
+  return !!role.variants?.length && deviceChanges(scope, role).some((c) => OUTDOOR.test(c));
+}
+
+/** The approved record for the size the request names for a new device, if the role has size variants (an outdoor one when it goes outside). */
 function variantFor(scope: ScopeDraftV1, role: RoleSpec) {
-  const sizes = otherChanges(scope).flatMap((c) => [...c.matchAll(SIZE)].map((m) => Number(m[1])));
-  return role.variants?.find((v) => v.sizes.some((n) => sizes.includes(n)));
+  const outdoor = outdoorAsked(scope, role);
+  const sizes = (outdoor ? deviceChanges(scope, role) : otherChanges(scope)).flatMap((c) => [...c.matchAll(SIZE)].map((m) => Number(m[1])));
+  return role.variants?.find((v) => !!v.outdoor === outdoor && v.sizes.some((n) => sizes.includes(n)));
+}
+
+/** The size the request names for this device, if any. */
+function sizeAsked(scope: ScopeDraftV1, role: RoleSpec): number | undefined {
+  return deviceChanges(scope, role).flatMap((c) => [...c.matchAll(SIZE)].map((m) => Number(m[1])))[0];
 }
 
 /**
@@ -367,6 +438,25 @@ function withoutNamedWords(scope: ScopeDraftV1, named: NamedProduct[]): ScopeDra
   };
 }
 
+/**
+ * Roles whose device the request names with another approved brand ("Klipsch in-ceiling speakers"): that
+ * brand's record, as if named by model, so it is sold each at the count stated.
+ */
+function brandNamed(scope: ScopeDraftV1, roles: RoleSpec[], byModel: NamedProduct[]): Array<[string, NamedProduct]> {
+  const skip = (t: string) => byModel.some((n) => compact(t).includes(compact(n.model)));
+  const out: Array<[string, NamedProduct]> = [];
+  for (const role of roles) {
+    for (const v of role.brand_variants ?? []) {
+      if (v.market && v.market !== scope.market) continue;
+      const text = requestTexts(scope).find((t) => !skip(t) && hasWord(t, fold(v.brand)) && deviceTerms(role).some((d) => hasWord(t, d)));
+      if (!text) continue;
+      out.push([role.role, { record_id: v.product_id, model: v.model, label: v.label, category: role.categories?.[0] ?? "", text }]);
+      break;
+    }
+  }
+  return out;
+}
+
 /** A stated count whose item names this product by model ("2 AN-620-SW-R-24-POE"). */
 function statedForProduct(scope: ScopeDraftV1, n: NamedProduct | undefined): number | null {
   if (!n) return null;
@@ -374,7 +464,8 @@ function statedForProduct(scope: ScopeDraftV1, n: NamedProduct | undefined): num
   return scope.requested_quantities.find((q) => compact(q.item).includes(m))?.quantity ?? null;
 }
 
-export function materialize(original: ScopeDraftV1, pattern: PatternSpec, namedProducts: NamedProduct[] = []): Selection {
+export function materialize(stated: ScopeDraftV1, pattern: PatternSpec, namedProducts: NamedProduct[] = []): Selection {
+  const original = withoutTotals(stated);
   const lines: SelectionLine[] = [];
   const allowances: Selection["allowances"] = [];
   const unresolved: Selection["unresolved"] = [];
@@ -384,6 +475,8 @@ export function materialize(original: ScopeDraftV1, pattern: PatternSpec, namedP
   const candidates = pattern.roles.filter((role) => role.systems.some((s) => original.functional_systems.includes(s)));
   // Products the request names by model are priced in the role they fill, and name that role. Their words name nothing else.
   const requested = namedForRoles(namedProducts, candidates);
+  // A change that already names a product by model ("Klipsch AW-525 outdoor speakers") is priced as that product, not by brand.
+  for (const [role, n] of brandNamed(original, candidates, namedProducts)) if (!requested.has(role)) requested.set(role, [n]);
   const priced = [...requested.values()].flat();
   const scope = withoutNamedWords(original, priced);
   const names = (r: RoleSpec) => requested.has(r.role) || named(scope, r, pattern.roles);
@@ -398,6 +491,8 @@ export function materialize(original: ScopeDraftV1, pattern: PatternSpec, namedP
   const notAsked = new Set<string>();
   const toVerify: string[] = [];
   const verifyOnly = new Set<string>();
+  // Existing equipment the job keeps: nothing to price, its field test is listed to verify.
+  const keptRoles = new Set<string>();
   for (const role of candidates) {
     if (role.alternative_group && namedGroups.has(role.alternative_group) && !namedSpecifically(scope, role, pattern.roles)) continue;
     // In an add-on, a role is priced when the request names it or names its own system (smoke detection alongside sensors).
@@ -408,9 +503,10 @@ export function materialize(original: ScopeDraftV1, pattern: PatternSpec, namedP
     // A stated count of the device ("3 doors" of contacts) asks for it too, and so does existing alarm
     // gear the rep says stays (it is field-tested before reuse).
     const keptHere = role.critical && !!role.retained_match?.length && scope.retained_equipment.some((e) => role.retained_match!.some((t) => hasWord(fold(e), fold(t))));
+    const siblings = siblingPhrases(role, pattern.roles);
     const asked =
-      (role.mentions && mentioned(scope, role.mentions, role.mentions_require)) ||
-      (role.asked_by && mentioned(scope, role.asked_by)) ||
+      (role.mentions && mentioned(scope, role.mentions, role.mentions_require, siblings)) ||
+      (role.asked_by && mentioned(scope, role.asked_by, undefined, siblings)) ||
       statedQuantity(scope, role, pattern.roles) !== null ||
       keptHere;
     if ((role.mentions || role.asked_by) && !asked && !modelNamed(scope, role) && !product) {
@@ -430,9 +526,18 @@ export function materialize(original: ScopeDraftV1, pattern: PatternSpec, namedP
     if (retained && !wantsNew(scope, role, pattern.roles) && !product) {
       // Existing equipment being moved stays the customer's: its mount and labor are priced on the roles that carry it.
       if (movedCount(scope, role.retained_match ?? []) > 0) continue;
-      // Retained equipment awaiting field testing is unresolved, not supported (PRD §12).
-      unresolved.push({ item: `${role.label} (retained: ${retained})`, role: role.role, reason: "existing equipment must be field-tested before it can be reused", escalate: false });
-      blockedRoles.add(role.role);
+      // Kept equipment is field-tested before it is reused: listed to verify, without withholding the total of what
+      // the budget does price (Zack's McGetrick job, 2026-10-15: a kept Control4 controller blanked the total).
+      toVerify.push(`${role.label} (retained: ${retained}): existing equipment must be field-tested before it can be reused`);
+      keptRoles.add(role.role);
+      continue;
+    }
+    if (!product && outdoorAsked(scope, role) && !variantFor(scope, role)) {
+      // An outdoor device in a size with no approved outdoor model is listed to price, never priced as the indoor one.
+      const size = sizeAsked(scope, role);
+      const noun = role.retained_match?.includes("tv") ? "TV" : role.label;
+      toVerify.push(`Requested product: ${size ? `${size}" ` : ""}outdoor ${noun} (no Livewire standard outdoor model${size ? " at this size" : ""}; priced in the final proposal)`);
+      verifyOnly.add(role.role);
       continue;
     }
     if (!role.product_id && !product && role.unpriced === "verify") {
@@ -559,6 +664,12 @@ export function materialize(original: ScopeDraftV1, pattern: PatternSpec, namedP
   }
   if (merged.size) included.splice(0, included.length, ...included.filter((r) => !merged.has(r.role) || lines.some((l) => l.role === r.role)));
 
+  // A device that needs another the budget doesn't price (an eero access point with no eero router) says what to check.
+  for (const role of included) {
+    const w = role.verify_without;
+    if (w && lines.some((l) => l.role === role.role) && !lines.some((l) => w.roles.includes(l.role)) && !toVerify.includes(w.verify)) toVerify.push(w.verify);
+  }
+
   const devices = lines.reduce((n, l) => n + l.quantity, 0);
   // Labor-only allowances the request mentions (framing a niche), priced as hours at the pattern's labor rate.
   const extras = (pattern.labor_extras ?? []).filter((x) => mentioned(scope, x.mentions)).map((x) => x.id);
@@ -580,7 +691,7 @@ export function materialize(original: ScopeDraftV1, pattern: PatternSpec, namedP
 
   // Out-of-pattern work the request asks for, in its changes or as a system no role covers: one allowance per template.
   const uncovered = scope.functional_systems.filter((system) => !candidates.some((r) => r.systems.includes(system)));
-  const laborAllowances = allowancesFor(pattern.allowances ?? [], scope, uncovered.map(fold));
+  const laborAllowances = allowancesFor(pattern.allowances ?? [], scope, uncovered.map(fold), lines);
 
   // A system whose devices the request removed entirely is no longer required.
   const removedSystems = scope.functional_systems.filter(
@@ -588,8 +699,11 @@ export function materialize(original: ScopeDraftV1, pattern: PatternSpec, namedP
   );
   const requirements: Selection["requirements"] = scope.functional_systems.map((system) => {
     if (removedSystems.includes(system)) return { system, classification: "removed", roles: [], note: "every device removed by the request" };
-    const roles = included.filter((r) => r.systems.includes(system));
+    // Kept equipment is listed to verify, not priced: it is no role of the budget's.
+    const kept = included.filter((r) => r.systems.includes(system) && keptRoles.has(r.role));
+    const roles = included.filter((r) => r.systems.includes(system) && !keptRoles.has(r.role));
     const ownRoles = candidates.filter((r) => r.systems.includes(system));
+    if (!roles.length && kept.length) return { system, classification: "allowance", roles: [], note: `existing equipment kept: ${kept.map((r) => r.label).join(", ")}` };
     if (!roles.length && ownRoles.length && ownRoles.every((r) => notAsked.has(r.role) || removedRoles.has(r.role))) {
       // Every device of the system is optional gear the request never asked for (no Wi-Fi asked on a camera job): nothing to price.
       return { system, classification: "removed", roles: [], note: "no device of this system was asked for" };
@@ -624,7 +738,15 @@ export function materialize(original: ScopeDraftV1, pattern: PatternSpec, namedP
     requirements,
     allowances,
     unresolved,
-    labor_allowances: laborAllowances.map(({ key, label, hours, labor_type, quantity }) => ({ key, label, hours: hours * quantity, labor_type, ...(quantity > 1 ? { quantity } : {}) })),
+    labor_allowances: laborAllowances.map((a) => ({
+      key: a.key,
+      label: a.label,
+      hours: allowanceHours(a, a.quantity, a.feet, a.trenched),
+      labor_type: a.labor_type,
+      ...(a.quantity > 1 ? { quantity: a.quantity } : {}),
+      ...(a.feet ? { feet: a.feet } : {}),
+      ...(a.trenched ? { trenched: true as const } : {}),
+    })),
     to_verify: toVerify,
   };
 }
@@ -634,16 +756,58 @@ export function materialize(original: ScopeDraftV1, pattern: PatternSpec, namedP
  * asks for, in file order, with the texts that asked. Each is priced once, or, when the template is
  * counted, once per stated unit or per change that asks ("Ethernet port in the dining room", "… in the living room").
  */
-function allowancesFor(templates: AllowanceSpec[], scope: ScopeDraftV1, uncovered: string[]): Array<AllowanceSpec & { texts: string[]; quantity: number }> {
+const NUMBER_WORDS: Record<string, number> = { one: 1, two: 2, three: 3, four: 4, five: 5, six: 6, a: 1, single: 1, dual: 2, twin: 2 };
+const FEET = /\b(\d{1,3}(?:,\d{3})*|\d+)\s*(?:-\s*)?(?:ft\b\.?|feet\b|foot\b|'(?!s))/g;
+
+/**
+ * The length a change gives for this work, times the runs it names: "120 ft of hand trench" is 120 ft;
+ * "two conduits … 120 ft" is 240 ft of conduit. The longest length any asking text gives, so a length
+ * repeated across changes is counted once.
+ */
+function feetAsked(texts: string[], mentions: string[]): number | undefined {
+  let best = 0;
+  for (const t of texts) {
+    const feet = Math.max(0, ...[...t.matchAll(FEET)].map((m) => Number(m[1]!.replace(/,/g, ""))));
+    if (feet) best = Math.max(best, feet * runsIn(t, mentions));
+  }
+  return best || undefined;
+}
+
+/** How many runs a change names for this work ("two conduits", "2 conduit runs"); 1 when it names no number. */
+function runsIn(text: string, mentions: string[]): number {
+  return Math.max(
+    1,
+    ...mentions.map((w) => {
+      const m = new RegExp(`\\b(\\d+|${Object.keys(NUMBER_WORDS).join("|")})\\s+(?:[\\w-]+\\s+){0,2}${escape(fold(w))}(?:s|es)?\\b`).exec(text);
+      // "50 ft of conduit" is a length, not 50 conduits.
+      if (!m || /\b(ft|feet|foot)\b|'/.test(m[0])) return 1;
+      return Number(m[1]) || NUMBER_WORDS[m[1]!] || 1;
+    }),
+  );
+}
+
+function allowancesFor(templates: AllowanceSpec[], scope: ScopeDraftV1, uncovered: string[], lines: SelectionLine[]): Array<AllowanceSpec & { texts: string[]; quantity: number; feet?: number; trenched?: true }> {
   const any = (t: string, words?: string[]) => !!words?.some((w) => hasWord(t, fold(w)));
-  return templates.flatMap((a) => {
+  const found = templates.flatMap((a) => {
     if (a.covered_by_systems?.some((s) => scope.functional_systems.includes(s))) return [];
     const asks = (t: string) => any(t, a.mentions) && (!a.require || any(t, a.require)) && !any(t, a.exclude);
     const asking = [...requestTexts(scope), ...uncovered].filter(asks);
     if (!asking.length) return [];
     const stated = scope.requested_quantities.filter((q) => asks(fold(q.item))).reduce((n, q) => n + q.quantity, 0);
     const changes = new Set(scope.requested_changes.map(fold).filter(asks)).size;
-    return [{ ...a, texts: asking, quantity: a.counted ? Math.max(1, stated || changes) : 1 }];
+    // The wired access point's own drop (Zack's Britt job, 2026-10-15: 4 Ethernet ports and a PoE access point are 5 runs).
+    const forRoles = stated ? 0 : lines.filter((l) => a.per_role?.includes(l.role)).reduce((n, l) => n + l.quantity, 0);
+    // Work sized by length ("120 ft of hand trench") at the template's per-foot rate (Crowder, 2026-10-15).
+    const feet = a.hours_per_foot ? feetAsked(asking, a.mentions) : undefined;
+    return [{ ...a, texts: asking, quantity: a.counted ? Math.max(1, (stated || changes) + forRoles) : 1, ...(feet ? { feet } : {}) }];
+  });
+  // Conduit laid in the request's trench runs the trench's length, once per conduit, at the in-trench rate:
+  // Crowder's 120 ft trench with two conduits is 240 ft of conduit at 0.05 h/ft (Henry, 2026-10-15).
+  return found.map((a) => {
+    const trench = a.in_trench && found.find((t) => t.key === a.in_trench!.trench);
+    if (!trench?.feet) return a;
+    const runs = Math.max(1, ...a.texts.map((t) => runsIn(t, a.mentions)));
+    return { ...a, feet: trench.feet * runs, trenched: true as const };
   });
 }
 

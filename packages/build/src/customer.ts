@@ -105,7 +105,7 @@ export function customerView(p: Proposal): CustomerProposal {
     allowances: p.allowances.map((a) => ({ label: a.label, note: "Allowance — TBD, not included in totals" })),
     labor_allowances: (p.labor_allowances ?? []).map((a) => ({
       label: a.label,
-      note: a.quantity ? `${a.quantity} × about ${a.hours / a.quantity} hours of labor (${a.hours} hours), confirmed on site` : `About ${a.hours} hours of labor, confirmed on site`,
+      note: a.feet ? `About ${a.hours} hours of labor for about ${a.feet} ft, confirmed on site` : a.quantity ? `${a.quantity} × about ${a.hours / a.quantity} hours of labor (${a.hours} hours), confirmed on site` : `About ${a.hours} hours of labor, confirmed on site`,
       amount_cents: a.price_cents,
     })),
     assumptions: p.assumptions,

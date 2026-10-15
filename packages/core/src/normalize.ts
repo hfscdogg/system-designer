@@ -169,12 +169,16 @@ export function normalizeServiceCategories(items: string[]): ServiceNormalizatio
   return { categories: uniqSorted(categories), rejected: uniqSorted(rejected) };
 }
 
-/** Stated counts keyed by item (folded); a repeated item keeps its last count. Sorted for a stable hash. */
+/**
+ * Stated counts keyed by item (folded). A repeated item is the same device counted place by place
+ * ("2 smoke/CO detectors upstairs, 2 downstairs" read as two "smoke/CO detectors" counts), so its
+ * counts add up (Zack's Britt job, 2026-10-15). Sorted for a stable hash.
+ */
 function normalizeQuantities(items: Array<{ item: string; quantity: number }>): Array<{ item: string; quantity: number }> {
   const byItem = new Map<string, number>();
   for (const q of items) {
     const item = clean(q.item).toLowerCase();
-    if (item) byItem.set(item, q.quantity);
+    if (item) byItem.set(item, (byItem.get(item) ?? 0) + q.quantity);
   }
   return [...byItem.entries()].sort(([a], [b]) => a.localeCompare(b)).map(([item, quantity]) => ({ item, quantity }));
 }
