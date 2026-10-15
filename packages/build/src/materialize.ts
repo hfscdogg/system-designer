@@ -380,6 +380,9 @@ function outdoorAsked(scope: ScopeDraftV1, role: RoleSpec): boolean {
   return !!role.variants?.length && deviceChanges(scope, role).some((c) => OUTDOOR.test(c));
 }
 
+/** An exclusion about the customer's existing devices ("replacement of existing smoke/CO detectors"), not the new ones. */
+const ABOUT_EXISTING = /\b(replac\w*|existing|current|old)\b/;
+
 /** The approved record for the size the request names for a new device, if the role has size variants (an outdoor one when it goes outside). */
 function variantFor(scope: ScopeDraftV1, role: RoleSpec) {
   const outdoor = outdoorAsked(scope, role);
@@ -516,7 +519,12 @@ export function materialize(stated: ScopeDraftV1, pattern: PatternSpec, namedPro
     // New detectors the rep counts ("2 x smoke/CO detectors upstairs") are priced whatever the answer about existing
     // ones reads as: "replacing none" is not "keep the existing detectors instead" (staging smoke, 2026-10-15).
     if (role.existing_detectors && !(role.existing_detectors as string[]).includes(scope.existing_detectors) && !(role.existing_detectors.includes("none") && statedQuantity(scope, role, pattern.roles) !== null)) continue;
-    if (excluded(scope, role)) {
+    // An exclusion about the existing devices doesn't remove new ones the rep counts: "replacing none" read as
+    // "replacement of existing smoke/CO detectors" is not "no smoke/CO detectors" beside "2 x smoke/CO detectors
+    // upstairs" (staging smoke, 2026-10-15). Any other exclusion still wins over a count left from before.
+    const aboutNewOnes = { ...scope, excluded_scope: scope.excluded_scope.filter((x) => !ABOUT_EXISTING.test(fold(x))) };
+    const countedNew = statedQuantity(scope, role, pattern.roles) !== null;
+    if (excluded(scope, role) && (!countedNew || excluded(aboutNewOnes, role))) {
       removedRoles.add(role.role);
       continue;
     }
