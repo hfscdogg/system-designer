@@ -1,7 +1,7 @@
 {
   "schema": "architecture_pattern_v1",
   "pattern": "tv_media",
-  "version": "2026-10-15.2",
+  "version": "2026-10-15.3",
   "title": "TV and media wall",
   "applies_when_any": ["audio_video"],
   "roles": [

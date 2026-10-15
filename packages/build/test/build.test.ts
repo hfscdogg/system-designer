@@ -254,6 +254,7 @@ describe("patterns", () => {
     expect(roles.has("automation_controller")).toBe(false);
     // Only the new TV needs a mount: the moved one has its own.
     expect(roles.get("tv_mount")).toBe(1);
+    // The Apple TV 4K (2026) at $339 (Ben, 2026-10-14).
     expect(roles.get("streamer")).toBe(1);
 
     // If the interpreter leaves Control4 in the systems, the excluded remote is still removed.
@@ -1105,7 +1106,7 @@ describe("Zack's round 3 (2026-10-13)", () => {
     expect(quantities(selection)).toMatchObject({ streamer: 1, mesh_wifi: 2, outdoor_access_point: 1, network_switch: 1 });
     expect(proposal.commercial.total_cents).not.toBeNull();
     expect(validation.ok).toBe(true);
-    // The priced outdoor eero, the client's own TV and the PoE switch question are settled; the cart and the open question stay.
+    // The priced outdoor eero and Apple TV, the client's own TV and the PoE switch question are settled; the cart and the open question stay.
     const v = proposal.remaining_verification;
     expect(v.filter((x) => /Outdoor Eero|LG 75UN|Apple TV|PoE (switch|injector)/i.test(x))).toEqual([]);
     expect(v).toEqual(expect.arrayContaining(["Requested product: Bretford Explorer display cart ETCMV-SB*", "Is a second outdoor AP needed for TV use on the pool deck?"]));
