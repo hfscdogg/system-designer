@@ -140,6 +140,8 @@ export const SMOKE_CO_COMBO = /\b(smoke ?(\/|&|\+|-|and)? ?(co|carbon monoxide)|
 const REQUESTED_SYSTEMS: Array<[systems: string[], pattern: RegExp]> = [
   [["video_doorbell"], /\b((?<!(existing|current|old) )(video|smart|wired|wi-?fi|camera) door ?bells?|door ?bell cam(era)?s?)\b/],
   [["fire_detection", "co_detection"], SMOKE_CO_COMBO],
+  // "Security panel × 1" asks for the alarm system even when the model left it off the systems (staging smoke, 2026-10-15).
+  [["intrusion_security"], /\b(?<!(existing|current|old|keep the|keep) )(security|alarm|intrusion) (panel|system)s?\b/],
 ];
 
 function requestedSystems(requests: string[]): string[] {

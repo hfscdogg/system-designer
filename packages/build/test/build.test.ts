@@ -1475,3 +1475,47 @@ describe("Zack's round 4 (2026-10-15)", () => {
     expect(tv.roles.find((r) => r.role === "streamer")!.product_id).toBe("84e7060d-cd26-49b5-bbc7-cd9162dff768");
   });
 });
+
+describe("staging smoke, Britt (2026-10-15)", () => {
+  it("prices the security system, 4+4 smoke/CO and both wired cameras from the receipt the interpreter produced", async () => {
+    const patterns = await loadPatterns();
+    // The staging receipt: no security system among the model's systems, the places inside the camera items.
+    const { scope } = approvedScope({
+      existing_detectors: "none",
+      functional_systems: ["audio_video", "climate_control", "co_detection", "fire_detection", "networking", "video_doorbell", "video_surveillance"],
+      existing_equipment: { status: "described", retained: ["current doorbell and chime", "customer's 55-inch outdoor TV"], removed_or_replaced: [] },
+      requested_changes: [
+        "Add Ethernet ports in the master bedroom, dining room and living room, and one behind the outdoor TV on the back porch",
+        "Add a PoE access point in the top floor hallway",
+        "Mount the customer's 55-inch outdoor TV on an articulated mounting bracket",
+        "Install the SVR in the dining room",
+        "Install the security panel in the hallway from the garage to the kitchen",
+        "Install a wired smart doorbell camera",
+        "Install a wired floodlight camera above the garage, a wired camera at the front of the house and one on the back corner",
+        "Install 2 smoke/CO detectors upstairs and 2 downstairs",
+        "Install a smart thermostat downstairs",
+      ],
+      requested_quantities: [
+        { item: "ethernet ports", quantity: 4 },
+        { item: "poe access points", quantity: 1 },
+        { item: "security panel", quantity: 1 },
+        { item: "smart thermostats", quantity: 1 },
+        { item: "smoke/co detectors downstairs", quantity: 2 },
+        { item: "smoke/co detectors upstairs", quantity: 2 },
+        { item: "svr", quantity: 1 },
+        { item: "wired back corner cameras", quantity: 1 },
+        { item: "wired floodlight cameras", quantity: 1 },
+        { item: "wired front cameras", quantity: 1 },
+        { item: "wired smart doorbell cameras", quantity: 1 },
+      ],
+    });
+    expect(scope.functional_systems).toContain("intrusion_security");
+    const pattern = selectPattern(scope.functional_systems, patterns)!;
+    expect(pattern.pattern).toContain("security_modernization");
+    const q = Object.fromEntries(materialize(scope, pattern).lines.map((l) => [l.role, l.quantity]));
+    expect(q).toMatchObject({ security_panel: 1, smoke_heat_detector: 4, co_detector: 4, outdoor_camera: 2, floodlight_camera: 1, doorbell_camera: 1, nvr: 1, wired_access_point: 1, thermostat: 1 });
+    // A kept panel is not a request for one.
+    const { scope: kept } = approvedScope({ functional_systems: ["cameras"], existing_detectors: "not_provided", requested_changes: ["Add 2 cameras; keep the existing security panel"] });
+    expect(kept.functional_systems).not.toContain("intrusion_security");
+  });
+});

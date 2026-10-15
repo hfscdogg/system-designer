@@ -136,7 +136,7 @@ export const SMOKE_SCENARIOS: SmokeScenario[] = [
           "Security: SVR in the dining room; security panel in the hallway from the garage to the kitchen; 1 x wired smart doorbell camera (current doorbell and chime work); " +
           "1 x wired floodlight camera above the garage; 1 x wired camera at the front of the house; 1 x wired camera on the back corner; " +
           "2 x smoke/CO detectors upstairs and 2 x smoke/CO detectors downstairs, replacing none; 1 x smart thermostat downstairs.",
-        expect: { doorbell_camera: 1, nvr: 1, camera_storage: 0, network_switch: 1, camera_poe_switch: 0, power_protection: 1, tv_mount_articulating: 1, tv_mount: 0, keypad: 0, door_window_contact: 0, smoke_heat_detector: 4, co_detector: 4 },
+        expect: { doorbell_camera: 1, nvr: 1, outdoor_camera: 2, camera_storage: 0, network_switch: 1, camera_poe_switch: 0, power_protection: 1, tv_mount_articulating: 1, tv_mount: 0, keypad: 0, door_window_contact: 0, smoke_heat_detector: 4, co_detector: 4 },
       },
     ],
   },

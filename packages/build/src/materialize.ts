@@ -161,7 +161,7 @@ const joined = (s: string) => fold(s).replace(/\s*[/&+]\s*|\s+and\s+/g, " ");
 /** Where an item is, not what it is: "smoke/CO detectors upstairs" and "… in the living room" are the same device. */
 const PLACE = /\s+\b(upstairs|downstairs|in|at|on|by|near|above|below|behind|outside|inside|for|facing|over|under|of)\b.*$/;
 /** Place words on their own, wherever they stand: "upstairs smoke/CO detectors", "smoke/CO detectors (downstairs)" (Zack's Britt job, 2026-10-15). */
-const PLACE_WORD = /\b(upstairs|downstairs|basement|attic|first|second|third|top|main|lower|upper|floor|level)\b/g;
+const PLACE_WORD = /\b(upstairs|downstairs|basement|attic|first|second|third|top|main|lower|upper|floor|level|front|back|rear|side|corner|left|right|north|south|east|west)\b/g;
 const deviceOf = (item: string) =>
   fold(item)
     .replace(/\([^)]*\)/g, " ")
