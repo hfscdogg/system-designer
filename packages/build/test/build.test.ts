@@ -90,7 +90,7 @@ describe("patterns", () => {
       expect(p.services.every((s) => s.product_id === null), p.pattern).toBe(true);
       expect(p.labor?.labor_type, p.pattern).toBe("07LABOR1MAN");
       // Each priced role, its size and market variants and the parts record.
-      const records = p.roles.filter((r) => r.product_id).length + p.roles.reduce((n, r) => n + (r.variants?.length ?? 0) + (r.market_variants?.length ?? 0), 0) + 1;
+      const records = p.roles.filter((r) => r.product_id).length + p.roles.reduce((n, r) => n + (r.variants?.length ?? 0) + (r.market_variants?.length ?? 0) + (r.brand_variants?.length ?? 0), 0) + 1;
       expect(patternRecordIds(p), p.pattern).toHaveLength(records);
       // The allowance templates ride along with every pattern.
       expect(p.allowances?.map((a) => a.key), p.pattern).toEqual(["outdoor_outlet", "electrical_outlet", "conduit", "trenching", "wiring_run"]);
@@ -345,7 +345,8 @@ describe("patterns", () => {
       existing_detectors: "not_provided",
     }).scope;
     const sel = materialize(scope, tv);
-    expect(sel.unresolved.map((u) => u.role)).toContain("television");
+    expect(sel.to_verify).toEqual(["Sony BRAVIA 8 65\" OLED TV (retained: 65-inch Sony TV): existing equipment must be field-tested before it can be reused"]);
+    expect(sel.unresolved).toEqual([]);
     expect(sel.lines.map((l) => l.role)).toEqual(["soundbar", "soundbar_mount"]);
   });
 
@@ -499,9 +500,10 @@ describe("materialize → compile → bind → validate", () => {
     expect(selection.lines.map((l) => l.role).sort()).toEqual(
       ["co_detector", "glass_break", "keypad", "security_panel", "smoke_heat_detector", "thermostat", "video_doorbell"].sort(),
     );
-    expect(selection.unresolved).toEqual([
-      { item: "Door/window contact (retained: Door contacts)", role: "door_window_contact", reason: "existing equipment must be field-tested before it can be reused", escalate: false },
-    ]);
+    // Kept contacts are field-tested before reuse: listed to verify, without withholding the total (McGetrick, 2026-10-15).
+    expect(selection.unresolved).toEqual([]);
+    expect(selection.to_verify).toEqual(["Door/window contact (retained: Door contacts): existing equipment must be field-tested before it can be reused"]);
+    expect(proposal.remaining_verification).toContain("Door/window contact (retained: Door contacts): existing equipment must be field-tested before it can be reused");
     // Labor covers every requested service, so nothing is left as an allowance.
     expect(selection.allowances).toEqual([]);
     expect(selection.services).toEqual([]);
@@ -601,7 +603,7 @@ describe("materialize → compile → bind → validate", () => {
   it("calculates tax and a total only when the commercial scope is complete", async () => {
     const taxed: PolicyRecord = { ...POLICY, policy: { ...POLICY.policy, tax: { mode: "rate", rate_pct: 8.25, applies_to: "taxable_equipment" } } };
     // Unresolved roles still withhold the total; quantities to verify alone do not.
-    const partial = await pipeline({}, testPattern(), taxed);
+    const partial = await pipeline({}, testPattern({ glass: null }), taxed);
     expect(partial.proposal.unresolved.length).toBeGreaterThan(0);
     expect(partial.proposal.commercial.total_cents).toBeNull();
     expect(partial.proposal.commercial.tax).toMatchObject({ status: "calculated", rate_pct: 8.25 });
@@ -985,7 +987,8 @@ describe("Zack's round 3 (2026-10-13)", () => {
     [SWITCH]: ["Araknis Networks", "AN-220-SW-R-8-POE"],
     "4372a3e8-dcae-404f-85e8-73a0ffe59747": ["eero", "Outdoor PoE 7"],
     [EERO_PRO_7]: ["eero", "Pro 7"],
-    "a73b7e0d-155a-45e3-80e1-5b5784dd77ea": ["Apple", "APPLE TV WIFI-ETHERNET"],
+    "9761ac74-f94c-4c62-bc5c-a166eb2d3266": ["eero", "PoE 7"],
+    "84e7060d-cd26-49b5-bbc7-cd9162dff768": ["Apple", "Apple TV 4K (2026)"],
   };
   async function build(pattern: PatternSpec, scopeOverrides: object, named: Parameters<typeof materialize>[2] = []) {
     const { scope, scopeHash, receiptId } = approvedScope({ ...none, ...scopeOverrides });
@@ -1108,7 +1111,7 @@ describe("Zack's round 3 (2026-10-13)", () => {
     expect(v).toEqual(expect.arrayContaining(["Requested product: Bretford Explorer display cart ETCMV-SB*", "Is a second outdoor AP needed for TV use on the pool deck?"]));
   });
 
-  it("prices Britt's doorbell, SVR, articulating mount, 4 smoke/CO pairs, 4 cable runs and one switch, with no unasked keypad or contacts", async () => {
+  it("prices Britt's doorbell, SVR, articulating mount, 4 smoke/CO pairs, the PoE access point and 5 cable runs, one switch, and no unasked keypad, contacts or mesh eeros", async () => {
     const patterns = await loadPatterns();
     const { scope } = approvedScope({ ...none, ...BRITT });
     const pattern = selectPattern(scope.functional_systems, patterns)!;
@@ -1125,18 +1128,20 @@ describe("Zack's round 3 (2026-10-13)", () => {
       thermostat: 1,
       network_switch: 1,
       power_protection: 1,
+      wired_access_point: 1,
     });
     const roles = selection.lines.map((l) => l.role);
-    for (const role of ["tv_mount", "camera_storage", "camera_poe_switch", "keypad", "door_window_contact"]) expect(roles).not.toContain(role);
+    // Zack, 2026-10-15: wired drops and one PoE access point, not an eero mesh and an outdoor eero.
+    for (const role of ["tv_mount", "camera_storage", "camera_poe_switch", "keypad", "door_window_contact", "mesh_wifi", "outdoor_access_point"]) expect(roles).not.toContain(role);
     expect(selection.lines.find((l) => l.role === "nvr")!.record_id).toBe(SVR210);
     expect(selection.lines.filter((l) => l.record_id === SWITCH)).toHaveLength(1);
-    // The rep's detector counts leave nothing to verify; the eero minimum (no count stated) still does.
+    // The rep's detector counts leave nothing to verify; the access point with no eero router priced does.
     const v = proposal.remaining_verification;
-    expect(v.filter((x) => /detector count|Keypad|Door\/window/.test(x))).toEqual([]);
-    expect(v).toContain("eero Pro 7 mesh Wi-Fi: one node per floor and about every 1,500 sq ft; the first node is the router");
-    // Four Ethernet ports, one cable-run allowance each: 4 × 2 h at $179.
-    expect(proposal.labor_allowances.map((a) => [a.key, a.quantity, a.hours, a.price_cents])).toEqual([["wiring_run", 4, 8, 143200]]);
-    expect(customerView(proposal).labor_allowances[0]!.note).toBe("4 × about 2 hours of labor (8 hours), confirmed on site");
+    expect(v.filter((x) => /detector count|Keypad|Door\/window|mesh/.test(x))).toEqual([]);
+    expect(v).toContain("eero access points join an eero network: confirm the existing eero router, or add an eero Pro 7 as the router");
+    // Four Ethernet ports and the access point's drop, one cable-run allowance each: 5 × 2 h at $179.
+    expect(proposal.labor_allowances.map((a) => [a.key, a.quantity, a.hours, a.price_cents])).toEqual([["wiring_run", 5, 10, 179000]]);
+    expect(customerView(proposal).labor_allowances[0]!.note).toBe("5 × about 2 hours of labor (10 hours), confirmed on site");
     expect(validation.ok).toBe(true);
     expect(proposal.commercial.total_cents).not.toBeNull();
   });
@@ -1193,9 +1198,9 @@ describe("Zack's round 3 (2026-10-13)", () => {
     expect(text).not.toContain("(total");
     const items = text.split("\n").filter((l) => l.startsWith("• "));
     expect(items).toHaveLength(12);
-    expect(items[0]).toBe("• eero Pro 7 × 3");
+    expect(items[0]).toBe("• eero PoE 7 × 1");
     expect(text).toContain(`+${proposal.sections.reduce((n, s) => n + s.lines.length, 0) - 12} more`);
-    expect(text).toContain("Allowances (verify on site): Low-voltage cable run (allowance) × 4 8 h, $1,432.00.");
+    expect(text).toContain("Allowances (verify on site): Low-voltage cable run (allowance) × 5 10 h, $1,790.00.");
     const withheld = { ...proposal, unresolved: [{ item: "pool automation", role: null, reason: "not covered", escalate: true }], commercial: { ...proposal.commercial, complete: false, total_cents: null } };
     expect(budgetReadyLines(withheld)[1]).toBe(`Priced so far ${formatUsd(proposal.commercial.subtotal_cents)} — total withheld: unresolved: pool automation.`);
   });
@@ -1278,5 +1283,136 @@ describe("Zack's round 3 (2026-10-13)", () => {
         ]),
       );
     }
+  });
+});
+
+describe("Zack's round 4 (2026-10-15)", () => {
+  const none = { existing_equipment: { status: "none" as const, retained: [], removed_or_replaced: [] } };
+  const quantities = (sel: ReturnType<typeof materialize>) => Object.fromEntries(sel.lines.map((l) => [l.role, l.quantity]));
+  async function job(o: object) {
+    const patterns = await loadPatterns();
+    const { scope } = approvedScope({ ...none, existing_detectors: "not_provided", ...o });
+    const pattern = selectPattern(scope.functional_systems, patterns)!;
+    return { scope, pattern, selection: materialize(scope, pattern) };
+  }
+
+  it("Bowen-Rees: a stated total of exterior cameras is not more cameras on top of the itemized ones", async () => {
+    const { selection } = await job({
+      functional_systems: ["video surveillance", "networking"],
+      requested_changes: [
+        "Add 4 exterior cameras",
+        "Install wired Smart doorbell camera at front door (current doorbell and chime is operational)",
+        "Install wired camera on the side of the house, facing the parking lot",
+        "Install wired camera at the back of the house, facing the back yard",
+        "Install wired floodlight camera above the garage, replacing the current floodlight",
+        "Install SVR in the basement closet",
+        "Add an additional Eero 7 Pro in the son's bedroom; his room is a dead spot",
+      ],
+      requested_quantities: [
+        { item: "exterior cameras", quantity: 4 },
+        { item: "wired Smart doorbell camera", quantity: 1 },
+        { item: "wired camera on the side of the house", quantity: 1 },
+        { item: "wired camera at the back of the house", quantity: 1 },
+        { item: "wired floodlight camera", quantity: 1 },
+        { item: "SVR", quantity: 1 },
+        { item: "Eero 7 Pro", quantity: 1 },
+      ],
+    });
+    const q = quantities(selection);
+    expect(q).toMatchObject({ outdoor_camera: 2, floodlight_camera: 1, doorbell_camera: 1, nvr: 1, network_switch: 1 });
+    expect(q.outdoor_camera! + q.floodlight_camera! + q.doorbell_camera!).toBe(4);
+    // A total of something else stays: 4 motion detectors are not the 2 smoke and 2 CO detectors.
+    const security = await job({
+      existing_detectors: "none",
+      functional_systems: ["alarm panel", "motion detectors", "smoke detectors", "CO detectors"],
+      requested_changes: ["Replace the alarm panel", "Add 4 motion detectors, 2 smoke detectors and 2 CO detectors"],
+      requested_quantities: [{ item: "motion detectors", quantity: 4 }, { item: "smoke detectors", quantity: 2 }, { item: "CO detectors", quantity: 2 }],
+    });
+    expect(quantities(security.selection)).toMatchObject({ motion_detector: 4, smoke_heat_detector: 2, co_detector: 2 });
+  });
+
+  it("Britt: 2 smoke/CO detectors upstairs and 2 downstairs are 4 of each, however the floors are written", async () => {
+    const counts: Array<Array<{ item: string; quantity: number }>> = [
+      [{ item: "smoke/CO detectors (upstairs)", quantity: 2 }, { item: "smoke/CO detectors (downstairs)", quantity: 2 }],
+      [{ item: "upstairs smoke/CO detectors", quantity: 2 }, { item: "downstairs smoke/CO detectors", quantity: 2 }],
+      [{ item: "smoke/CO detectors", quantity: 4 }, { item: "smoke/CO detectors upstairs", quantity: 2 }, { item: "smoke/CO detectors downstairs", quantity: 2 }],
+      // The same item listed once per floor (the normalizer used to keep only the last count).
+      [{ item: "smoke/CO detectors", quantity: 2 }, { item: "smoke/CO detectors", quantity: 2 }],
+    ];
+    for (const requested_quantities of counts) {
+      const { selection } = await job({
+        existing_detectors: "none",
+        functional_systems: ["security system", "smoke/CO detectors"],
+        requested_changes: ["Install security panel in hallway", "Install 2 smoke/CO detectors upstairs", "Install 2 smoke/CO detectors downstairs"],
+        requested_quantities,
+      });
+      expect(quantities(selection), JSON.stringify(requested_quantities)).toMatchObject({ smoke_heat_detector: 4, co_detector: 4 });
+    }
+  });
+
+  it("Britt: a PoE access point and wired drops price the wired eero and a cable run each, not an eero mesh or an outdoor eero", async () => {
+    for (const o of [
+      {
+        requested_changes: [
+          "Add Ethernet port in master bedroom on top floor",
+          "Add PoE access point in hallway of the top floor",
+          "Add Ethernet port in dining room",
+          "Add Ethernet port in living room",
+          "Add Ethernet port behind the outdoor TV location on the back porch",
+        ],
+      },
+      {
+        // One change for the whole network section, with the outdoor TV in it.
+        requested_changes: ["Network: Ethernet ports in the master bedroom, dining room and living room, and one behind the outdoor TV on the back porch; PoE access point in the top floor hallway"],
+        requested_quantities: [{ item: "network drops", quantity: 5 }, { item: "PoE access point", quantity: 1 }],
+      },
+    ]) {
+      const { selection } = await job({ functional_systems: ["networking"], ...o });
+      // An add-on ("Add …" only) prices just the access point; a complete job adds the PoE switch, OvrC and WattBox with it.
+      expect(quantities(selection)).toEqual(selection.add_on ? { wired_access_point: 1 } : { wired_access_point: 1, network_switch: 1, remote_management: 1, power_protection: 1 });
+      expect(selection.labor_allowances.map((a) => [a.key, a.quantity])).toEqual([["wiring_run", 5]]);
+      expect(selection.to_verify).toEqual(["eero access points join an eero network: confirm the existing eero router, or add an eero Pro 7 as the router"]);
+    }
+    // Wi-Fi asked for still prices the mesh, and an outdoor eero beside Wi-Fi words.
+    const wifi = await job({ functional_systems: ["networking"], requested_changes: ["Add eero Wi-Fi to the house and a PoE access point for the back porch coverage"] });
+    expect(quantities(wifi.selection)).toMatchObject({ mesh_wifi: 3, wired_access_point: 1, outdoor_access_point: 1 });
+    expect(wifi.selection.to_verify).toEqual([]);
+  });
+
+  it("McGetrick: a kept Control4 controller is listed to field-test without withholding the total, and no Halo remote is added", async () => {
+    const { selection } = await job({
+      functional_systems: ["TV", "Control4"],
+      requested_changes: ["Provide a new 65-inch TV for the family room on an articulated mount", "Integrate the TV with the existing Control4 controller"],
+      requested_quantities: [{ item: "65-inch TV", quantity: 1 }],
+      existing_equipment: { status: "described", retained: ["Control4 controller"], removed_or_replaced: [] },
+    });
+    expect(selection.unresolved).toEqual([]);
+    expect(quantities(selection)).toEqual({ television: 1, tv_mount_articulating: 1 });
+    expect(selection.to_verify).toEqual(["Control4 CORE 1 controller (retained: Control4 controller): existing equipment must be field-tested before it can be reused"]);
+    expect(selection.requirements.find((r) => r.system === "home_automation")).toMatchObject({ classification: "allowance", note: "existing equipment kept: Control4 CORE 1 controller" });
+    // A remote the request asks for is still priced.
+    const remote = await job({ functional_systems: ["Control4"], requested_changes: ["Add a Control4 Halo remote for the family room"] });
+    expect(quantities(remote.selection)).toMatchObject({ automation_remote: 1 });
+  });
+
+  it("McGetrick: a 75\" full-weather outdoor TV is never priced as an indoor TV", async () => {
+    const patterns = await loadPatterns();
+    const tv = patterns.find((p) => p.pattern === "tv_media")!;
+    const indoor = new Set([tv.roles.find((r) => r.role === "television")!.product_id, ...tv.roles.find((r) => r.role === "television")!.variants!.filter((v) => !v.outdoor).map((v) => v.product_id)]);
+    const { selection } = await job({
+      functional_systems: ["outdoor TV"],
+      requested_changes: ['Provide a new 75" full weather outdoor TV for the patio', "Install on an articulated mount"],
+      requested_quantities: [{ item: '75" full weather outdoor TV', quantity: 1 }],
+    });
+    const line = selection.lines.find((l) => l.role === "television");
+    expect(line && indoor.has(line.record_id)).toBeFalsy();
+    // An indoor 75" TV still prices the 77" Sony.
+    const inside = await job({ functional_systems: ["TV"], requested_changes: ['Provide a new 75" TV for the family room'], requested_quantities: [{ item: '75" TV', quantity: 1 }] });
+    expect(inside.selection.lines.find((l) => l.role === "television")!.record_id).toBe("b89ed236-fff6-4985-a526-31d12b9c796f");
+  });
+
+  it("Crowder: the Apple TV is the 2026 SKU, not the discontinued one (Ben, 2026-10-14)", async () => {
+    const tv = (await loadPatterns()).find((p) => p.pattern === "tv_media")!;
+    expect(tv.roles.find((r) => r.role === "streamer")!.product_id).toBe("84e7060d-cd26-49b5-bbc7-cd9162dff768");
   });
 });

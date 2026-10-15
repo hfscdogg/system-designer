@@ -115,6 +115,14 @@ Zack's round 3 (2026-10-13):
 - Each Ethernet port or data drop asked for is one low-voltage cable-run allowance.
 - The verify list leaves out products the budget prices (in any word order), products the client supplies, and the PoE switch question once a PoE switch is priced. The budget-ready message says "Total $X incl. tax", or "Priced so far $X — total withheld: <why>", and lists up to 12 items.
 
+Zack's round 4 (2026-10-15):
+- A stated total the request then itemizes ("4 exterior cameras": a doorbell, a floodlight and 2 wired cameras; "4 smoke/CO detectors": 2 upstairs, 2 downstairs) is not priced on top of its items. A count given floor by floor adds up however the floor is written ("upstairs smoke/CO detectors", "smoke/CO detectors (downstairs)", or the same item listed twice).
+- Words that name another eero of the same count group ("PoE access point") don't ask for the mesh or the outdoor eero. The switch, OvrC and WattBox come with any eero, and an access point priced without an eero router lists the router to confirm. A wired access point is one more cable run, unless the request counts its drops.
+- Existing equipment the job keeps (a Control4 controller) is listed to field-test without withholding the total. The Control4 Halo remote is priced only when a remote is asked for.
+- An outdoor TV ("full weather", "weatherproof", "patio") is never priced as an indoor TV: it takes an `outdoor` variant at its size, or is listed to price when there is none.
+- The Apple TV is the Apple TV 4K (2026) record at $339 (Ben retired the 2022 SKUs on 2026-10-14).
+- A role's `brand_variants` price another approved brand's record when the request names that brand for the device ("Klipsch in-ceiling speakers"), sold each at the stated count.
+
 Design & Delivery (the parts line) is `design_delivery.base_pct` of product + labor + services, costed at the parts margin. When a budget would fall under the margin floor, it rises in half-point steps up to `design_delivery.max_pct` until the budget clears the floor; past that, the budget waits for an admin's approval. Without `design_delivery`, parts are sized to the parts share of the subtotal. `tax` can also be `{ "mode": "rate", "rate_pct": <n>, "applies_to": "taxable_equipment" }`.
 
 The file ships in the image. Publish it with the admin job (see `docs/deploy.md`):

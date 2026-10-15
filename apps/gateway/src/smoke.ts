@@ -141,6 +141,32 @@ export const SMOKE_SCENARIOS: SmokeScenario[] = [
     ],
   },
   {
+    // Zack's round 4 (2026-10-15): the kept Control4 controller withheld the total, a Halo remote nobody asked for was added,
+    // and the 75" full-weather outdoor TV was priced as the indoor 77" Sony.
+    name: "McGetrick (outdoor TV, existing Control4)",
+    steps: [
+      {
+        say:
+          `McGetrick family, ${ADDRESS}. Residential. Sell a new 75" full weather outdoor TV for the covered patio on an articulated mount, ` +
+          "and add it to their existing Control4 system; the Control4 controller stays.",
+        expect: { automation_remote: 0, tv_mount_articulating: 1, tv_mount: 0 },
+        total: true,
+      },
+    ],
+  },
+  {
+    // Zack's round 4 (2026-10-15): "4 exterior cameras" was priced on top of the four it then listed.
+    name: "Bowen-Rees (camera total, itemized)",
+    steps: [
+      {
+        say:
+          `Melissa Bowen-Rees, ${ADDRESS}. Residential. 4 exterior cameras: 1 x wired smart doorbell camera at the front door (current doorbell and chime work); ` +
+          "1 x wired camera on the side of the house; 1 x wired camera at the back of the house; 1 x wired floodlight camera above the garage. SVR in the basement closet.",
+        expect: { outdoor_camera: 2, floodlight_camera: 1, doorbell_camera: 1, nvr: 1 },
+      },
+    ],
+  },
+  {
     // Henry, 2026-10-11: the Sonos sub pulled in whole-home audio (ceiling speakers, amps), and "hours to 7" couldn't be applied.
     name: "Darren Mackin (TV and Sonos soundbar)",
     steps: [
