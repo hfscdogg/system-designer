@@ -553,6 +553,23 @@ describe("materialize → compile → bind → validate", () => {
     expect(validation.ok).toBe(true);
   });
 
+  it("prices detectors the rep counts even when an exclusion names them (staging smoke, 2026-10-15)", async () => {
+    const { selection } = await pipeline({
+      existing_detectors: "none",
+      requested_quantities: [{ item: "smoke/CO detectors upstairs", quantity: 2 }, { item: "smoke/CO detectors downstairs", quantity: 2 }],
+      excluded_scope: ["replacement of existing smoke/CO detectors"],
+    });
+    expect(Object.fromEntries(selection.lines.map((l) => [l.role, l.quantity]))).toMatchObject({ smoke_heat_detector: 4, co_detector: 4 });
+    // With no count, the same exclusion still removes them.
+    const { selection: none } = await pipeline({ existing_detectors: "none", excluded_scope: ["smoke/CO detectors"] });
+    expect(none.lines.map((l) => l.role)).not.toContain("smoke_heat_detector");
+  });
+
+  it("prices new detectors the rep counts even when existing ones are kept (staging smoke, 2026-10-15)", async () => {
+    const { selection } = await pipeline({ existing_detectors: "keep_and_monitor", requested_quantities: [{ item: "smoke/CO detectors upstairs", quantity: 2 }] });
+    expect(Object.fromEntries(selection.lines.map((l) => [l.role, l.quantity]))).toMatchObject({ smoke_heat_detector: 2, co_detector: 2, detector_listener: 1 });
+  });
+
   it("uses the counts the requester stated, and verifies only the rest", async () => {
     const { selection, proposal } = await pipeline({ requested_quantities: [{ item: "Keypads", quantity: 2 }, { item: "glass-break sensors", quantity: 3 }] });
     expect(selection.lines.find((l) => l.role === "keypad")).toMatchObject({ quantity: 2, quantity_basis: "fixed", verify: null });
