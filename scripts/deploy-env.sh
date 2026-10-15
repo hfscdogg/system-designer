@@ -78,6 +78,9 @@ gcloud run jobs deploy "sd-reconcile-${ENV_NAME}" --region "${REGION}" --image "
 
 # One worker service per build: workflows are pinned to the build they started on,
 # so older builds keep running until Temporal reports them drained (cleanup below).
+# A Temporal worker long-polls, so it needs min 1 and CPU always allocated: each build costs ~$57/month while it
+# is up. One instance is enough (the worker runs tasks concurrently itself); a second would only double that.
+# scripts/cloud-run-audit.sh shows what is running; scripts/retire-workers.sh parks or removes old builds.
 log "worker ${WORKER_SERVICE}"
 gcloud run deploy "${WORKER_SERVICE}" --region "${REGION}" --image "${IMAGE}" \
   --command node --args apps/worker/src/main.ts \
@@ -85,7 +88,7 @@ gcloud run deploy "${WORKER_SERVICE}" --region "${REGION}" --image "${IMAGE}" \
   --set-env-vars "${WORKER_ENV}" --set-secrets "${WORKER_SECRETS}" \
   --labels "sd-env=${ENV_NAME},sd-role=worker,sd-build=${BUILD_ID}" \
   --no-allow-unauthenticated --add-custom-audiences "sd-worker-${ENV_NAME}" \
-  --min-instances 1 --max-instances 2 --no-cpu-throttling \
+  --min-instances 1 --max-instances 1 --no-cpu-throttling \
   --cpu 1 --memory 2Gi --quiet
 
 WORKER_URL="$(gcloud run services describe "${WORKER_SERVICE}" --region "${REGION}" --format 'value(status.url)')"
@@ -152,7 +155,8 @@ for svc in $(gcloud run services list --region "${REGION}" --filter "metadata.la
   old_build="${svc#sd-worker-"${ENV_NAME}"-}"
   status="$(temporal worker deployment describe-version --address "${TEMPORAL_ADDRESS}" --namespace "${TEMPORAL_NAMESPACE}" \
     --deployment-name "${DEPLOYMENT}" --build-id "${old_build}" -o json 2>/dev/null | jq -r '.. | .drainageStatus? // .status? // empty' | head -1 || true)"
-  if [[ "${status}" == *DRAINED* ]]; then
+  # Match DRAINED in any case: Temporal CLI versions print the enum as VERSION_DRAINAGE_STATUS_DRAINED or drained.
+  if [[ "${status^^}" == *DRAINED* ]]; then
     log "deleting drained worker ${svc}"
     gcloud run services delete "${svc}" --region "${REGION}" --quiet
   else

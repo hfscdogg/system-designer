@@ -144,10 +144,18 @@ Run **CI** manually on `main` (Actions → CI → Run workflow) with `rollback_i
 | Item | Approx. per month |
 |---|---|
 | Cloud SQL `db-g1-small` | $25–30 |
-| One always-on worker per environment | $30–60 |
+| One always-on worker build per environment (1 vCPU, 2 GiB, CPU always allocated) | ~$57 each |
 | Gateway, storage and secrets | a few dollars |
 | Temporal Cloud | separate |
 | Anthropic usage | separate |
+
+**Watch the worker count.** Each deploy starts a new worker service, and older ones stay up, always on, until
+Temporal reports their pinned runs drained. A run waiting on a reply stays open up to 14 days, and old builds are
+only cleaned up by the next deploy. So a day of many merges can leave dozens of ~$57/month workers running.
+- `scripts/cloud-run-audit.sh <project-id>` lists every service, job and worker pool with its min instances,
+  CPU allocation, size and revision date, plus each worker build's Temporal drainage. It changes nothing.
+- `scripts/retire-workers.sh <project-id> <staging|prod>` keeps the newest worker and, for each older one, lets you
+  park it (min 0, request-based CPU, reversible) or delete it after you type its name.
 
 ## Known gaps
 
