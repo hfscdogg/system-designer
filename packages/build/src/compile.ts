@@ -2,7 +2,7 @@ import { z } from "zod";
 import { findAuthorityFields } from "@sd/core";
 import type { AdmittedProduct } from "./catalog.ts";
 import type { Selection } from "./materialize.ts";
-import { laborHoursFor, type PatternSpec } from "./pattern.ts";
+import { allowanceHours, laborHoursFor, type PatternSpec } from "./pattern.ts";
 
 /**
  * Compiler (PRD §13.3): validate a selection against the admitted catalog and
@@ -40,7 +40,7 @@ const SelectionSchema = z
     allowances: z.array(z.object({ label: z.string(), reason: z.string() }).strict()),
     unresolved: z.array(z.object({ item: z.string(), role: z.string().nullable(), reason: z.string(), escalate: z.boolean() }).strict()),
     labor_allowances: z
-      .array(z.object({ key: z.string(), label: z.string(), hours: z.number().positive(), labor_type: z.string(), quantity: z.number().int().min(2).optional() }).strict())
+      .array(z.object({ key: z.string(), label: z.string(), hours: z.number().positive(), labor_type: z.string(), quantity: z.number().int().min(2).optional(), feet: z.number().positive().optional(), trenched: z.literal(true).optional() }).strict())
       .default([]),
     to_verify: z.array(z.string()).default([]),
   })
@@ -94,6 +94,10 @@ export interface DraftLaborAllowance {
   basis: string;
   /** How many of a counted template the hours cover (4 Ethernet ports); absent for one. */
   quantity?: number;
+  /** The length the hours were sized from ("120 ft of trench"), for a template with a per-foot rate. */
+  feet?: number;
+  /** Sized as laid in the request's trench, at the template's in-trench rate. */
+  trenched?: true;
 }
 
 export interface DraftParts {
@@ -258,8 +262,8 @@ export function compile(raw: unknown, catalog: Map<string, AdmittedProduct>, pat
     const spec = pattern.allowances?.find((x) => x.key === a.key);
     // A counted template (one cable run per Ethernet port) takes its hours once per unit; others are priced once.
     const units = a.quantity ?? 1;
-    if (!spec || spec.label !== a.label || spec.hours * units !== a.hours || spec.labor_type !== a.labor_type || (units > 1 && !spec.counted)) errors.push(`allowance ${a.key} is not the pattern's template`);
-    else laborAllowances.push({ key: spec.key, label: spec.label, hours: a.hours, labor_type: spec.labor_type, basis: spec.basis, ...(units > 1 ? { quantity: units } : {}) });
+    if (!spec || spec.label !== a.label || allowanceHours(spec, units, a.feet, a.trenched) !== a.hours || (a.feet !== undefined && !(a.trenched ? spec.in_trench : spec.hours_per_foot)) || (a.trenched && !spec.in_trench) || spec.labor_type !== a.labor_type || (units > 1 && !spec.counted)) errors.push(`allowance ${a.key} is not the pattern's template`);
+    else laborAllowances.push({ key: spec.key, label: spec.label, hours: a.hours, labor_type: spec.labor_type, basis: spec.basis, ...(units > 1 ? { quantity: units } : {}), ...(a.feet ? { feet: a.feet } : {}), ...(a.trenched ? { trenched: true as const } : {}) });
   }
 
   // Critical role coverage: every critical role the selection implies is priced or explicitly unresolved.

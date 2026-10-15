@@ -1406,9 +1406,50 @@ describe("Zack's round 4 (2026-10-15)", () => {
     });
     const line = selection.lines.find((l) => l.role === "television");
     expect(line && indoor.has(line.record_id)).toBeFalsy();
+    // Henry, 2026-10-15: the Samsung Terrace QN75LST9D, Livewire's most quoted 75" outdoor TV.
+    expect(line!.record_id).toBe("23502905-bbcf-4e3f-af0d-9bf230a9ad14");
+    expect(selection.to_verify).toEqual([]);
+    // An outdoor size with no approved outdoor model is listed to price, not priced as an indoor TV.
+    const odd = await job({ functional_systems: ["outdoor TV"], requested_changes: ['Provide a new 85" weatherproof TV for the pool deck'], requested_quantities: [{ item: '85" weatherproof TV', quantity: 1 }] });
+    expect(odd.selection.lines.find((l) => l.role === "television")).toBeUndefined();
+    expect(odd.selection.to_verify).toEqual(['Requested product: 85" outdoor TV (no Livewire standard outdoor model at this size; priced in the final proposal)']);
+    // The customer's outdoor TV is theirs, as before.
+    const own = await job({ functional_systems: ["outdoor TV"], requested_changes: ["Mount the customer's 55-inch outdoor TV on the porch"] });
+    expect(own.selection.lines.find((l) => l.role === "television")).toBeUndefined();
     // An indoor 75" TV still prices the 77" Sony.
     const inside = await job({ functional_systems: ["TV"], requested_changes: ['Provide a new 75" TV for the family room'], requested_quantities: [{ item: '75" TV', quantity: 1 }] });
     expect(inside.selection.lines.find((l) => l.role === "television")!.record_id).toBe("b89ed236-fff6-4985-a526-31d12b9c796f");
+  });
+
+  it("Biscuit Belly: Klipsch in-ceiling speakers price Klipsch, 70V on a commercial job, each at the count stated", async () => {
+    const klipsch = async (market: string) =>
+      (
+        await job({
+          market,
+          functional_systems: ["audio"],
+          requested_changes: ["Replace the 3 indoor speakers with Klipsch in-ceiling speakers", "Replace the amplifier"],
+          requested_quantities: [{ item: "Klipsch in-ceiling speakers", quantity: 3 }],
+        })
+      ).selection.lines.find((l) => l.role === "in_ceiling_speakers")!;
+    expect(await klipsch("commercial")).toMatchObject({ record_id: "2d7cf03e-3887-42d6-86f0-7ca328448201", quantity: 3, requested_model: "PIC-650-T BW" });
+    expect(await klipsch("residential")).toMatchObject({ record_id: "2a31c82f-fc48-481f-86ae-57bf40bc0e6d", quantity: 3, requested_model: "CS-16C II" });
+    // No brand named: the Sonos standard, as before.
+    const sonos = await job({ functional_systems: ["audio"], requested_changes: ["Add in-ceiling speakers in the kitchen"], requested_quantities: [{ item: "in-ceiling speakers", quantity: 2 }] });
+    expect(sonos.selection.lines.find((l) => l.role === "in_ceiling_speakers")).toMatchObject({ quantity: 1 });
+    expect(sonos.selection.lines.find((l) => l.role === "in_ceiling_speakers")!.requested_model).toBeUndefined();
+  });
+
+  it("Crowder: trench and conduit labor scale with the length given, conduit in the trench at its own rate", async () => {
+    const site = async (changes: string[]) =>
+      Object.fromEntries((await job({ functional_systems: ["outdoor WiFi", "trenching", "conduit"], requested_changes: ["Add an outdoor eero at the post", ...changes] })).selection.labor_allowances.map((a) => [a.key, [a.hours, a.feet ?? null]]));
+    // 120 ft × 0.083 h = 10 h of trench; two conduits in it, 240 ft × 0.05 h = 12 h.
+    expect(await site(["Hand trench 120 ft from the house to the post, cut and relay the sod", "Lay two conduits in the trench, glued in sections"])).toEqual({ trenching: [10, 120], conduit: [12, 240] });
+    expect(await site(["Hand trench 120 ft with the sod cut and relaid, plus two conduits glued and laid in sections"])).toEqual({ trenching: [10, 120], conduit: [12, 240] });
+    // Conduit on its own: 50 ft × 0.17 h = 8.5 h. No length: the flat templates.
+    expect(await site(["Run 50 ft of conduit along the garage wall"])).toEqual({ trenching: [6, null], conduit: [8.5, 50] });
+    expect(await site(["Run conduit from the head end to the post", "Trench to the post"])).toEqual({ trenching: [6, null], conduit: [6, null] });
+    // Short runs keep the minimum.
+    expect(await site(["Trench 30 ft to the lamp post"])).toEqual({ trenching: [6, 30], conduit: [6, 30] });
   });
 
   it("Crowder: the Apple TV is the 2026 SKU, not the discontinued one (Ben, 2026-10-14)", async () => {

@@ -123,6 +123,11 @@ Zack's round 4 (2026-10-15):
 - The Apple TV is the Apple TV 4K (2026) record at $339 (Ben retired the 2022 SKUs on 2026-10-14).
 - A role's `brand_variants` price another approved brand's record when the request names that brand for the device ("Klipsch in-ceiling speakers"), sold each at the stated count.
 
+Pricing decisions (Henry, 2026-10-15, from 1,348 accepted or presented Livewire quotes since 2024):
+- An outdoor TV is a Samsung Terrace: 75" QN75LST9D, 65" QN65LST9D, 55" QN55LST7D (on about 15 of 23 outdoor-TV quotes). Other outdoor sizes are listed to price.
+- Klipsch in-ceiling speakers are the Klipsch Professional PIC-650-T (70V) on commercial jobs and the CS-16C II at home.
+- Trench and conduit labor scale with a length the request gives: trench 0.083 h/ft, conduit 0.17 h/ft, and conduit laid in the request's trench runs the trench length per conduit at 0.05 h/ft, each at least the flat 6 h. Materials stay in Design & Delivery.
+
 Design & Delivery (the parts line) is `design_delivery.base_pct` of product + labor + services, costed at the parts margin. When a budget would fall under the margin floor, it rises in half-point steps up to `design_delivery.max_pct` until the budget clears the floor; past that, the budget waits for an admin's approval. Without `design_delivery`, parts are sized to the parts share of the subtotal. `tax` can also be `{ "mode": "rate", "rate_pct": <n>, "applies_to": "taxable_equipment" }`.
 
 The file ships in the image. Publish it with the admin job (see `docs/deploy.md`):

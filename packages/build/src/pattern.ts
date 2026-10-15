@@ -171,6 +171,16 @@ export const AllowanceSpecSchema = z
      * unless the request states its own count of runs or drops, which already includes them.
      */
     per_role: z.array(z.string().min(1)).min(1).optional(),
+    /**
+     * Hours per foot when the request gives a length ("120 ft of hand trench"): the allowance is the larger of
+     * `hours` and the feet (times the runs it names, "two conduits") at this rate (Henry, 2026-10-15).
+     */
+    hours_per_foot: z.number().positive().optional(),
+    /**
+     * Laid in a trench the request also asks for (conduit in an open trench): the trench's length times the
+     * runs named, at this lower per-foot rate, at least `hours` (Henry, 2026-10-15).
+     */
+    in_trench: z.object({ trench: z.string().min(1), hours_per_foot: z.number().positive() }).strict().optional(),
     labor_type: z.string().min(1),
     /** Where the hours come from, kept for review. */
     basis: z.string().min(1),
@@ -332,6 +342,13 @@ export async function loadPatterns(dir = new URL("../patterns/", import.meta.url
       return allowances.length ? { ...p, allowances } : p;
     }),
   );
+}
+
+/** An allowance's hours: per unit for a counted one, or by length at its per-foot rate when it has one and a length is given. */
+export function allowanceHours(spec: Pick<AllowanceSpec, "hours" | "hours_per_foot" | "in_trench">, units = 1, feet?: number, inTrench = false): number {
+  const rate = inTrench ? spec.in_trench?.hours_per_foot : spec.hours_per_foot;
+  if (feet && rate) return Math.max(spec.hours, Math.ceil(Math.round(feet * rate * 1000) / 1000 * 2) / 2);
+  return spec.hours * units;
 }
 
 /** The allowance templates in the patterns directory (not a pattern itself). */

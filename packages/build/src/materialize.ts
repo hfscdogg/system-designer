@@ -1,6 +1,6 @@
 import { isAddOnRequest, type ScopeDraftV1 } from "@sd/core";
 import type { NamedProduct } from "./named.ts";
-import { laborHoursFor, type AllowanceSpec, type PatternSpec, type RoleSpec } from "./pattern.ts";
+import { allowanceHours, laborHoursFor, type AllowanceSpec, type PatternSpec, type RoleSpec } from "./pattern.ts";
 
 /**
  * Deterministic materializer (PRD §13.2): approved scope + approved pattern →
@@ -38,7 +38,7 @@ export interface Selection {
   unresolved: Array<{ item: string; role: string | null; reason: string; escalate: boolean }>;
   /** Labor for out-of-pattern work the request asks for (a conduit run), from the pattern's allowance templates; priced at the policy rate. */
   /** quantity: how many of a counted template the hours cover (4 Ethernet ports); absent for one. */
-  labor_allowances: Array<{ key: string; label: string; hours: number; labor_type: string; quantity?: number }>;
+  labor_allowances: Array<{ key: string; label: string; hours: number; labor_type: string; quantity?: number; feet?: number; trenched?: true }>;
   /** Requested products with no Livewire standard (a TV cart), listed to verify and priced in the final proposal. */
   to_verify: string[];
 }
@@ -442,12 +442,13 @@ function withoutNamedWords(scope: ScopeDraftV1, named: NamedProduct[]): ScopeDra
  * Roles whose device the request names with another approved brand ("Klipsch in-ceiling speakers"): that
  * brand's record, as if named by model, so it is sold each at the count stated.
  */
-function brandNamed(scope: ScopeDraftV1, roles: RoleSpec[]): Array<[string, NamedProduct]> {
+function brandNamed(scope: ScopeDraftV1, roles: RoleSpec[], byModel: NamedProduct[]): Array<[string, NamedProduct]> {
+  const skip = (t: string) => byModel.some((n) => compact(t).includes(compact(n.model)));
   const out: Array<[string, NamedProduct]> = [];
   for (const role of roles) {
     for (const v of role.brand_variants ?? []) {
       if (v.market && v.market !== scope.market) continue;
-      const text = requestTexts(scope).find((t) => hasWord(t, fold(v.brand)) && deviceTerms(role).some((d) => hasWord(t, d)));
+      const text = requestTexts(scope).find((t) => !skip(t) && hasWord(t, fold(v.brand)) && deviceTerms(role).some((d) => hasWord(t, d)));
       if (!text) continue;
       out.push([role.role, { record_id: v.product_id, model: v.model, label: v.label, category: role.categories?.[0] ?? "", text }]);
       break;
@@ -474,7 +475,8 @@ export function materialize(stated: ScopeDraftV1, pattern: PatternSpec, namedPro
   const candidates = pattern.roles.filter((role) => role.systems.some((s) => original.functional_systems.includes(s)));
   // Products the request names by model are priced in the role they fill, and name that role. Their words name nothing else.
   const requested = namedForRoles(namedProducts, candidates);
-  for (const [role, n] of brandNamed(original, candidates)) if (!requested.has(role)) requested.set(role, [n]);
+  // A change that already names a product by model ("Klipsch AW-525 outdoor speakers") is priced as that product, not by brand.
+  for (const [role, n] of brandNamed(original, candidates, namedProducts)) if (!requested.has(role)) requested.set(role, [n]);
   const priced = [...requested.values()].flat();
   const scope = withoutNamedWords(original, priced);
   const names = (r: RoleSpec) => requested.has(r.role) || named(scope, r, pattern.roles);
@@ -736,7 +738,15 @@ export function materialize(stated: ScopeDraftV1, pattern: PatternSpec, namedPro
     requirements,
     allowances,
     unresolved,
-    labor_allowances: laborAllowances.map(({ key, label, hours, labor_type, quantity }) => ({ key, label, hours: hours * quantity, labor_type, ...(quantity > 1 ? { quantity } : {}) })),
+    labor_allowances: laborAllowances.map((a) => ({
+      key: a.key,
+      label: a.label,
+      hours: allowanceHours(a, a.quantity, a.feet, a.trenched),
+      labor_type: a.labor_type,
+      ...(a.quantity > 1 ? { quantity: a.quantity } : {}),
+      ...(a.feet ? { feet: a.feet } : {}),
+      ...(a.trenched ? { trenched: true as const } : {}),
+    })),
     to_verify: toVerify,
   };
 }
@@ -746,9 +756,39 @@ export function materialize(stated: ScopeDraftV1, pattern: PatternSpec, namedPro
  * asks for, in file order, with the texts that asked. Each is priced once, or, when the template is
  * counted, once per stated unit or per change that asks ("Ethernet port in the dining room", "… in the living room").
  */
-function allowancesFor(templates: AllowanceSpec[], scope: ScopeDraftV1, uncovered: string[], lines: SelectionLine[]): Array<AllowanceSpec & { texts: string[]; quantity: number }> {
+const NUMBER_WORDS: Record<string, number> = { one: 1, two: 2, three: 3, four: 4, five: 5, six: 6, a: 1, single: 1, dual: 2, twin: 2 };
+const FEET = /\b(\d{1,3}(?:,\d{3})*|\d+)\s*(?:-\s*)?(?:ft\b\.?|feet\b|foot\b|'(?!s))/g;
+
+/**
+ * The length a change gives for this work, times the runs it names: "120 ft of hand trench" is 120 ft;
+ * "two conduits … 120 ft" is 240 ft of conduit. The longest length any asking text gives, so a length
+ * repeated across changes is counted once.
+ */
+function feetAsked(texts: string[], mentions: string[]): number | undefined {
+  let best = 0;
+  for (const t of texts) {
+    const feet = Math.max(0, ...[...t.matchAll(FEET)].map((m) => Number(m[1]!.replace(/,/g, ""))));
+    if (feet) best = Math.max(best, feet * runsIn(t, mentions));
+  }
+  return best || undefined;
+}
+
+/** How many runs a change names for this work ("two conduits", "2 conduit runs"); 1 when it names no number. */
+function runsIn(text: string, mentions: string[]): number {
+  return Math.max(
+    1,
+    ...mentions.map((w) => {
+      const m = new RegExp(`\\b(\\d+|${Object.keys(NUMBER_WORDS).join("|")})\\s+(?:[\\w-]+\\s+){0,2}${escape(fold(w))}(?:s|es)?\\b`).exec(text);
+      // "50 ft of conduit" is a length, not 50 conduits.
+      if (!m || /\b(ft|feet|foot)\b|'/.test(m[0])) return 1;
+      return Number(m[1]) || NUMBER_WORDS[m[1]!] || 1;
+    }),
+  );
+}
+
+function allowancesFor(templates: AllowanceSpec[], scope: ScopeDraftV1, uncovered: string[], lines: SelectionLine[]): Array<AllowanceSpec & { texts: string[]; quantity: number; feet?: number; trenched?: true }> {
   const any = (t: string, words?: string[]) => !!words?.some((w) => hasWord(t, fold(w)));
-  return templates.flatMap((a) => {
+  const found = templates.flatMap((a) => {
     if (a.covered_by_systems?.some((s) => scope.functional_systems.includes(s))) return [];
     const asks = (t: string) => any(t, a.mentions) && (!a.require || any(t, a.require)) && !any(t, a.exclude);
     const asking = [...requestTexts(scope), ...uncovered].filter(asks);
@@ -757,7 +797,17 @@ function allowancesFor(templates: AllowanceSpec[], scope: ScopeDraftV1, uncovere
     const changes = new Set(scope.requested_changes.map(fold).filter(asks)).size;
     // The wired access point's own drop (Zack's Britt job, 2026-10-15: 4 Ethernet ports and a PoE access point are 5 runs).
     const forRoles = stated ? 0 : lines.filter((l) => a.per_role?.includes(l.role)).reduce((n, l) => n + l.quantity, 0);
-    return [{ ...a, texts: asking, quantity: a.counted ? Math.max(1, (stated || changes) + forRoles) : 1 }];
+    // Work sized by length ("120 ft of hand trench") at the template's per-foot rate (Crowder, 2026-10-15).
+    const feet = a.hours_per_foot ? feetAsked(asking, a.mentions) : undefined;
+    return [{ ...a, texts: asking, quantity: a.counted ? Math.max(1, (stated || changes) + forRoles) : 1, ...(feet ? { feet } : {}) }];
+  });
+  // Conduit laid in the request's trench runs the trench's length, once per conduit, at the in-trench rate:
+  // Crowder's 120 ft trench with two conduits is 240 ft of conduit at 0.05 h/ft (Henry, 2026-10-15).
+  return found.map((a) => {
+    const trench = a.in_trench && found.find((t) => t.key === a.in_trench!.trench);
+    if (!trench?.feet) return a;
+    const runs = Math.max(1, ...a.texts.map((t) => runsIn(t, a.mentions)));
+    return { ...a, feet: trench.feet * runs, trenched: true as const };
   });
 }
 
