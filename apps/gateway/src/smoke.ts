@@ -365,7 +365,12 @@ export async function runSmoke(deps: SmokeDeps): Promise<{ runs: string[]; failu
           ...(s.receipt ?? []).filter((text) => !lines.some((l) => l.includes(text.toLowerCase()))).map((text) => `receipt is missing "${text}"`),
           ...(s.total && (await deps.store.readArtifact<Proposal>(run.id, "bind", "proposal"))?.commercial.total_cents == null ? ["the budget has no total"] : []),
         ];
-        if (wrong.length) throw new SmokeFailure(`${step}: ${wrong.join("; ")}`);
+        if (wrong.length) {
+          // What the interpreter read and what was priced, so a failure can be traced from the deploy log alone.
+          const read = receipt.body.lines.filter((l) => /^(Systems|Stated quantities|Existing equipment|Existing smoke\/CO detectors|Excluded):/.test(l));
+          const priced = `${selection?.pattern ?? "no pattern"}: ${[...qty].map(([r, q]) => `${r} ${q}`).join(", ") || "nothing"}`;
+          throw new SmokeFailure(`${step}: ${wrong.join("; ")} [priced ${priced}] [receipt ${read.join(" | ")}]`);
+        }
         log(`${step}: ok (${selection?.pattern}: ${[...qty].map(([r, q]) => `${r} ${q}`).join(", ")})`);
       }
       await post(thread, { kind: "text", text: `✅ ${scenario.name}: passed.` }, `smoke-${stamp}-pass-${j}`);
