@@ -34,7 +34,7 @@ WORKER_SA="sd-worker-${ENV_NAME}@${PROJECT}.iam.gserviceaccount.com"
 GATEWAY_SA="sd-gateway-${ENV_NAME}@${PROJECT}.iam.gserviceaccount.com"
 QUEUE="proposal-runs-${ENV_NAME}"
 DEPLOYMENT="system-designer-${ENV_NAME}"
-WORKER_SERVICE="sd-worker-${ENV_NAME}-${BUILD_ID}"
+WORKER_SERVICE="sd-worker-${ENV_NAME}"
 GATEWAY_SERVICE="sd-gateway-${ENV_NAME}"
 BUCKET="${PROJECT}-sd-evidence-${ENV_NAME}"
 PROJECT_NUMBER="${GCP_PROJECT_NUMBER:?set the GCP_PROJECT_NUMBER repository variable}"
@@ -70,14 +70,18 @@ gcloud run jobs deploy "sd-migrate-${ENV_NAME}" --region "${REGION}" --image "${
   --set-env-vars "RELEASE_ID=${DIGEST}" --set-secrets "${DB_SECRET}" --max-retries 0 --quiet
 gcloud run jobs execute "sd-migrate-${ENV_NAME}" --region "${REGION}" --wait
 
-log "reconcile job (triggered hourly by Cloud Scheduler; also reads real quotes under retainer opportunities, read-only, checks retainer invoices for payment, and copies the run log to BigQuery)"
+log "reconcile job (triggered hourly by Cloud Scheduler; also retires old worker builds, reads real quotes under retainer opportunities, read-only, checks retainer invoices for payment, and copies the run log to BigQuery)"
 gcloud run jobs deploy "sd-reconcile-${ENV_NAME}" --region "${REGION}" --image "${IMAGE}" \
   --command node --args apps/gateway/src/admin.ts,reconcile \
   --service-account "${WORKER_SA}" --set-cloudsql-instances "${GCP_SQL_INSTANCE}" \
-  --set-env-vars "${COMMON_ENV},${QBO_ENV},RUNLOG_DATASET=sd_runlog_${ENV_NAME}" --set-secrets "${DB_SECRET},TEMPORAL_API_KEY=temporal-api-key:latest,DTOOLS_API_KEY=dtools-api-key:latest,DTOOLS_BASIC_AUTH=dtools-basic-auth:latest${QBO_SECRETS}" --max-retries 0 --quiet
+  --set-env-vars "${COMMON_ENV},${QBO_ENV},RUNLOG_DATASET=sd_runlog_${ENV_NAME},SD_ENV=${ENV_NAME},GCP_REGION=${REGION},WORKER_DEPLOYMENT_NAME=${DEPLOYMENT}" --set-secrets "${DB_SECRET},TEMPORAL_API_KEY=temporal-api-key:latest,DTOOLS_API_KEY=dtools-api-key:latest,DTOOLS_BASIC_AUTH=dtools-basic-auth:latest${QBO_SECRETS}" --max-retries 0 --quiet
 
-# One worker service per build: workflows are pinned to the build they started on,
-# so older builds keep running until Temporal reports them drained (cleanup below).
+# One worker service per environment, updated in place: workflows run AUTO_UPGRADE (apps/worker/src/main.ts), so
+# in-flight runs move to the new build and no old build has to stay up for them.
+# A Temporal worker long-polls, so it needs min 1 and CPU always allocated: ~$58/month while it is up. One instance
+# is enough (the worker runs tasks concurrently itself); a second would only double that.
+# Services named sd-worker-<env>-sha-… are builds from before this; they are parked below and deleted by the hourly
+# reconcile job once drained. scripts/cloud-run-audit.sh shows what is running.
 log "worker ${WORKER_SERVICE}"
 gcloud run deploy "${WORKER_SERVICE}" --region "${REGION}" --image "${IMAGE}" \
   --command node --args apps/worker/src/main.ts \
@@ -85,7 +89,7 @@ gcloud run deploy "${WORKER_SERVICE}" --region "${REGION}" --image "${IMAGE}" \
   --set-env-vars "${WORKER_ENV}" --set-secrets "${WORKER_SECRETS}" \
   --labels "sd-env=${ENV_NAME},sd-role=worker,sd-build=${BUILD_ID}" \
   --no-allow-unauthenticated --add-custom-audiences "sd-worker-${ENV_NAME}" \
-  --min-instances 1 --max-instances 2 --no-cpu-throttling \
+  --min-instances 1 --max-instances 1 --no-cpu-throttling \
   --cpu 1 --memory 2Gi --quiet
 
 WORKER_URL="$(gcloud run services describe "${WORKER_SERVICE}" --region "${REGION}" --format 'value(status.url)')"
@@ -98,7 +102,7 @@ done
 [[ "$(jq -r .release <<<"${HEALTH}")" == "${DIGEST}" && "$(jq -r .state <<<"${HEALTH}")" == "RUNNING" ]] \
   || { echo "worker health mismatch: ${HEALTH}" >&2; exit 1; }
 
-log "promote Temporal worker version ${BUILD_ID} (new runs use it; in-flight runs stay pinned)"
+log "promote Temporal worker version ${BUILD_ID} (new and in-flight runs move to it)"
 export TEMPORAL_API_KEY
 TEMPORAL_API_KEY="$(gcloud secrets versions access latest --secret temporal-api-key)"
 for i in $(seq 1 30); do
@@ -141,24 +145,42 @@ if [[ "${ENV_NAME}" == "staging" && -n "${SMOKE_SPACE_ID:-}" ]]; then
       --freshness 2h --order asc --limit 300 --format 'value(textPayload)' 2>/dev/null \
       | grep -E ': ok |FAILED|smoke passed|Error|error' || echo "(smoke job logs unavailable to the deployer; see the smoke Chat space)"
   fi
-  [[ "${SMOKE_OK}" == 1 ]] || { echo "conversation smoke test failed; see the lines above and the smoke Chat space" >&2; exit 1; }
 else
   log "conversation smoke test skipped (staging only, needs SMOKE_SPACE_ID)"
 fi
 
-log "retire drained worker builds"
-for svc in $(gcloud run services list --region "${REGION}" --filter "metadata.labels.sd-env=${ENV_NAME} AND metadata.labels.sd-role=worker" --format 'value(metadata.name)'); do
+# Staging only needs a worker while a deploy tests it. Park it (min 0, CPU only during requests: it bills nothing),
+# pass or fail; the next staging deploy brings it back. Staging runs started meanwhile wait for that deploy.
+if [[ "${ENV_NAME}" == "staging" ]]; then
+  log "park ${WORKER_SERVICE} until the next staging deploy"
+  gcloud run services update "${WORKER_SERVICE}" --region "${REGION}" --min-instances 0 --cpu-throttling --quiet
+fi
+[[ "${SMOKE_OK:-1}" == 1 ]] || { echo "conversation smoke test failed; see the lines above and the smoke Chat space" >&2; exit 1; }
+
+log "park old worker builds"
+# sd-worker-<env>-sha-… services are builds from before one service per environment; their runs stay pinned to them.
+# Parked, such a run waits (it does not fail) until the build is unparked or the run expires. The hourly reconcile
+# job deletes each one once Temporal reports it drained. A service labelled sd-keep=true was unparked on purpose.
+# shellcheck disable=SC2016 # jq, not shell, expands these
+ALWAYS_ON_JQ='.[] | (.spec.template.metadata.annotations // {}) as $a | (.metadata.annotations // {}) as $sa
+  | select((($sa["run.googleapis.com/minScale"] // $a["autoscaling.knative.dev/minScale"] // "0") | tonumber) > 0
+           and $a["run.googleapis.com/cpu-throttling"] == "false")'
+for svc in $(gcloud run services list --region "${REGION}" \
+    --filter "metadata.labels.sd-env=${ENV_NAME} AND metadata.labels.sd-role=worker" --format json \
+    | jq -r "${ALWAYS_ON_JQ}"' | select(.metadata.labels["sd-keep"] != "true") | .metadata.name'); do
   [[ "${svc}" == "${WORKER_SERVICE}" ]] && continue
-  old_build="${svc#sd-worker-"${ENV_NAME}"-}"
-  status="$(temporal worker deployment describe-version --address "${TEMPORAL_ADDRESS}" --namespace "${TEMPORAL_NAMESPACE}" \
-    --deployment-name "${DEPLOYMENT}" --build-id "${old_build}" -o json 2>/dev/null | jq -r '.. | .drainageStatus? // .status? // empty' | head -1 || true)"
-  if [[ "${status}" == *DRAINED* ]]; then
-    log "deleting drained worker ${svc}"
-    gcloud run services delete "${svc}" --region "${REGION}" --quiet
-  else
-    log "keeping ${svc} (pinned runs may still need it; drainage: ${status:-unknown})"
-  fi
+  log "parking ${svc}"
+  gcloud run services update "${svc}" --region "${REGION}" --min-instances 0 --cpu-throttling --quiet
 done
+
+log "always-on worker check"
+# Every always-on worker bills ~$58/month. Normally there is one (prod; staging is parked after its deploy).
+# More than two means old builds are piling up again: fail so someone looks (scripts/cloud-run-audit.sh).
+ALWAYS_ON="$(gcloud run services list --region "${REGION}" --filter "metadata.labels.sd-role=worker" --format json \
+  | jq -r "${ALWAYS_ON_JQ}"' | .metadata.name')"
+COUNT="$(grep -c . <<<"${ALWAYS_ON}" || true)"
+log "${COUNT} always-on worker(s): $(tr '\n' ' ' <<<"${ALWAYS_ON}")"
+(( COUNT <= 2 )) || { echo "more than 2 always-on workers; park the extra ones (scripts/retire-workers.sh) and find out why they piled up" >&2; exit 1; }
 
 {
   echo "release=${DIGEST}"

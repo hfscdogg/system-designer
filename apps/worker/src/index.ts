@@ -9,3 +9,4 @@ export * from "./reconcile.ts";
 export * from "./final-quote.ts";
 export * from "./retainer.ts";
 export * from "./retainer-paid.ts";
+export * from "./retire-workers.ts";

@@ -9,7 +9,7 @@ Rebuild System Designer as a controlled workflow with an LLM inside it. It is no
 
 | Concern | Choice | Why |
 |---|---|---|
-| **Run state and recovery** | Temporal Cloud. One workflow per run, with `workflowId = runId`. | Crash, deploy and timeout recovery come from durable replay. Activities retry with idempotency keys. Approvals and clarifications are signals. Worker deployment versions pin in-flight runs (PRD §6.2, §16.3, §17). |
+| **Run state and recovery** | Temporal Cloud. One workflow per run, with `workflowId = runId`. | Crash, deploy and timeout recovery come from durable replay. Activities retry with idempotency keys. Approvals and clarifications are signals. Worker deployment versions; in-flight runs auto-upgrade to each release, with workflow-code changes guarded by `patched()` (PRD §6.2, §16.3, §17). |
 | **Business state** | Postgres (Cloud SQL) | Single-use claims, atomic approvals, an append-only audit log enforced by triggers, and identity and space allowlists. |
 | **Evidence** | GCS, write-once with `ifGenerationMatch=0` | Original provider payloads and, later, artifacts are stored hashed. A rewrite with different bytes is an error. |
 | **Chat** | `ChannelAdapter` interface. Google Chat first, Telegram in M6. | One view model (`text`, `receipt`, `status`) rendered natively per platform, so the same agent runs on every app. |
@@ -57,7 +57,7 @@ Each Hermes failure from PRD §20 maps to a mechanism here:
 | §15.3 | Pilot hold | No delivery or write code paths exist | ✅ structurally |
 | §15.4 | Margin config, Henry-only | `commercial_policies` (admin-only trigger, append-only), frozen per run; below-floor builds wait in `AWAITING_MARGIN_APPROVAL` for an admin's recorded decision (`margin_exceptions`) | ✅ |
 | §16 | Append-only events, atomic publication, idempotency | `events` table, write-once blobs, idempotency keys | ✅ for M1 scope |
-| §17 | Immutable releases, pinned runs, staged activation, rollback, post-deploy checks | `infra/terraform`, `.github/workflows/ci.yml` (deploy jobs), `scripts/deploy-env.sh` (deploy by digest, one worker service per build until drained, Temporal version promotion, smoke checks) | ◑ written; first live deploy pending |
+| §17 | Immutable releases, pinned runs, staged activation, rollback, post-deploy checks | `infra/terraform`, `.github/workflows/ci.yml` (deploy jobs), `scripts/deploy-env.sh` (deploy by digest, one worker service per environment, Temporal version promotion, smoke checks, always-on worker guard) | ◑ written; first live deploy pending |
 | §18 | Acceptance | `apps/gateway/test/e2e.test.ts` + live run | M5 |
 
 ## Messaging UX

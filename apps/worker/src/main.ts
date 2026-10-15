@@ -10,8 +10,11 @@ import { productionAdapters, productionQbo, productionStore, releaseId, requireE
 import { taskQueue } from "./temporal.ts";
 
 /**
- * Temporal worker. Each deploy is a new deployment version; workflows are pinned
- * to the version they started on, so in-flight runs never change code mid-run (PRD §17).
+ * Temporal worker. Each deploy is a new deployment version of one worker service per
+ * environment. Workflows auto-upgrade: an in-flight run continues on the new build at
+ * its next workflow task, so no old build has to stay up for it. Any change to workflow
+ * code (workflows/, workflows/logic.ts, @sd/core/workflow-safe) must therefore replay
+ * old histories unchanged: guard it with patched() (see workflows/index.ts).
  */
 async function main() {
   const t = temporalSettings();
@@ -42,7 +45,7 @@ async function main() {
     workerDeploymentOptions: {
       version: { deploymentName: process.env.WORKER_DEPLOYMENT_NAME ?? "system-designer", buildId: workerBuildId() },
       useWorkerVersioning: true,
-      defaultVersioningBehavior: "PINNED",
+      defaultVersioningBehavior: "AUTO_UPGRADE",
     },
   });
   // Cloud Run needs an HTTP port; /health reports what this instance runs and whether it polls.
