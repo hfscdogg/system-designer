@@ -87,32 +87,3 @@ resource "google_project_iam_member" "scheduler_run_jobs" {
   role    = "roles/run.invoker"
   member  = "serviceAccount:${google_service_account.scheduler.email}"
 }
-
-# The hourly reconcile job (worker account) retires its environment's old worker builds
-# (apps/worker/src/retire-workers.ts): it lists services, and parks or deletes only sd-worker-<env>… ones.
-# Those run as this same account, so it gains no other identity.
-resource "google_project_iam_member" "worker_run_viewer" {
-  for_each = local.envs
-  project  = var.project_id
-  role     = "roles/run.viewer"
-  member   = "serviceAccount:${google_service_account.worker[each.key].email}"
-}
-
-resource "google_project_iam_member" "worker_retire_own_services" {
-  for_each = local.envs
-  project  = var.project_id
-  role     = "roles/run.developer"
-  member   = "serviceAccount:${google_service_account.worker[each.key].email}"
-  condition {
-    title      = "sd-worker-${each.key} services only"
-    expression = "resource.type == \"run.googleapis.com/Service\" && resource.name.extract(\"/services/{name}\").startsWith(\"sd-worker-${each.key}\")"
-  }
-}
-
-# Updating a service makes a revision that runs as the worker account, so the job must be allowed to act as it.
-resource "google_service_account_iam_member" "worker_act_as_self" {
-  for_each           = local.envs
-  service_account_id = google_service_account.worker[each.key].name
-  role               = "roles/iam.serviceAccountUser"
-  member             = "serviceAccount:${google_service_account.worker[each.key].email}"
-}

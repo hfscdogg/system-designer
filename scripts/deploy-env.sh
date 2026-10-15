@@ -70,18 +70,18 @@ gcloud run jobs deploy "sd-migrate-${ENV_NAME}" --region "${REGION}" --image "${
   --set-env-vars "RELEASE_ID=${DIGEST}" --set-secrets "${DB_SECRET}" --max-retries 0 --quiet
 gcloud run jobs execute "sd-migrate-${ENV_NAME}" --region "${REGION}" --wait
 
-log "reconcile job (triggered hourly by Cloud Scheduler; also retires old worker builds, reads real quotes under retainer opportunities, read-only, checks retainer invoices for payment, and copies the run log to BigQuery)"
+log "reconcile job (triggered hourly by Cloud Scheduler; also reads real quotes under retainer opportunities, read-only, checks retainer invoices for payment, and copies the run log to BigQuery)"
 gcloud run jobs deploy "sd-reconcile-${ENV_NAME}" --region "${REGION}" --image "${IMAGE}" \
   --command node --args apps/gateway/src/admin.ts,reconcile \
   --service-account "${WORKER_SA}" --set-cloudsql-instances "${GCP_SQL_INSTANCE}" \
-  --set-env-vars "${COMMON_ENV},${QBO_ENV},RUNLOG_DATASET=sd_runlog_${ENV_NAME},SD_ENV=${ENV_NAME},GCP_REGION=${REGION},WORKER_DEPLOYMENT_NAME=${DEPLOYMENT}" --set-secrets "${DB_SECRET},TEMPORAL_API_KEY=temporal-api-key:latest,DTOOLS_API_KEY=dtools-api-key:latest,DTOOLS_BASIC_AUTH=dtools-basic-auth:latest${QBO_SECRETS}" --max-retries 0 --quiet
+  --set-env-vars "${COMMON_ENV},${QBO_ENV},RUNLOG_DATASET=sd_runlog_${ENV_NAME}" --set-secrets "${DB_SECRET},TEMPORAL_API_KEY=temporal-api-key:latest,DTOOLS_API_KEY=dtools-api-key:latest,DTOOLS_BASIC_AUTH=dtools-basic-auth:latest${QBO_SECRETS}" --max-retries 0 --quiet
 
 # One worker service per environment, updated in place: workflows run AUTO_UPGRADE (apps/worker/src/main.ts), so
 # in-flight runs move to the new build and no old build has to stay up for them.
 # A Temporal worker long-polls, so it needs min 1 and CPU always allocated: ~$58/month while it is up. One instance
 # is enough (the worker runs tasks concurrently itself); a second would only double that.
-# Services named sd-worker-<env>-sha-… are builds from before this; they are parked below and deleted by the hourly
-# reconcile job once drained. scripts/cloud-run-audit.sh shows what is running.
+# Services named sd-worker-<env>-sha-… are builds from before this; they are parked below. Delete them by hand once
+# Temporal reports them drained (scripts/retire-workers.sh). scripts/cloud-run-audit.sh shows what is running.
 log "worker ${WORKER_SERVICE}"
 gcloud run deploy "${WORKER_SERVICE}" --region "${REGION}" --image "${IMAGE}" \
   --command node --args apps/worker/src/main.ts \
@@ -159,8 +159,8 @@ fi
 
 log "park old worker builds"
 # sd-worker-<env>-sha-… services are builds from before one service per environment; their runs stay pinned to them.
-# Parked, such a run waits (it does not fail) until the build is unparked or the run expires. The hourly reconcile
-# job deletes each one once Temporal reports it drained. A service labelled sd-keep=true was unparked on purpose.
+# Parked, such a run waits (it does not fail) until the build is unparked or the run expires.
+# A service labelled sd-keep=true was unparked on purpose.
 # shellcheck disable=SC2016 # jq, not shell, expands these
 ALWAYS_ON_JQ='.[] | (.spec.template.metadata.annotations // {}) as $a | (.metadata.annotations // {}) as $sa
   | select((($sa["run.googleapis.com/minScale"] // $a["autoscaling.knative.dev/minScale"] // "0") | tonumber) > 0

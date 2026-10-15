@@ -9,7 +9,7 @@
  *   node apps/gateway/src/admin.ts deactivate zack
  *   node apps/gateway/src/admin.ts set-policy henry policy.json "Pilot margin and tax rules"   # admin only
  *   node apps/gateway/src/admin.ts show-policy
- *   node apps/gateway/src/admin.ts reconcile        # hourly: start missing workflows, retire old worker builds, read real quotes, check retainer invoices for payment, copy the run log to BigQuery (RUNLOG_DATASET)
+ *   node apps/gateway/src/admin.ts reconcile        # hourly: start missing workflows, read real quotes, check retainer invoices for payment, copy the run log to BigQuery (RUNLOG_DATASET)
  *   node apps/gateway/src/admin.ts smoke spaces/AAAA  # scripted conversation through the deployed system (sd-smoke-<env> job)
  *   node apps/gateway/src/admin.ts runs --since 2026-10-10 [--person zack] > runs.csv   # every request, its result, edits and score
  *   node apps/gateway/src/admin.ts learn --since 2026-10-10 [--person zack]            # what reps changed, for tuning patterns
@@ -24,16 +24,13 @@ import { httpDToolsReader } from "@sd/dtools";
 import { learnReport, runsCsv, scoreRuns } from "./report.ts";
 import {
   checkRetainerPayments,
-  cloudRunWorkerServices,
   followUpFinalQuotes,
   productionAdapters,
   productionQbo,
   productionStore,
   reconcileRuns,
-  retireOldWorkers,
   temporalClient,
   temporalSettings,
-  temporalWorkerVersions,
   TemporalWorkflows,
 } from "@sd/worker";
 import { bigQueryRunlogSink, exportRunlog } from "./runlog-export.ts";
@@ -100,19 +97,6 @@ async function main() {
         const result = await reconcileRuns(store, new TemporalWorkflows(client));
         console.log(JSON.stringify(result));
         if (result.failed.length) process.exitCode = 1;
-        // Old worker builds (sd-worker-<env>-sha-…): delete drained ones, park the rest (apps/worker/src/retire-workers.ts).
-        const env = process.env.SD_ENV;
-        if (env && process.env.GCP_REGION && process.env.WORKER_DEPLOYMENT_NAME) {
-          try {
-            const services = cloudRunWorkerServices({ project: process.env.GOOGLE_CLOUD_PROJECT, region: process.env.GCP_REGION });
-            const retired = await retireOldWorkers(env, services, temporalWorkerVersions(client, process.env.WORKER_DEPLOYMENT_NAME));
-            console.log(JSON.stringify({ retire_workers: retired }));
-            if (retired.failed.length) process.exitCode = 1;
-          } catch (err) {
-            console.error(`retire old workers failed: ${err instanceof Error ? err.message : err}`);
-            process.exitCode = 1;
-          }
-        }
         await client.connection.close();
         const { store: blobStore, pool: storePool } = productionStore();
         try {
