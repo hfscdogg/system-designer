@@ -89,8 +89,8 @@ describe("patterns", () => {
       expect(p.roles.every((r) => r.product_id !== null || r.unpriced === "verify"), p.pattern).toBe(true);
       expect(p.services.every((s) => s.product_id === null), p.pattern).toBe(true);
       expect(p.labor?.labor_type, p.pattern).toBe("07LABOR1MAN");
-      // Each priced role, its size and market variants and the parts record.
-      const records = p.roles.filter((r) => r.product_id).length + p.roles.reduce((n, r) => n + (r.variants?.length ?? 0) + (r.market_variants?.length ?? 0) + (r.brand_variants?.length ?? 0), 0) + 1;
+      // Each priced role, its size, market, brand and larger-TV variants and the parts record.
+      const records = p.roles.filter((r) => r.product_id).length + p.roles.reduce((n, r) => n + (r.variants?.length ?? 0) + (r.market_variants?.length ?? 0) + (r.brand_variants?.length ?? 0) + (r.larger_tv_variants?.length ?? 0), 0) + 1;
       expect(patternRecordIds(p), p.pattern).toHaveLength(records);
       // The allowance templates ride along with every pattern.
       expect(p.allowances?.map((a) => a.key), p.pattern).toEqual(["outdoor_outlet", "electrical_outlet", "conduit", "trenching", "wiring_run"]);
@@ -1426,8 +1426,9 @@ describe("Zack's round 4 (2026-10-15)", () => {
     expect(line && indoor.has(line.record_id)).toBeFalsy();
     // Henry, 2026-10-15: the Samsung Terrace QN75LST9D, Livewire's most quoted 75" outdoor TV.
     expect(line!.record_id).toBe("23502905-bbcf-4e3f-af0d-9bf230a9ad14");
-    // Zack, 2026-10-19: the Strong articulating mount is rated 37-70", so a 75" TV lists it to confirm.
-    expect(selection.to_verify).toEqual(['Strong articulating TV wall mount is rated for 37-70" TVs and the TV is 75": confirm a mount rated for it']);
+    // Henry, 2026-10-19: over 70" outdoors, the Sanus VODLF125-B2 (40-85") replaces the Strong ART2-L (37-70").
+    expect(selection.lines.find((l) => l.role === "tv_mount_articulating")!.record_id).toBe("5e126131-73ba-4869-a490-941cee78cd26");
+    expect(selection.to_verify).toEqual([]);
     // An outdoor size with no approved outdoor model is listed to price, not priced as an indoor TV.
     const odd = await job({ functional_systems: ["outdoor TV"], requested_changes: ['Provide a new 85" weatherproof TV for the pool deck'], requested_quantities: [{ item: '85" weatherproof TV', quantity: 1 }] });
     expect(odd.selection.lines.find((l) => l.role === "television")).toBeUndefined();
@@ -1618,9 +1619,18 @@ describe("Zack's round 5 (2026-10-19)", () => {
     expect(selection.lines.find((l) => l.role === "in_ceiling_speakers")).toMatchObject({ record_id: "2d7cf03e-3887-42d6-86f0-7ca328448201", quantity: 1 });
   });
 
-  it("McGetrick: a mount rated for smaller TVs is listed to confirm; one that fits isn't", async () => {
+  it("McGetrick: a TV over 70\" gets the Sanus full-motion mount (outdoor or indoor); one no mount fits is listed to confirm", async () => {
+    const mount = (r: Awaited<ReturnType<typeof job>>) => r.selection.lines.find((l) => l.role === "tv_mount_articulating")!.record_id;
     const big = await job({ functional_systems: ["outdoor TV"], requested_changes: ['Provide a new 75" full weather outdoor TV', "Install an articulated mounting bracket"], requested_quantities: [{ item: '75" full weather outdoor TV', quantity: 1 }] });
-    expect(big.selection.to_verify).toEqual(['Strong articulating TV wall mount is rated for 37-70" TVs and the TV is 75": confirm a mount rated for it']);
+    expect(mount(big)).toBe("5e126131-73ba-4869-a490-941cee78cd26");
+    expect(big.selection.to_verify).toEqual([]);
+    const indoor = await job({ functional_systems: ["TV"], requested_changes: ['Mount the customer\'s 85" TV on an articulating mount in the family room'] });
+    expect(mount(indoor)).toBe("2b111277-c810-411c-bebd-297ac03631ea");
+    expect(indoor.selection.to_verify).toEqual([]);
+    // 98" outdoors is beyond every approved mount: the standard, listed to confirm.
+    const huge = await job({ functional_systems: ["outdoor TV"], requested_changes: ['Mount the customer\'s 98" outdoor TV on the patio on an articulating mount'] });
+    expect(mount(huge)).toBe("e984e610-2be4-4e3e-9407-a90d3a70b6c8");
+    expect(huge.selection.to_verify).toEqual(['Strong articulating TV wall mount is rated for 37-70" TVs and the TV is 98": confirm a mount rated for it']);
     const fits = await job({ functional_systems: ["outdoor TV"], requested_changes: ['Install 55" outdoor rated TV with cover', "Articulated mounting bracket"] });
     expect(fits.selection.to_verify).toEqual([]);
     // The tilt mount is rated 42-90": a 77" TV fits.
@@ -1667,5 +1677,21 @@ describe("Zack's round 5 (2026-10-19)", () => {
     });
     expect(selection.lines.map((l) => l.role)).not.toContain("doorbell_camera");
     expect(selection.requirements.find((r) => r.system === "video_doorbell")).toMatchObject({ classification: "allowance" });
+  });
+  it("Henry, 10/19: commercial audio asks what plays the music; each wired camera says its Cat6 run is included", async () => {
+    const restaurant = await job({
+      market: "commercial",
+      client: "Ronnie Santillo",
+      functional_systems: ["audio"],
+      requested_changes: ["1 x new amplifier for background music on the existing 3 indoor and 2 terrace speakers"],
+    });
+    expect(restaurant.selection.to_verify).toContain("Music source: none is priced; confirm what plays the music (the client's phone, POS or music service, or a Sonos Port)");
+    const home = await job({ functional_systems: ["audio"], requested_changes: ["Add in-ceiling speakers in the kitchen"], requested_quantities: [{ item: "in-ceiling speakers", quantity: 2 }] });
+    expect(home.selection.to_verify.some((v) => /Music source/.test(v))).toBe(false);
+    const cams = await compiled({ functional_systems: ["video surveillance"], requested_changes: ["1 x wired camera at the front of the house", "1 x wired camera on the back corner"], requested_quantities: [{ item: "wired camera", quantity: 2 }] });
+    const line = cams.draft.lines.find((l) => l.role === "outdoor_camera")!;
+    expect(line.note).toBe("Includes its Cat6 run to the PoE switch: the run is in the install labor and the cable in Design & Delivery.");
+    const view = customerView(bind(cams.draft, { runId: "run_test", receiptId: "rc_1", approvalId: "ap_1", scopeHash: "h", scope: cams.scope, policy: POLICY, releaseId: "rel" }));
+    expect(view.sections.flatMap((x) => x.items).find((i) => i.note)!.note).toBe(line.note);
   });
 });

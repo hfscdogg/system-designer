@@ -43,7 +43,7 @@ export const FORBIDDEN = [
  * plus Henry's approved Design & Delivery wording ("these costs" there is not an internal cost).
  */
 function dataStrings(c: CustomerProposal): string[] {
-  const items = c.sections.flatMap((sec) => sec.items.flatMap((i) => [i.manufacturer, i.model, i.description, i.quantity_note ?? ""]));
+  const items = c.sections.flatMap((sec) => sec.items.flatMap((i) => [i.manufacturer, i.model, i.description, i.quantity_note ?? "", i.note ?? ""]));
   return [c.client, c.property, c.project_type, c.title, ...items, ...c.labor_lines.map((l) => l.description), ...c.exclusions, ...c.remaining_verification, ...c.allowances.map((a) => a.note), ...DESIGN_DELIVERY_PARAGRAPHS]
     .map((x) => x.replace(/\s+/g, " ").trim())
     .filter((x) => x.length > 0)

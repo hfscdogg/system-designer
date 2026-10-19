@@ -111,6 +111,16 @@ export const RoleSpecSchema = z
     units_per_item: z.number().int().min(2).optional(),
     /** A mount's rated TV sizes, inches: a TV outside them is listed to confirm the mount (Zack's McGetrick job, 2026-10-19). */
     fits_tv_inches: z.tuple([z.number().int().positive(), z.number().int().positive()]).optional(),
+    /** A short line printed under the item on the budget ("Includes its Cat6 run to the PoE switch"). */
+    customer_note: z.string().min(1).optional(),
+    /** The mount to use instead when the TV is larger than `fits_tv_inches` allows, indoors or outdoors (Henry, 2026-10-19). */
+    larger_tv_variants: z
+      .array(
+        z
+          .object({ product_id: z.string().uuid(), model: z.string().min(1), label: z.string().min(1), outdoor: z.boolean().optional(), fits_tv_inches: z.tuple([z.number().int().positive(), z.number().int().positive()]) })
+          .strict(),
+      )
+      .optional(),
     /** Labor hours per unit of this role, when it differs from the pattern's per-device rate (a speaker pair takes longer than an amp). */
     hours_each: z.number().min(0).optional(),
     /** Life-safety and similar roles escalate to Zack when unresolved. */
@@ -316,7 +326,7 @@ export function combinePatterns(ps: PatternSpec[]): PatternSpec | null {
 
 /** Every product record a pattern may need, for exact-record reads. */
 export function patternRecordIds(p: PatternSpec): string[] {
-  const ids = [...p.roles, ...p.services, ...p.roles.flatMap((r) => [...(r.variants ?? []), ...(r.market_variants ?? []), ...(r.brand_variants ?? [])])]
+  const ids = [...p.roles, ...p.services, ...p.roles.flatMap((r) => [...(r.variants ?? []), ...(r.market_variants ?? []), ...(r.brand_variants ?? []), ...(r.larger_tv_variants ?? [])])]
     .map((x) => x.product_id)
     .filter((x): x is string => x !== null);
   if (p.parts) ids.push(p.parts.product_id);

@@ -107,7 +107,7 @@ export function renderProposalHtml(c: CustomerProposal, brand: Brand, images: Im
           .map((i) => {
             const src = "url" in i.image ? images[i.image.url] : undefined;
             const img = src ? `<img class="product" src="${escapeHtml(src)}" alt="${escapeHtml(i.model)}" />` : `<div class="pending">${IMAGE_PENDING}</div>`;
-            const description = [i.description, i.quantity_note].filter(Boolean).join(" — ");
+            const description = [i.note, i.description, i.quantity_note].filter(Boolean).join(" — ");
             return row(img, `${i.manufacturer} ${i.model}`, description, i.quantity);
           })
           .join(""),
