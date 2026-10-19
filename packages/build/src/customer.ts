@@ -33,6 +33,8 @@ export interface CustomerProposal {
       description: string;
       quantity: number;
       quantity_note: string | null;
+      /** What the line includes that the product description doesn't say ("Includes its Cat6 run…"). */
+      note?: string;
       image: { url: string } | { pending: true };
     }>;
     subtotal_cents: number;
@@ -87,6 +89,7 @@ export function customerView(p: Proposal): CustomerProposal {
         description: l.description,
         quantity: l.quantity,
         quantity_note: l.quantity_basis === "minimum_to_verify" ? `Minimum; ${l.verify}` : null,
+        ...(l.note ? { note: l.note } : {}),
         image: l.image_url ? { url: l.image_url } : { pending: true as const },
       })),
       subtotal_cents: s.subtotal_cents,

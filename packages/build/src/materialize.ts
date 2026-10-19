@@ -614,7 +614,7 @@ export function materialize(stated: ScopeDraftV1, pattern: PatternSpec, namedPro
     const asOne = minimum && role.quantity.qty > 1 && namedAsOne(scope, role);
     lines.push({
       role: role.role,
-      record_id: product?.record_id ?? variantFor(scope, role)?.product_id ?? marketVariant(scope, role)?.product_id ?? role.product_id!,
+      record_id: product?.record_id ?? variantFor(scope, role)?.product_id ?? largerTvVariant(original, role, pattern)?.product_id ?? marketVariant(scope, role)?.product_id ?? role.product_id!,
       quantity: (stated ?? (asOne ? 1 : role.quantity.qty)) + moved,
       quantity_basis: minimum && !asOne ? "minimum_to_verify" : "fixed",
       verify: asOne ? null : moved && verify ? `${verify}; includes ${moved} for moved existing equipment (confirm wall and power in the new room)` : verify,
@@ -735,6 +735,13 @@ export function materialize(stated: ScopeDraftV1, pattern: PatternSpec, namedPro
     const fits = role.fits_tv_inches;
     if (!fits || !tvInches || (tvInches >= fits[0] && tvInches <= fits[1]) || !lines.some((l) => l.role === role.role && l.record_id === role.product_id)) continue;
     toVerify.push(`${role.label} is rated for ${fits[0]}-${fits[1]}" TVs and the TV is ${tvInches}": confirm a mount rated for it`);
+  }
+  // A commercial audio job prices no music source unless asked: most of Livewire's JBL commercial quotes play from the
+  // client's own device (a Sonos Port on 4 of 43). Ask what plays the music instead (Henry, 2026-10-19).
+  const source = pattern.roles.find((r) => r.role === "streaming_port");
+  const audio = lines.some((l) => pattern.roles.find((r) => r.role === l.role)?.systems.includes("whole_home_audio"));
+  if (source && scope.market === "commercial" && audio && !lines.some((l) => l.role === source.role)) {
+    toVerify.push("Music source: none is priced; confirm what plays the music (the client's phone, POS or music service, or a Sonos Port)");
   }
   // The cable runs the budget prices are the job's wiring: a "prewire" service with no price of its own
   // doesn't also withhold the total (Zack's Britt job, 2026-10-19: "TBD allowance: prewire").
@@ -893,6 +900,18 @@ function allowancesFor(templates: AllowanceSpec[], scope: ScopeDraftV1, uncovere
     const own = a.texts.reduce((n, t) => n + (lengthIn(t).sticks ? lengthIn(t).feet : 0), 0);
     return { ...a, feet: Math.max(trench.feet * runs, own), trenched: true as const };
   });
+}
+
+/**
+ * The mount for a TV larger than the standard is rated for: Sanus VLF628-B1 (46-90") indoors and the
+ * Sanus VODLF125-B2 (40-85") outdoors over 70", in place of the Strong ART2-L (37-70") (Henry, 2026-10-19).
+ */
+function largerTvVariant(scope: ScopeDraftV1, role: RoleSpec, pattern: PatternSpec) {
+  const tv = pattern.roles.find((r) => r.role === "television");
+  const inches = tv && sizeAsked(scope, tv);
+  if (!role.fits_tv_inches || !inches || inches <= role.fits_tv_inches[1]) return undefined;
+  const outdoor = !!tv && outdoorAsked(scope, tv);
+  return role.larger_tv_variants?.find((v) => !!v.outdoor === outdoor && inches >= v.fits_tv_inches[0] && inches <= v.fits_tv_inches[1]);
 }
 
 /** The role's approved record for the job's market (a 70V amplifier on a commercial job), if it has one. */

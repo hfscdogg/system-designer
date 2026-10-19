@@ -64,6 +64,8 @@ export interface DraftLine {
   is_taxable: boolean;
   labor: Array<{ labor_type: string; unit_price_cents: number }>;
   evidence_sha256: string;
+  /** The role's note printed under the item on the budget. */
+  note?: string;
 }
 
 export interface DraftService {
@@ -180,7 +182,10 @@ export function compile(raw: unknown, catalog: Map<string, AdmittedProduct>, pat
     } else if (requestedRecords.has(`${line.role}:${line.record_id}`)) errors.push(`role ${line.role} names ${line.record_id} twice`);
     else requestedRecords.add(`${line.role}:${line.record_id}`);
     seenRoles.add(line.role);
-    const variant = role.variants?.find((v) => v.product_id === line.record_id) ?? role.market_variants?.find((v) => v.product_id === line.record_id);
+    const variant =
+      role.variants?.find((v) => v.product_id === line.record_id) ??
+      role.market_variants?.find((v) => v.product_id === line.record_id) ??
+      role.larger_tv_variants?.find((v) => v.product_id === line.record_id);
     const product = catalog.get(line.record_id);
     // A product the request named by model replaces the standard only when the admitted record carries that model.
     const key = (s: string | null | undefined) => (s ?? "").toLowerCase().replace(/[^a-z0-9]/g, "");
@@ -215,6 +220,7 @@ export function compile(raw: unknown, catalog: Map<string, AdmittedProduct>, pat
       is_taxable: product.is_taxable,
       labor: product.labor,
       evidence_sha256: product.evidence.sha256,
+      ...(role.customer_note ? { note: role.customer_note } : {}),
     });
   }
 
