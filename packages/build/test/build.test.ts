@@ -1426,7 +1426,8 @@ describe("Zack's round 4 (2026-10-15)", () => {
     expect(line && indoor.has(line.record_id)).toBeFalsy();
     // Henry, 2026-10-15: the Samsung Terrace QN75LST9D, Livewire's most quoted 75" outdoor TV.
     expect(line!.record_id).toBe("23502905-bbcf-4e3f-af0d-9bf230a9ad14");
-    expect(selection.to_verify).toEqual([]);
+    // Zack, 2026-10-19: the Strong articulating mount is rated 37-70", so a 75" TV lists it to confirm.
+    expect(selection.to_verify).toEqual(['Strong articulating TV wall mount is rated for 37-70" TVs and the TV is 75": confirm a mount rated for it']);
     // An outdoor size with no approved outdoor model is listed to price, not priced as an indoor TV.
     const odd = await job({ functional_systems: ["outdoor TV"], requested_changes: ['Provide a new 85" weatherproof TV for the pool deck'], requested_quantities: [{ item: '85" weatherproof TV', quantity: 1 }] });
     expect(odd.selection.lines.find((l) => l.role === "television")).toBeUndefined();
@@ -1449,7 +1450,8 @@ describe("Zack's round 4 (2026-10-15)", () => {
           requested_quantities: [{ item: "Klipsch in-ceiling speakers", quantity: 3 }],
         })
       ).selection.lines.find((l) => l.role === "in_ceiling_speakers")!;
-    expect(await klipsch("commercial")).toMatchObject({ record_id: "2d7cf03e-3887-42d6-86f0-7ca328448201", quantity: 3, requested_model: "PIC-650-T BW" });
+    // The PIC-650-T record is a pair in D-Tools ("Professional In-Ceiling Speaker - Pair"): 3 speakers are 2 pairs (Zack, 2026-10-19).
+    expect(await klipsch("commercial")).toMatchObject({ record_id: "2d7cf03e-3887-42d6-86f0-7ca328448201", quantity: 2, requested_model: "PIC-650-T BW" });
     expect(await klipsch("residential")).toMatchObject({ record_id: "2a31c82f-fc48-481f-86ae-57bf40bc0e6d", quantity: 3, requested_model: "CS-16C II" });
     // No brand named: the Sonos standard, as before.
     const sonos = await job({ functional_systems: ["audio"], requested_changes: ["Add in-ceiling speakers in the kitchen"], requested_quantities: [{ item: "in-ceiling speakers", quantity: 2 }] });
@@ -1517,5 +1519,153 @@ describe("staging smoke, Britt (2026-10-15)", () => {
     // A kept panel is not a request for one.
     const { scope: kept } = approvedScope({ functional_systems: ["cameras"], existing_detectors: "not_provided", requested_changes: ["Add 2 cameras; keep the existing security panel"] });
     expect(kept.functional_systems).not.toContain("intrusion_security");
+  });
+});
+
+describe("Zack's round 5 (2026-10-19)", () => {
+  const none = { existing_equipment: { status: "none" as const, retained: [], removed_or_replaced: [] } };
+  const quantities = (sel: ReturnType<typeof materialize>) => Object.fromEntries(sel.lines.map((l) => [l.role, l.quantity]));
+  async function job(o: object) {
+    const patterns = await loadPatterns();
+    const { scope } = approvedScope({ ...none, client: "Ted Britt", existing_detectors: "none", ...o });
+    const pattern = selectPattern(scope.functional_systems, patterns)!;
+    return { scope, pattern, selection: materialize(scope, pattern) };
+  }
+  /** Synthetic records with the real brands where wording depends on them, at $300 a device; the $1 parts record. */
+  async function compiled(o: object) {
+    const { scope, pattern, selection } = await job(o);
+    const sonos = new Set(pattern.roles.filter((r) => /sonos/i.test(r.label)).map((r) => r.product_id));
+    // A brand's record carries its own model, as compile checks a requested model against the catalog.
+    const brands = new Map(pattern.roles.flatMap((r) => (r.brand_variants ?? []).map((v) => [v.product_id, [v.brand, v.model] as const])));
+    const catalog = Object.fromEntries(
+      patternRecordIds(pattern).map((id, i) => [
+        id,
+        id === pattern.parts!.product_id
+          ? product(id, "Livewire", "PARTS", 1, 0.01, { laborItems: [] })
+          : product(id, brands.get(id)?.[0] ?? (sonos.has(id) ? "Sonos" : "TestCo"), brands.get(id)?.[1] ?? `DEV-${i}`, 300, 150, { laborItems: [] }),
+      ]),
+    );
+    const { admitted } = await admitAll(pattern, catalog);
+    const result = compile(selection, admitted, pattern);
+    if (!result.ok) throw new Error(result.errors.join("\n"));
+    return { scope, selection, draft: result.draft };
+  }
+  const SAMSUNG_55 = "25fa5dd7-fb1f-4d71-bec2-7bcb7b9db9ac";
+  // Ted Britt (run_5f446650), the network and outdoor TV as Zack wrote them.
+  const BRITT_NETWORK = [
+    "Ethernet port in master bedroom on top floor",
+    "POE Access point in hallway of the top floor",
+    "Ethernet port in dining room",
+    "Ethernet port in living room",
+    "Ethernet port at the back of the house behind the outdoor TV location on the porch at the back of the house",
+  ];
+
+  it("Britt: a 55’’ outdoor rated TV is priced as the 55\" Samsung Terrace, and its count adds no outdoor eero", async () => {
+    for (const tv of ["55’’ Outdoor rated TV with cover", "Install 55'' outdoor rated TV with cover", 'Install 55" outdoor rated TV with cover']) {
+      for (const counted of [true, false]) {
+        const { selection } = await job({
+          functional_systems: ["networking", "outdoor TV"],
+          requested_changes: [...BRITT_NETWORK, tv, "Articulated mounting bracket"],
+          ...(counted ? { requested_quantities: [{ item: "Outdoor rated TV", quantity: 1 }] } : {}),
+        });
+        expect(selection.lines.find((l) => l.role === "television")).toMatchObject({ record_id: SAMSUNG_55, quantity: 1 });
+        const roles = selection.lines.map((l) => l.role);
+        expect(roles).not.toContain("outdoor_access_point");
+        expect(roles).not.toContain("mesh_wifi");
+        expect(selection.labor_allowances.map((a) => [a.key, a.quantity])).toEqual([["wiring_run", 5]]);
+      }
+    }
+    // The customer's or an existing outdoor TV is still theirs.
+    for (const change of ["Mount the customer's 55-inch outdoor TV on the porch", "Mount the existing 55'' outdoor TV on the porch"]) {
+      const { selection } = await job({ functional_systems: ["outdoor TV"], requested_changes: [change] });
+      expect(selection.lines.find((l) => l.role === "television")).toBeUndefined();
+    }
+  });
+
+  it("Britt: the cable runs the budget prices cover a \"prewire\" service, so it doesn't withhold the total", async () => {
+    const { selection } = await job({ functional_systems: ["networking"], service_categories: ["prewire", "installation"], requested_changes: BRITT_NETWORK });
+    expect(selection.labor_allowances.map((a) => [a.key, a.quantity])).toEqual([["wiring_run", 5]]);
+    expect(selection.allowances).toEqual([]);
+  });
+
+  it("Crowder: conduit by the stick, a trench depth that isn't a length, and a pipe size that isn't a count", async () => {
+    const site = async (changes: string[]) =>
+      Object.fromEntries((await job({ functional_systems: ["networking", "conduit", "trenching"], requested_changes: ["Add an outdoor eero PoE 7 at the post", ...changes] })).selection.labor_allowances.filter((a) => a.key !== "electrical_outlet").map((a) => [a.key, [a.hours, a.feet ?? null]]));
+    // 12 sticks of 10 ft for data and 12 for electrical: 240 ft of conduit in a 120 ft trench. Henry, 2026-10-15: 10 h of trench and 12 h of conduit.
+    expect(
+      await site([
+        "2 Cat6 burial runs through conduit from head end location to post location in the front yard",
+        "12 - 10ft sticks of 3/4 conduit for data",
+        "12 - 10ft sticks of 3/4 inch conduit for electrical",
+        "120ft of conduit is likely enough",
+        "Hand trench 1ft down along the same lines as the house power",
+      ]),
+    ).toEqual({ trenching: [10, 120], conduit: [12, 240] });
+    // A depth alone gives the trench no length.
+    expect(await site(["Hand trench 1 ft deep to the post"])).toMatchObject({ trenching: [6, null] });
+    // "3/4 conduit" is one conduit, not four.
+    expect(await site(["Run 50 ft of 3/4 conduit along the garage wall"])).toMatchObject({ conduit: [8.5, 50] });
+  });
+
+  it("Biscuit Belly: two restroom speakers on a commercial job are one PIC-650-T pair, and the amp counts both", async () => {
+    const { selection } = await job({
+      market: "commercial",
+      client: "Ronnie Santillo",
+      functional_systems: ["audio"],
+      requested_changes: ["1 x new amplifier for background music on the existing 3 indoor and 2 terrace speakers", "1 x Klipsch in-ceiling speaker in the female and male restrooms each"],
+      requested_quantities: [{ item: "Klipsch in-ceiling speaker", quantity: 2 }],
+    });
+    expect(selection.lines.find((l) => l.role === "in_ceiling_speakers")).toMatchObject({ record_id: "2d7cf03e-3887-42d6-86f0-7ca328448201", quantity: 1 });
+  });
+
+  it("McGetrick: a mount rated for smaller TVs is listed to confirm; one that fits isn't", async () => {
+    const big = await job({ functional_systems: ["outdoor TV"], requested_changes: ['Provide a new 75" full weather outdoor TV', "Install an articulated mounting bracket"], requested_quantities: [{ item: '75" full weather outdoor TV', quantity: 1 }] });
+    expect(big.selection.to_verify).toEqual(['Strong articulating TV wall mount is rated for 37-70" TVs and the TV is 75": confirm a mount rated for it']);
+    const fits = await job({ functional_systems: ["outdoor TV"], requested_changes: ['Install 55" outdoor rated TV with cover', "Articulated mounting bracket"] });
+    expect(fits.selection.to_verify).toEqual([]);
+    // The tilt mount is rated 42-90": a 77" TV fits.
+    const tilt = await job({ functional_systems: ["TV"], requested_changes: ['Provide a new 77" TV for the family room'], requested_quantities: [{ item: '77" TV', quantity: 1 }] });
+    expect(tilt.selection.to_verify.filter((v) => /rated for/.test(v))).toEqual([]);
+  });
+
+  it("assumptions fit the job: no drywall for a TV outdoors or on a cart, no Sonos app without Sonos, and a commercial job is no residence", async () => {
+    const outdoor = await compiled({ functional_systems: ["outdoor TV"], requested_changes: ['Install 55" outdoor rated TV with cover', "Articulated mounting bracket"] });
+    expect(outdoor.draft.assumptions).toContain("The outdoor TV mounts to a solid exterior wall or structure, with weatherproof power and data at the mount.");
+    expect(outdoor.draft.assumptions.some((a) => /drywall/.test(a))).toBe(false);
+    const cart = await compiled({ functional_systems: ["TV"], requested_changes: ["Mount the customer's 75 inch TV on a rolling cart"] });
+    expect(cart.draft.assumptions).toContain("The TV goes on a rolling cart; no wall mounting is included.");
+    const indoor = await compiled({ functional_systems: ["TV"], requested_changes: ['Mount the customer\'s 65" TV on the family room wall'] });
+    expect(indoor.draft.assumptions).toContain("TVs are mounted on standard drywall over wood studs, with power and data concealed in the wall.");
+    const commercial = await compiled({
+      market: "commercial",
+      client: "Ronnie Santillo",
+      functional_systems: ["audio"],
+      requested_changes: ["1 x new amplifier for background music on the existing 3 indoor and 2 terrace speakers", "1 x Klipsch in-ceiling speaker in the female and male restrooms each"],
+      requested_quantities: [{ item: "Klipsch in-ceiling speaker", quantity: 2 }],
+    });
+    expect(commercial.draft.assumptions.some((a) => /Sonos/.test(a))).toBe(false);
+    expect(commercial.draft.assumptions).toContain("A working Wi-Fi network covers the equipment location.");
+    const sonos = await compiled({ functional_systems: ["audio"], requested_changes: ["Add in-ceiling speakers in the kitchen"], requested_quantities: [{ item: "in-ceiling speakers", quantity: 2 }] });
+    expect(sonos.draft.assumptions).toContain("A working Wi-Fi network covers the equipment location; Sonos is controlled from the Sonos app.");
+    const proposal = bind(commercial.draft, { runId: "run_test", receiptId: "rc_1", approvalId: "ap_1", scopeHash: "h", scope: commercial.scope, policy: POLICY, releaseId: "rel" });
+    const view = customerView(proposal);
+    expect(view.title).toBe("Commercial Audio Budget");
+    expect(view.intro.systems).toBe("commercial audio");
+    expect(view.market).toBe("commercial");
+  });
+  it("Ben Khandan-Barani: relocating the client's Nest doorbell wiring builds, with no doorbell priced", async () => {
+    // run_6fe66455 blocked: "critical role Alarm.com video doorbell … is neither priced nor unresolved".
+    const { selection } = await compiled({
+      client: "Ben Khandan-Barani",
+      functional_systems: ["networking", "video doorbell", "TV"],
+      requested_changes: [
+        "Relocate doorbell wiring to the right side of the front door",
+        "Install and configure the client-supplied Google Nest doorbell",
+        "Mount the customer-supplied 65-inch Samsung Frame TV on the brick wall",
+        "Install a network switch in the TV room cabinet",
+      ],
+    });
+    expect(selection.lines.map((l) => l.role)).not.toContain("doorbell_camera");
+    expect(selection.requirements.find((r) => r.system === "video_doorbell")).toMatchObject({ classification: "allowance" });
   });
 });

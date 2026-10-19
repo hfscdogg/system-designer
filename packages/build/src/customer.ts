@@ -42,6 +42,8 @@ export interface CustomerProposal {
   labor_total_cents: number;
   /** For the System Proposal introduction. */
   intro: { systems: string; rooms: string[]; labor_hours: number | null };
+  /** Residential or commercial: a commercial job is the client's property, not their residence. */
+  market?: string;
   services: string[];
   allowances: Array<{ label: string; note: string }>;
   /** Labor for out-of-pattern work, priced and in the total: "Allowances — verify on site". */
@@ -73,7 +75,7 @@ export function customerView(p: Proposal): CustomerProposal {
   return {
     watermark: p.watermark,
     proposal_number: p.identity.proposal_number,
-    title: p.identity.proposal_name ?? `${patternTitle(p.pattern.name)} Budget`,
+    title: p.identity.proposal_name ?? `${patternTitle(p.pattern.name, p.market)} Budget`,
     client: p.client,
     property: p.property,
     project_type: p.project_type,
@@ -96,7 +98,8 @@ export function customerView(p: Proposal): CustomerProposal {
         : []),
     ],
     labor_total_cents: p.services.reduce((sum, s) => sum + s.unit_price_cents, 0) + (p.labor?.price_cents ?? 0),
-    intro: { systems: patternTitle(p.pattern.name).toLowerCase(), rooms: p.rooms, labor_hours: p.labor?.hours ?? null },
+    intro: { systems: patternTitle(p.pattern.name, p.market).toLowerCase(), rooms: p.rooms, labor_hours: p.labor?.hours ?? null },
+    market: p.market,
     services: [
       ...p.services.map((s) => s.label),
       ...(p.labor ? [`${labelFor(p.labor.included)} (estimated ${p.labor.hours} hours)`] : []),
@@ -128,7 +131,12 @@ export function customerView(p: Proposal): CustomerProposal {
 const capitalize = (s: string) => s.charAt(0).toUpperCase() + s.slice(1);
 const titleCase = (s: string) => s.split(/[_\s-]+/).filter(Boolean).map(capitalize).join(" ");
 /** "security_modernization+home_network" → "Security Modernization & Home Network". */
-const patternTitle = (name: string) => name.split("+").map(titleCase).join(" & ");
+/** "Whole Home Audio" on a restaurant reads as a house: a commercial job's audio is "Commercial Audio" (Zack's Biscuit Belly job, 2026-10-19). */
+const patternTitle = (name: string, market?: string) =>
+  name
+    .split("+")
+    .map((part) => (market === "commercial" && part === "whole_home_audio" ? "Commercial Audio" : titleCase(part)))
+    .join(" & ");
 
 const SERVICE_NAMES: Record<string, string> = {
   design: "design",

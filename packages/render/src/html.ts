@@ -175,7 +175,7 @@ export function renderProposalHtml(c: CustomerProposal, brand: Brand, images: Im
     .join("");
 
   const intro = [
-    `Livewire is proud to present the following conceptual budget for the ${c.intro.systems} of the client's ${c.project_type.toLowerCase().includes("commercial") ? "property" : "residence"}${c.intro.rooms.length ? `, covering the ${joinWords(c.intro.rooms.map((r) => r.toLowerCase()))}` : ""}. Our team will deliver a turnkey solution with reliable, high-performance systems and a clean, organized installation.`,
+    `Livewire is proud to present the following conceptual budget for the ${c.intro.systems} of the client's ${c.market === "commercial" || c.project_type.toLowerCase().includes("commercial") ? "property" : "residence"}${c.intro.rooms.length ? `, covering the ${joinWords(c.intro.rooms.map((r) => r.toLowerCase()))}` : ""}. Our team will deliver a turnkey solution with reliable, high-performance systems and a clean, organized installation.`,
     "The scope of work is outlined alongside each area's bill of materials.",
     ...(c.intro.labor_hours ? [`We expect the work to take approximately ${c.intro.labor_hours} technician hours to complete.`] : []),
   ];

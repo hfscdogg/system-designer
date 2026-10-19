@@ -72,7 +72,7 @@ export const RoleSpecSchema = z
     brand_variants: z
       .array(
         z
-          .object({ brand: z.string().min(1), market: z.enum(MARKETS).optional(), product_id: z.string().uuid(), model: z.string().min(1), label: z.string().min(1) })
+          .object({ brand: z.string().min(1), market: z.enum(MARKETS).optional(), product_id: z.string().uuid(), model: z.string().min(1), label: z.string().min(1), units_per_item: z.number().int().min(2).optional() })
           .strict(),
       )
       .optional(),
@@ -109,6 +109,8 @@ export const RoleSpecSchema = z
     capability: z.string().min(1),
     /** How many units the standard item holds (a speaker pair is 2). A product the request names instead is sold each, so it takes hours_each per unit. */
     units_per_item: z.number().int().min(2).optional(),
+    /** A mount's rated TV sizes, inches: a TV outside them is listed to confirm the mount (Zack's McGetrick job, 2026-10-19). */
+    fits_tv_inches: z.tuple([z.number().int().positive(), z.number().int().positive()]).optional(),
     /** Labor hours per unit of this role, when it differs from the pattern's per-device rate (a speaker pair takes longer than an amp). */
     hours_each: z.number().min(0).optional(),
     /** Life-safety and similar roles escalate to Zack when unresolved. */

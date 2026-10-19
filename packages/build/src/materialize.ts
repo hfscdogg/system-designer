@@ -115,8 +115,12 @@ function matchScore(text: string, role: RoleSpec): number {
   // The model number printed on the budget is the most specific way to name a device.
   if (role.model && compact(text).includes(compact(role.model))) return 2000 + role.model.length;
   if (t.includes(fold(role.label))) return 1000 + role.label.length;
+  // A mention that needs a companion word counts only beside it: in "1 outdoor rated TV", "outdoor"
+  // names where the TV goes, not an outdoor eero (Zack's Britt job, 2026-10-19).
+  const unpaired = role.mentions_require && !role.mentions_require.some((r) => hasWord(t, fold(r)));
+  const own = new Set([fold(role.label), ...(role.retained_match ?? []).map(fold)]);
   // Whole words: the WattBox's "ups" is not in "upstairs" (Zack's Britt job, 2026-10-13).
-  const terms = deviceTerms(role).filter((term) => hasWord(t, term));
+  const terms = deviceTerms(role).filter((term) => hasWord(t, term) && (!unpaired || own.has(term)));
   const words = (role.count_terms ?? []).map(fold).filter((term) => hasAllWords(t, term));
   // A brand alone is the weakest match: any device word for another role wins.
   const brandOnly = roleTerms(role).some((term) => BRANDS.has(term) && hasWord(t, term)) ? 1 : 0;
@@ -306,7 +310,8 @@ function namedAsOne(scope: ScopeDraftV1, role: RoleSpec): boolean {
 
 const MOVE = /^(move|moving|relocate|relocating|reinstall|remount)\b/;
 const NEW_DEVICE = /\b(new|sell|selling|provide[sd]?|supply|supplied|purchase|buy|livewire)\b/;
-const SIZE = /\b(\d{2,3})\s*(?:-\s*)?(?:inch(?:es)?|in\b\.?|"|”|″)/g;
+// Inches written as two apostrophes count too: Zack's Britt intake has "55’’ Outdoor rated TV" (2026-10-19).
+const SIZE = /\b(\d{2,3})\s*(?:-\s*)?(?:inch(?:es)?|in\b\.?|"|”|″|''|’’|′′)/g;
 
 const changes = (scope: ScopeDraftV1) => scope.requested_changes.map(fold);
 const moveChanges = (scope: ScopeDraftV1) => changes(scope).filter((c) => MOVE.test(c));
@@ -324,7 +329,10 @@ function wantsNew(scope: ScopeDraftV1, role: RoleSpec, roles: RoleSpec[]): boole
   const more = (c: string, t: string) => new RegExp(`\\b(more|additional|another|extra)\\s+(?:[\\w-]+\\s+){0,2}${escape(t)}`).test(c);
   // "Customer-supplied" is who supplies it, not a sale.
   const sold = (c: string) => NEW_DEVICE.test(c.replace(OWNED_PHRASE, " "));
-  return otherChanges(scope).some((c) => roleTerms(role).some((t) => c.includes(t) && (sold(c) || more(c, t))));
+  if (otherChanges(scope).some((c) => roleTerms(role).some((t) => c.includes(t) && (sold(c) || more(c, t))))) return true;
+  // An outdoor device the request specifies by size ("55'' Outdoor rated TV with cover") is one to sell
+  // unless the request says it's the customer's or existing (Zack's Britt job, 2026-10-19: the TV was dropped).
+  return outdoorAsked(scope, role) && sizeAsked(scope, role) !== undefined && !customerOwned(scope, role) && !deviceChanges(scope, role).some((c) => EXISTING_ITEM.test(c));
 }
 
 /** How many existing items matching these terms the request moves ("move the existing TV and soundbar upstairs"). */
@@ -453,11 +461,17 @@ function brandNamed(scope: ScopeDraftV1, roles: RoleSpec[], byModel: NamedProduc
       if (v.market && v.market !== scope.market) continue;
       const text = requestTexts(scope).find((t) => !skip(t) && hasWord(t, fold(v.brand)) && deviceTerms(role).some((d) => hasWord(t, d)));
       if (!text) continue;
-      out.push([role.role, { record_id: v.product_id, model: v.model, label: v.label, category: role.categories?.[0] ?? "", text }]);
+      out.push([role.role, { record_id: v.product_id, model: v.model, label: v.label, category: role.categories?.[0] ?? "", text, ...(v.units_per_item ? { units_per_item: v.units_per_item } : {}) }]);
       break;
     }
   }
   return out;
+}
+
+/** The stated count is already in pairs ("1 pair of speakers"). */
+function pairCounted(scope: ScopeDraftV1, role: RoleSpec, roles: RoleSpec[]): boolean {
+  const q = statedItem(scope, role, roles);
+  return !!q && /\bpairs?\b/.test(fold(q.item));
 }
 
 /** A stated count whose item names this product by model ("2 AN-620-SW-R-24-POE"). */
@@ -511,6 +525,8 @@ export function materialize(stated: ScopeDraftV1, pattern: PatternSpec, namedPro
       (role.mentions && mentioned(scope, role.mentions, role.mentions_require, siblings)) ||
       (role.asked_by && mentioned(scope, role.asked_by, undefined, siblings)) ||
       statedQuantity(scope, role, pattern.roles) !== null ||
+      // A sized device the request sells without a count ("Install 55'' outdoor rated TV with cover").
+      (!!role.variants?.length && wantsNew(scope, role, pattern.roles)) ||
       keptHere;
     if ((role.mentions || role.asked_by) && !asked && !modelNamed(scope, role) && !product) {
       notAsked.add(role.role);
@@ -535,7 +551,12 @@ export function materialize(stated: ScopeDraftV1, pattern: PatternSpec, namedPro
       : undefined;
     if (retained && !wantsNew(scope, role, pattern.roles) && !product) {
       // Existing equipment being moved stays the customer's: its mount and labor are priced on the roles that carry it.
-      if (movedCount(scope, role.retained_match ?? []) > 0) continue;
+      // It is the customer's, like kept equipment: a critical role moved ("relocate the doorbell wiring" for the
+      // client's Nest doorbell) no longer blocks the build as supported but unpriced (Ben Khandan-Barani, 2026-10-16).
+      if (movedCount(scope, role.retained_match ?? []) > 0) {
+        keptRoles.add(role.role);
+        continue;
+      }
       // Kept equipment is field-tested before it is reused: listed to verify, without withholding the total of what
       // the budget does price (Zack's McGetrick job, 2026-10-15: a kept Control4 controller blanked the total).
       toVerify.push(`${role.label} (retained: ${retained}): existing equipment must be field-tested before it can be reused`);
@@ -563,7 +584,10 @@ export function materialize(stated: ScopeDraftV1, pattern: PatternSpec, namedPro
       continue;
     }
     // A count the requester stated is used as written (speakers as pairs, for a role sold in pairs); otherwise the pattern's quantity (a minimum is verified on site).
-    const stated = product ? (statedForProduct(original, product) ?? statedQuantity(scope, role, pattern.roles)) : statedItems(scope, role, pattern.roles);
+    const statedUnits = product ? (statedForProduct(original, product) ?? statedQuantity(scope, role, pattern.roles)) : statedItems(scope, role, pattern.roles);
+    // A record sold as a pair takes a count of speakers as pairs: 2 restroom speakers are one PIC-650-T pair (Zack's Biscuit Belly job, 2026-10-19).
+    const pairs = product?.units_per_item && statedUnits !== null && !pairCounted(scope, role, pattern.roles);
+    const stated = pairs ? Math.ceil(statedUnits! / product!.units_per_item!) : statedUnits;
     const minimum = stated === null && role.quantity.kind === "minimum";
     // Each existing item the request moves needs its own mount (and the mount's install labor) in the new room.
     const moved = stated === null && role.per_moved ? movedNeedingMount(scope, role.per_moved) : 0;
@@ -643,10 +667,11 @@ export function materialize(stated: ScopeDraftV1, pattern: PatternSpec, namedPro
     const existing = driven.reduce((n, r) => n + retainedUnits(scope, r, pattern.roles), 0);
     if (!existing && !driven.some((r) => included.includes(r) && names(r))) continue;
     const speakerLines = lines.filter((l) => role.drives!.roles.includes(l.role));
-    // A pair is two speakers; a named product in its place is sold each.
+    // A pair is two speakers (the standard, or a brand's pair record); a named product in its place is sold each.
     const perItem = (l: SelectionLine) => {
       const r = driven.find((x) => x.role === l.role)!;
-      return l.record_id === r.product_id || r.variants?.some((v) => v.product_id === l.record_id) ? (r.units_per_item ?? 1) : 1;
+      if (l.record_id === r.product_id || r.variants?.some((v) => v.product_id === l.record_id)) return r.units_per_item ?? 1;
+      return r.brand_variants?.find((v) => v.product_id === l.record_id)?.units_per_item ?? 1;
     };
     const speakers = speakerLines.reduce((n, l) => n + l.quantity * perItem(l), 0) + existing;
     if (!speakers) continue;
@@ -702,6 +727,21 @@ export function materialize(stated: ScopeDraftV1, pattern: PatternSpec, namedPro
   // Out-of-pattern work the request asks for, in its changes or as a system no role covers: one allowance per template.
   const uncovered = scope.functional_systems.filter((system) => !candidates.some((r) => r.systems.includes(system)));
   const laborAllowances = allowancesFor(pattern.allowances ?? [], scope, uncovered.map(fold), lines);
+  // A mount rated for smaller or larger TVs than the one the request gives is listed to confirm, never silently
+  // priced as fitting: the Strong SM-CS-ART2-L is rated 37-70" and McGetrick's TV is 75" (Zack, 2026-10-19).
+  const tvRole = pattern.roles.find((r) => r.role === "television");
+  const tvInches = tvRole && sizeAsked(original, tvRole);
+  for (const role of pattern.roles) {
+    const fits = role.fits_tv_inches;
+    if (!fits || !tvInches || (tvInches >= fits[0] && tvInches <= fits[1]) || !lines.some((l) => l.role === role.role && l.record_id === role.product_id)) continue;
+    toVerify.push(`${role.label} is rated for ${fits[0]}-${fits[1]}" TVs and the TV is ${tvInches}": confirm a mount rated for it`);
+  }
+  // The cable runs the budget prices are the job's wiring: a "prewire" service with no price of its own
+  // doesn't also withhold the total (Zack's Britt job, 2026-10-19: "TBD allowance: prewire").
+  if (laborAllowances.some((a) => a.key === "wiring_run")) {
+    const prewire = pattern.services.find((s) => s.category === "prewire");
+    for (let i = allowances.length - 1; i >= 0; i--) if (!prewire?.product_id && allowances[i]!.label === (prewire?.label ?? "prewire")) allowances.splice(i, 1);
+  }
 
   // A system whose devices the request removed entirely is no longer required.
   const removedSystems = scope.functional_systems.filter(
@@ -767,20 +807,43 @@ export function materialize(stated: ScopeDraftV1, pattern: PatternSpec, namedPro
  * counted, once per stated unit or per change that asks ("Ethernet port in the dining room", "… in the living room").
  */
 const NUMBER_WORDS: Record<string, number> = { one: 1, two: 2, three: 3, four: 4, five: 5, six: 6, a: 1, single: 1, dual: 2, twin: 2 };
-const FEET = /\b(\d{1,3}(?:,\d{3})*|\d+)\s*(?:-\s*)?(?:ft\b\.?|feet\b|foot\b|'(?!s))/g;
+const FEET = /\b(\d{1,3}(?:,\d{3})*|\d+)\s*(?:-\s*)?(?:ft\b\.?|feet\b|foot\b|'(?!s|'))/g;
+
+/** A depth is not a length: "hand trenching 1ft down" (Zack's Crowder job, 2026-10-19). */
+const DEPTH_AFTER = /^\s*(?:down|deep|depth|below|under(?:ground)?)\b/;
+const DEPTH_BEFORE = /\b(?:depth of|deep|down)\s*$/;
+/** Material by the stick: "12 - 10ft sticks of 3/4 conduit" is 120 ft (Zack's Crowder job, 2026-10-19). */
+const STICKS = /\b(\d{1,3})\s*(?:-|x|×)?\s*(\d{1,3})\s*(?:-\s*)?(?:ft\b\.?|feet\b|foot\b|'(?!s|'))\s*(?:long\s+)?(?:sticks?|lengths?|pieces?|sections?)\b/g;
+
+/** The length one change gives: the sticks it counts, else the longest length that isn't a depth. */
+function lengthIn(text: string): { feet: number; sticks: boolean } {
+  const sticks = [...text.matchAll(STICKS)].reduce((n, m) => n + Number(m[1]) * Number(m[2]), 0);
+  if (sticks) return { feet: sticks, sticks: true };
+  const lengths = [...text.matchAll(FEET)]
+    .filter((m) => !DEPTH_AFTER.test(text.slice(m.index! + m[0].length)) && !DEPTH_BEFORE.test(text.slice(0, m.index)))
+    .map((m) => Number(m[1]!.replace(/,/g, "")));
+  return { feet: Math.max(0, ...lengths), sticks: false };
+}
 
 /**
  * The length a change gives for this work, times the runs it names: "120 ft of hand trench" is 120 ft;
  * "two conduits … 120 ft" is 240 ft of conduit. The longest length any asking text gives, so a length
- * repeated across changes is counted once.
+ * repeated across changes is counted once; material counted by the stick adds up across changes
+ * ("12 sticks for data", "12 sticks for electrical"). `run` is the longest single run.
  */
-function feetAsked(texts: string[], mentions: string[]): number | undefined {
+function feetAsked(texts: string[], mentions: string[]): { feet: number; run: number } | undefined {
   let best = 0;
+  let sticks = 0;
+  let run = 0;
   for (const t of texts) {
-    const feet = Math.max(0, ...[...t.matchAll(FEET)].map((m) => Number(m[1]!.replace(/,/g, ""))));
-    if (feet) best = Math.max(best, feet * runsIn(t, mentions));
+    const l = lengthIn(t);
+    if (!l.feet) continue;
+    run = Math.max(run, l.feet);
+    if (l.sticks) sticks += l.feet;
+    else best = Math.max(best, l.feet * runsIn(t, mentions));
   }
-  return best || undefined;
+  const feet = Math.max(best, sticks);
+  return feet ? { feet, run } : undefined;
 }
 
 /** How many runs a change names for this work ("two conduits", "2 conduit runs"); 1 when it names no number. */
@@ -788,9 +851,10 @@ function runsIn(text: string, mentions: string[]): number {
   return Math.max(
     1,
     ...mentions.map((w) => {
-      const m = new RegExp(`\\b(\\d+|${Object.keys(NUMBER_WORDS).join("|")})\\s+(?:[\\w-]+\\s+){0,2}${escape(fold(w))}(?:s|es)?\\b`).exec(text);
+      // A pipe size is not a count: "3/4 conduit" is one conduit (Zack's Crowder job, 2026-10-19).
+      const m = new RegExp(`(?<![\\d/])\\b(\\d+|${Object.keys(NUMBER_WORDS).join("|")})(?![\\d/])\\s+(?:[\\w-]+\\s+){0,2}${escape(fold(w))}(?:s|es)?\\b`).exec(text);
       // "50 ft of conduit" is a length, not 50 conduits.
-      if (!m || /\b(ft|feet|foot)\b|'/.test(m[0])) return 1;
+      if (!m || /\b(ft|feet|foot|inch|inches)\b|'|"/.test(m[0])) return 1;
       return Number(m[1]) || NUMBER_WORDS[m[1]!] || 1;
     }),
   );
@@ -801,23 +865,33 @@ function allowancesFor(templates: AllowanceSpec[], scope: ScopeDraftV1, uncovere
   const found = templates.flatMap((a) => {
     if (a.covered_by_systems?.some((s) => scope.functional_systems.includes(s))) return [];
     const asks = (t: string) => any(t, a.mentions) && (!a.require || any(t, a.require)) && !any(t, a.exclude);
-    const asking = [...requestTexts(scope), ...uncovered].filter(asks);
+    const fromRequest = requestTexts(scope).filter(asks);
+    const asking = [...fromRequest, ...uncovered].filter(asks);
     if (!asking.length) return [];
     const stated = scope.requested_quantities.filter((q) => asks(fold(q.item))).reduce((n, q) => n + q.quantity, 0);
     const changes = new Set(scope.requested_changes.map(fold).filter(asks)).size;
     // The wired access point's own drop (Zack's Britt job, 2026-10-15: 4 Ethernet ports and a PoE access point are 5 runs).
     const forRoles = stated ? 0 : lines.filter((l) => a.per_role?.includes(l.role)).reduce((n, l) => n + l.quantity, 0);
     // Work sized by length ("120 ft of hand trench") at the template's per-foot rate (Crowder, 2026-10-15).
-    const feet = a.hours_per_foot ? feetAsked(asking, a.mentions) : undefined;
-    return [{ ...a, texts: asking, quantity: a.counted ? Math.max(1, (stated || changes) + forRoles) : 1, ...(feet ? { feet } : {}) }];
+    const length = a.hours_per_foot ? feetAsked(asking, a.mentions) : undefined;
+    return [{ ...a, texts: asking, asked: fromRequest.length > 0, run: length?.run, quantity: a.counted ? Math.max(1, (stated || changes) + forRoles) : 1, ...(length ? { feet: length.feet } : {}) }];
+  });
+  // A trench the request asks for without a length runs as far as the conduit laid in it
+  // ("hand trench 1ft down along the same lines", "12 - 10ft sticks of conduit"): Zack's Crowder job, 2026-10-19.
+  const sized = found.map((t) => {
+    if (t.feet || !t.asked || !t.hours_per_foot) return t;
+    const laid = found.find((a) => a.in_trench?.trench === t.key && a.run);
+    return laid ? { ...t, feet: laid.run! } : t;
   });
   // Conduit laid in the request's trench runs the trench's length, once per conduit, at the in-trench rate:
   // Crowder's 120 ft trench with two conduits is 240 ft of conduit at 0.05 h/ft (Henry, 2026-10-15).
-  return found.map((a) => {
-    const trench = a.in_trench && found.find((t) => t.key === a.in_trench!.trench);
+  // Conduit counted by the stick is the length laid, when it is more.
+  return sized.map(({ asked: _asked, run: _run, ...a }) => {
+    const trench = a.in_trench && sized.find((t) => t.key === a.in_trench!.trench);
     if (!trench?.feet) return a;
     const runs = Math.max(1, ...a.texts.map((t) => runsIn(t, a.mentions)));
-    return { ...a, feet: trench.feet * runs, trenched: true as const };
+    const own = a.texts.reduce((n, t) => n + (lengthIn(t).sticks ? lengthIn(t).feet : 0), 0);
+    return { ...a, feet: Math.max(trench.feet * runs, own), trenched: true as const };
   });
 }
 
