@@ -31,6 +31,8 @@ export interface NamedProduct {
   category: string;
   /** The words of the request that named it. */
   text: string;
+  /** Devices in one record when the record is sold as a pair (a brand variant's Klipsch PIC-650-T pair). */
+  units_per_item?: number;
 }
 
 const compact = (s: string) => s.toLowerCase().replace(/[^a-z0-9]/g, "");

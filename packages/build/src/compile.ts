@@ -131,6 +131,25 @@ export interface ProposalDraft {
 
 export type CompileResult = { ok: true; draft: ProposalDraft } | { ok: false; errors: string[] };
 
+/**
+ * The pattern's assumptions, worded for what this budget prices (Zack, 2026-10-19): no drywall mounting
+ * for a TV on a cart or outdoors, and no Sonos app where nothing Sonos is sold.
+ */
+function fittingAssumptions(pattern: PatternSpec, sel: Selection, catalog: Map<string, AdmittedProduct>): string[] {
+  const roles = new Set([...sel.lines.map((l) => l.role), ...sel.requirements.flatMap((r) => r.roles)]);
+  const tv = pattern.roles.find((r) => r.role === "television");
+  const outdoorTv = sel.lines.some((l) => l.role === "television" && tv?.variants?.some((v) => v.outdoor && v.product_id === l.record_id));
+  const sonos = sel.lines.some((l) => /\bsonos\b/i.test(catalog.get(l.record_id)?.brand ?? ""));
+  return pattern.assumptions.map((a) => {
+    if (/^TVs are mounted on standard drywall/.test(a)) {
+      if (roles.has("tv_cart")) return "The TV goes on a rolling cart; no wall mounting is included.";
+      if (outdoorTv) return "The outdoor TV mounts to a solid exterior wall or structure, with weatherproof power and data at the mount.";
+    }
+    if (!sonos) return a.replace(/; Sonos is controlled from the Sonos app\./, ".");
+    return a;
+  });
+}
+
 export function compile(raw: unknown, catalog: Map<string, AdmittedProduct>, pattern: PatternSpec): CompileResult {
   const authority = findAuthorityFields(raw);
   if (authority.length) return { ok: false, errors: authority.map((p) => `unauthorized field in selection: ${p}`) };
@@ -298,7 +317,7 @@ export function compile(raw: unknown, catalog: Map<string, AdmittedProduct>, pat
       labor_allowances: laborAllowances,
       unresolved: sel.unresolved,
       to_verify: sel.to_verify,
-      assumptions: pattern.assumptions,
+      assumptions: fittingAssumptions(pattern, sel, catalog),
       exclusions: pattern.exclusions,
     },
   };
