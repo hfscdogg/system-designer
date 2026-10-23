@@ -347,6 +347,8 @@ function movedNeedingMount(scope: ScopeDraftV1, terms: string[]): number {
   const ownMount = /\b(its own|own|existing|current|keeps? (its|the)) (wall |tv |soundbar )?mounts?\b/;
   const clauses = changes(scope).flatMap((c) => c.split(/[;.]|\bbut\b/));
   if (clauses.some((c) => ownMount.test(c) && names(c))) return 0;
+  // An exclusion of a mount for the existing device ("new mount for existing soundbar") says the same.
+  if (scope.excluded_scope.map(fold).some((x) => /\bmounts?\b/.test(x) && ABOUT_EXISTING.test(x) && names(x))) return 0;
   return moveChanges(scope).filter(names).length;
 }
 
@@ -546,7 +548,9 @@ export function materialize(stated: ScopeDraftV1, pattern: PatternSpec, namedPro
     // upstairs" (staging smoke, 2026-10-15). Any other exclusion still wins over a count left from before.
     const aboutNewOnes = { ...scope, excluded_scope: scope.excluded_scope.filter((x) => !ABOUT_EXISTING.test(fold(x))) };
     const countedNew = statedQuantity(scope, role, pattern.roles) !== null;
-    if (excluded(scope, role) && (!countedNew || excluded(aboutNewOnes, role))) {
+    // A mount for a moved device: "new mount for existing soundbar" is about the moved one (it keeps its own),
+    // not the new soundbar's mount (staging smoke, Green, 2026-10-23).
+    if (role.per_moved ? excluded(aboutNewOnes, role) : excluded(scope, role) && (!countedNew || excluded(aboutNewOnes, role))) {
       removedRoles.add(role.role);
       continue;
     }
