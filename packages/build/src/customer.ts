@@ -77,7 +77,7 @@ export function customerView(p: Proposal): CustomerProposal {
   return {
     watermark: p.watermark,
     proposal_number: p.identity.proposal_number,
-    title: p.identity.proposal_name ?? `${patternTitle(p.pattern.name, p.market)} Budget`,
+    title: p.identity.proposal_name ?? `${patternTitle(p.pattern.shown ?? p.pattern.name, p.market)} Budget`,
     client: p.client,
     property: p.property,
     project_type: p.project_type,
@@ -101,7 +101,7 @@ export function customerView(p: Proposal): CustomerProposal {
         : []),
     ],
     labor_total_cents: p.services.reduce((sum, s) => sum + s.unit_price_cents, 0) + (p.labor?.price_cents ?? 0),
-    intro: { systems: patternTitle(p.pattern.name, p.market).toLowerCase(), rooms: p.rooms, labor_hours: p.labor?.hours ?? null },
+    intro: { systems: patternTitle(p.pattern.shown ?? p.pattern.name, p.market).toLowerCase(), rooms: p.rooms, labor_hours: p.labor?.hours ?? null },
     market: p.market,
     services: [
       ...p.services.map((s) => s.label),

@@ -82,7 +82,8 @@ export interface Proposal {
   market: ScopeDraftV1["market"];
   rooms: string[];
   requested_changes: string[];
-  pattern: { name: string; version: string };
+  /** shown: the parts of a combined pattern the budget prices, for its title (absent when it prices from all of them). */
+  pattern: { name: string; version: string; shown?: string };
   sections: Section[];
   services: DraftService[];
   labor: PricedLabor | null;
@@ -265,7 +266,7 @@ export function bind(draft: ProposalDraft, ctx: BindContext): Proposal {
     market: ctx.scope.market,
     rooms: ctx.scope.room_types,
     requested_changes: ctx.scope.requested_changes,
-    pattern: { name: draft.pattern, version: draft.pattern_version },
+    pattern: { name: draft.pattern, version: draft.pattern_version, ...(draft.title_pattern ? { shown: draft.title_pattern } : {}) },
     sections,
     services: draft.services,
     labor: projectLabor,
@@ -361,7 +362,22 @@ const POE_SWITCH = /\bpoe\b.*\bswitch\b|\bswitch\b.*\bpoe\b/i;
  */
 function settled(question: string, lines: BoundLine[]): boolean {
   if (/poe (switch|injector)/i.test(question) && lines.some((l) => POE_SWITCH.test(`${l.label} ${l.brand} ${l.model}`))) return true;
-  return pricedProduct(question, lines);
+  return pricedProduct(question, lines) || modelPicked(question, lines);
+}
+
+/** The question is which model of a device to use ("Amplifier model … not specified", "Which amplifier model?"). */
+const MODEL_OPEN = /\b(model|make|brand|sku)\b.*\b(not specified|unspecified|not given|not stated|not provided|unknown|tbd)\b|\bwhich\b.*\b(model|make|brand)\b/i;
+
+/**
+ * "Amplifier model and number of zones/channels not specified" once the budget prices the amplifier: the budget
+ * picked the model (Zack's Biscuit Belly job, 2026-10-23). The question's first clause must name the priced line's
+ * device, by its role ("zone_amplifier": amplifier) or its brand and model.
+ */
+function modelPicked(question: string, lines: BoundLine[]): boolean {
+  const clause = question.split(/[;:]/)[0]!.toLowerCase();
+  if (!MODEL_OPEN.test(clause)) return false;
+  const named = (w: string) => w.length >= 4 && new RegExp(`\\b${w}s?\\b`).test(clause);
+  return lines.some((l) => [...l.role.split("_"), ...modelWords(`${l.brand} ${l.model}`)].some((w) => named(w.toLowerCase())));
 }
 
 /**

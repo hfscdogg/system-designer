@@ -117,6 +117,8 @@ export interface ProposalDraft {
   schema: "proposal_draft_v1";
   pattern: string;
   pattern_version: string;
+  /** The combined pattern's parts the budget prices, for its title, when it prices nothing from some of them. */
+  title_pattern?: string;
   lines: DraftLine[];
   services: DraftService[];
   labor: DraftLabor | null;
@@ -137,12 +139,12 @@ export type CompileResult = { ok: true; draft: ProposalDraft } | { ok: false; er
  * The pattern's assumptions, worded for what this budget prices (Zack, 2026-10-19): no drywall mounting
  * for a TV on a cart or outdoors, and no Sonos app where nothing Sonos is sold.
  */
-function fittingAssumptions(pattern: PatternSpec, sel: Selection, catalog: Map<string, AdmittedProduct>): string[] {
+function fittingAssumptions(pattern: PatternSpec, sel: Selection, catalog: Map<string, AdmittedProduct>, assumptions: string[]): string[] {
   const roles = new Set([...sel.lines.map((l) => l.role), ...sel.requirements.flatMap((r) => r.roles)]);
   const tv = pattern.roles.find((r) => r.role === "television");
   const outdoorTv = sel.lines.some((l) => l.role === "television" && tv?.variants?.some((v) => v.outdoor && v.product_id === l.record_id));
   const sonos = sel.lines.some((l) => /\bsonos\b/i.test(catalog.get(l.record_id)?.brand ?? ""));
-  return pattern.assumptions.map((a) => {
+  return assumptions.map((a) => {
     if (/^TVs are mounted on standard drywall/.test(a)) {
       if (roles.has("tv_cart")) return "The TV goes on a rolling cart; no wall mounting is included.";
       if (outdoorTv) return "The outdoor TV mounts to a solid exterior wall or structure, with weatherproof power and data at the mount.";
@@ -150,6 +152,18 @@ function fittingAssumptions(pattern: PatternSpec, sel: Selection, catalog: Map<s
     if (!sonos) return a.replace(/; Sonos is controlled from the Sonos app\./, ".");
     return a;
   });
+}
+
+/**
+ * The parts of a combined pattern the budget prices or lists something from, when that is not all of them:
+ * McGetrick's kept Control4 controller prices nothing from home automation, so the budget is not titled
+ * "Home Automation" or worded for a CORE 1 (Zack, 2026-10-23).
+ */
+function pricedSources(pattern: PatternSpec, sel: Selection) {
+  if (!pattern.sources) return undefined;
+  const roles = new Set([...sel.lines.map((l) => l.role), ...sel.requirements.flatMap((r) => r.roles)]);
+  const used = pattern.sources.filter((s) => s.roles.some((r) => roles.has(r)));
+  return used.length && used.length < pattern.sources.length ? used : undefined;
 }
 
 export function compile(raw: unknown, catalog: Map<string, AdmittedProduct>, pattern: PatternSpec): CompileResult {
@@ -308,12 +322,15 @@ export function compile(raw: unknown, catalog: Map<string, AdmittedProduct>, pat
   }
 
   if (errors.length) return { ok: false, errors };
+  const used = pricedSources(pattern, sel);
+  const uniq = (xs: string[]) => [...new Set(xs)];
   return {
     ok: true,
     draft: {
       schema: "proposal_draft_v1",
       pattern: sel.pattern,
       pattern_version: sel.pattern_version,
+      ...(used ? { title_pattern: used.map((s) => s.pattern).join("+") } : {}),
       lines,
       services,
       labor,
@@ -323,8 +340,8 @@ export function compile(raw: unknown, catalog: Map<string, AdmittedProduct>, pat
       labor_allowances: laborAllowances,
       unresolved: sel.unresolved,
       to_verify: sel.to_verify,
-      assumptions: fittingAssumptions(pattern, sel, catalog),
-      exclusions: pattern.exclusions,
+      assumptions: fittingAssumptions(pattern, sel, catalog, used ? uniq(used.flatMap((s) => s.assumptions)) : pattern.assumptions),
+      exclusions: used ? uniq(used.flatMap((s) => s.exclusions)) : pattern.exclusions,
     },
   };
 }
