@@ -273,6 +273,27 @@ describe("patterns", () => {
     expect(keptRoles.get("tv_mount")).toBe(1);
   });
 
+  it("reads \"new mount for existing soundbar\" as the moved soundbar keeping its own mount, not as no soundbar mount (staging smoke, 2026-10-23)", async () => {
+    const patterns = await loadPatterns();
+    // The receipt the interpreter produced for "Revise: the existing soundbar keeps its own mount".
+    const scope = approvedScope({
+      client: "Smoke Test",
+      functional_systems: ["audio_video", "networking"],
+      requested_changes: [
+        "Sell a new 77-inch Sony BRAVIA 8 OLED TV with a Sonos Arc Ultra soundbar for the family room",
+        "Move the existing TV and soundbar to the fitness room and wall-mount both there",
+        "Add 3 eero access points",
+      ],
+      requested_quantities: [{ item: "eero access points", quantity: 3 }],
+      existing_equipment: { status: "described", retained: ["existing TV", "existing soundbar"], removed_or_replaced: [] },
+      excluded_scope: ["new mount for existing soundbar"],
+      existing_detectors: "not_provided",
+    }).scope;
+    const roles = new Map(materialize(scope, selectPattern(scope.functional_systems, patterns)!).lines.map((l) => [l.role, l.quantity]));
+    expect(roles.get("soundbar_mount")).toBe(1);
+    expect(roles.get("tv_mount")).toBe(2);
+  });
+
   it("removes a device however the removal is worded (Green: \"remove the eeros\")", async () => {
     const patterns = await loadPatterns();
     const net = patterns.find((p) => p.pattern === "home_network")!;
