@@ -33,6 +33,11 @@ export const RoleSpecSchema = z
     /** Include the role only when one of these roles is included (a switch and power protection for the eero network). */
     with_roles: z.array(z.string()).min(1).optional(),
     /**
+     * Devices this role powers (a PoE switch for wired cameras): an add-on that prices them prices this role too,
+     * unless the customer keeps one or keeps equipment of that system (Zack's Bowen-Rees job, 2026-10-23).
+     */
+    powers: z.object({ roles: z.array(z.string()).min(1), unless_kept: z.array(z.string()).min(1) }).strict().optional(),
+    /**
      * Roles in one count group are counted together ("only need 1 eero"): when a stated count
      * goes to one of them, the others the request never named are dropped.
      */
@@ -113,7 +118,10 @@ export const RoleSpecSchema = z
     fits_tv_inches: z.tuple([z.number().int().positive(), z.number().int().positive()]).optional(),
     /** A short line printed under the item on the budget ("Includes its Cat6 run to the PoE switch"). */
     customer_note: z.string().min(1).optional(),
-    /** The mount to use instead when the TV is larger than `fits_tv_inches` allows, indoors or outdoors (Henry, 2026-10-19). */
+    /**
+     * The mount to use instead when the TV is larger than `fits_tv_inches` allows, indoors or outdoors (Henry, 2026-10-19).
+     * An `outdoor` one is also the mount for any outdoor TV it fits (Zack's Britt job, 2026-10-23).
+     */
     larger_tv_variants: z
       .array(
         z
@@ -229,6 +237,13 @@ export const PatternSpecSchema = z
     allowances: z.array(AllowanceSpecSchema).optional(),
     assumptions: z.array(z.string()),
     exclusions: z.array(z.string()),
+    /**
+     * A combined pattern's parts, with their roles, assumptions and exclusions: a part the budget prices
+     * nothing from adds none of its wording or title (Zack's McGetrick job, 2026-10-23). Set by combinePatterns.
+     */
+    sources: z
+      .array(z.object({ pattern: z.string().min(1), roles: z.array(z.string()).min(1), assumptions: z.array(z.string()), exclusions: z.array(z.string()) }).strict())
+      .optional(),
   })
   .strict()
   .superRefine((p, ctx) => {
@@ -321,6 +336,7 @@ export function combinePatterns(ps: PatternSpec[]): PatternSpec | null {
     ...(ps.some((p) => p.allowances?.length) ? { allowances: [...new Map(ps.flatMap((p) => p.allowances ?? []).map((a) => [a.key, a])).values()] } : {}),
     assumptions: uniq(ps.flatMap((p) => p.assumptions)),
     exclusions: uniq(ps.flatMap((p) => p.exclusions)),
+    sources: ps.flatMap((p) => p.sources ?? [{ pattern: p.pattern, roles: p.roles.map((r) => r.role), assumptions: p.assumptions, exclusions: p.exclusions }]),
   });
 }
 

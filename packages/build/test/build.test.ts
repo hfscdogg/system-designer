@@ -1695,3 +1695,158 @@ describe("Zack's round 5 (2026-10-19)", () => {
     expect(view.sections.flatMap((x) => x.items).find((i) => i.note)!.note).toBe(line.note);
   });
 });
+
+describe("Zack's round 6 (2026-10-23)", () => {
+  const none = { existing_equipment: { status: "none" as const, retained: [], removed_or_replaced: [] } };
+  const quantities = (sel: ReturnType<typeof materialize>) => Object.fromEntries(sel.lines.map((l) => [l.role, l.quantity]));
+  const SWITCH = "de42b9ff-167d-438c-88e0-df8afd6b46c9";
+  async function job(o: object) {
+    const patterns = await loadPatterns();
+    const { scope, scopeHash, receiptId } = approvedScope({ ...none, existing_detectors: "not_provided", ...o });
+    const pattern = selectPattern(scope.functional_systems, patterns)!;
+    return { scope, scopeHash, receiptId, pattern, selection: materialize(scope, pattern) };
+  }
+  /** Synthetic records at $300 a device (a brand's record with its own model), the $1 parts record; compiled and bound. */
+  async function built(o: object) {
+    const { scope, scopeHash, receiptId, pattern, selection } = await job(o);
+    const brands = new Map(pattern.roles.flatMap((r) => (r.brand_variants ?? []).map((v) => [v.product_id, [v.brand, v.model] as const])));
+    const catalog = Object.fromEntries(
+      patternRecordIds(pattern).map((id, i) => [
+        id,
+        id === pattern.parts!.product_id
+          ? product(id, "Livewire", "PARTS", 1, 0.01, { laborItems: [] })
+          : product(id, brands.get(id)?.[0] ?? "TestCo", brands.get(id)?.[1] ?? `DEV-${i}`, 300, 150, { laborItems: [] }),
+      ]),
+    );
+    const { admitted } = await admitAll(pattern, catalog);
+    const result = compile(selection, admitted, pattern);
+    if (!result.ok) throw new Error(result.errors.join("\n"));
+    const proposal = bind(result.draft, { runId: "run_test", receiptId, approvalId: "ap_1", scopeHash, scope, policy: POLICY, releaseId: "rel" });
+    return { scope, selection, draft: result.draft, proposal };
+  }
+
+  it("Bowen-Rees: wired cameras added with \"Add …\" wording still get the PoE switch that powers them", async () => {
+    // run_8ed480693: every change read as "Add …", so the job priced as an add-on and the switch dropped ($7,761 → $4,731).
+    const { selection } = await job({
+      client: "Melissa Bowen-Rees",
+      functional_systems: ["video surveillance", "networking"],
+      existing_equipment: { status: "described", retained: ["current doorbell and chime"], removed_or_replaced: ["current floodlight"] },
+      requested_changes: [
+        "Add 4 exterior cameras",
+        "Add a wired Smart doorbell camera at the front door",
+        "Add a wired camera on the side of the house, facing the parking lot",
+        "Add a wired camera at the back of the house, facing the back yard",
+        "Add a wired floodlight camera above the garage, replacing the current floodlight",
+        "Add an SVR in the basement closet",
+        "Add an additional Eero 7 Pro in the son's bedroom",
+      ],
+      requested_quantities: [
+        { item: "exterior cameras", quantity: 4 },
+        { item: "wired Smart doorbell camera", quantity: 1 },
+        { item: "wired camera on the side of the house", quantity: 1 },
+        { item: "wired camera at the back of the house", quantity: 1 },
+        { item: "wired floodlight camera", quantity: 1 },
+        { item: "SVR", quantity: 1 },
+        { item: "Eero 7 Pro", quantity: 1 },
+      ],
+    });
+    expect(selection.add_on).toBe(true);
+    expect(quantities(selection)).toMatchObject({ outdoor_camera: 2, floodlight_camera: 1, doorbell_camera: 1, nvr: 1, mesh_wifi: 1 });
+    expect(selection.lines.filter((l) => l.record_id === SWITCH)).toHaveLength(1);
+    // A floodlight camera alone takes no switch, and neither does a camera added to cameras the customer keeps.
+    const flood = await job({ functional_systems: ["video surveillance"], requested_changes: ["Add a floodlight camera above the garage"] });
+    expect(flood.selection.lines.some((l) => l.record_id === SWITCH)).toBe(false);
+    const kept = await job({
+      functional_systems: ["video surveillance"],
+      existing_equipment: { status: "described", retained: ["existing Alarm.com cameras"], removed_or_replaced: [] },
+      requested_changes: ["Add 1 wired camera at the back corner"],
+      requested_quantities: [{ item: "wired camera", quantity: 1 }],
+    });
+    expect(quantities(kept.selection)).toEqual({ outdoor_camera: 1 });
+  });
+
+  it("Crowder: conduit counted as \"10ft sticks\" with the count beside it is 120 ft per run, once however often it is stated", async () => {
+    // run_918da0cb: the counts went to the stated quantities, and "10ft sticks" alone was read as 10 ft (6 h each).
+    const site = async (o: object) =>
+      Object.fromEntries(
+        (await job({ functional_systems: ["networking", "conduit", "trenching"], ...o })).selection.labor_allowances.filter((a) => a.key === "trenching" || a.key === "conduit").map((a) => [a.key, [a.hours, a.feet ?? null]]),
+      );
+    const changes = [
+      "Add an outdoor eero PoE 7 at the post",
+      "Run 2 Cat6 burial runs through conduit from the head end to the post in the front yard",
+      "Run 1 electrical run through conduit along the same path",
+      "Hand trench 1ft down along the same lines as the house power; cut the sod, lay the conduit in sections and relay the sod",
+    ];
+    const sticks = [
+      { item: "10ft sticks of 3/4 conduit for data", quantity: 12 },
+      { item: "10ft sticks of 3/4 inch conduit for electrical", quantity: 12 },
+    ];
+    expect(await site({ requested_changes: changes, requested_quantities: sticks })).toEqual({ trenching: [10, 120], conduit: [12, 240] });
+    // The same sticks as a change and a stated count are not 480 ft.
+    expect(
+      await site({ requested_changes: [...changes, "12 - 10ft sticks of 3/4 conduit for data", "12 - 10ft sticks of 3/4 inch conduit for electrical"], requested_quantities: sticks }),
+    ).toEqual({ trenching: [10, 120], conduit: [12, 240] });
+  });
+
+  it("Britt: a count of 4 Ethernet ports and a PoE access point is still 5 cable runs", async () => {
+    const { selection } = await job({
+      functional_systems: ["networking"],
+      requested_changes: [
+        "Ethernet port in master bedroom on top floor",
+        "POE Access point in hallway of the top floor",
+        "Ethernet port in dining room",
+        "Ethernet port in living room",
+        "Ethernet port at the back of the house behind the outdoor TV location on the porch",
+      ],
+      requested_quantities: [{ item: "ethernet ports", quantity: 4 }, { item: "PoE access point", quantity: 1 }],
+    });
+    expect(selection.labor_allowances.map((a) => [a.key, a.quantity])).toEqual([["wiring_run", 5]]);
+  });
+
+  it("Britt: a 55\" outdoor TV goes on the Sanus outdoor mount, like McGetrick's 75\"; an indoor one stays on the Strong", async () => {
+    const mount = async (o: object) => (await job(o)).selection.lines.find((l) => l.role === "tv_mount_articulating")!.record_id;
+    expect(await mount({ functional_systems: ["outdoor TV"], requested_changes: ["55’’ Outdoor rated TV with cover", "Articulated mounting bracket"] })).toBe("5e126131-73ba-4869-a490-941cee78cd26");
+    expect(await mount({ functional_systems: ["TV"], requested_changes: ["Mount the customer's 55-inch TV in the living room on an articulating mount"] })).toBe("e984e610-2be4-4e3e-9407-a90d3a70b6c8");
+  });
+
+  it("McGetrick: a kept Control4 system prices nothing from home automation, so the budget isn't titled or worded for it", async () => {
+    // run_aa12f15e: "Home Automation" in the title and Control4 CORE 1 assumptions, with no Control4 gear priced.
+    const { draft, proposal } = await built({
+      client: "Brad McGetrick",
+      functional_systems: ["outdoor TV", "Control4"],
+      existing_equipment: { status: "described", retained: ["Control4 system"], removed_or_replaced: [] },
+      requested_changes: ['Provide a new 75" full weather outdoor TV with an articulated mounting bracket', "Connect the TV audio to the existing Control4 system"],
+      requested_quantities: [{ item: '75" full weather outdoor TV', quantity: 1 }],
+    });
+    expect(draft.pattern).toBe("home_automation+tv_media");
+    expect(draft.title_pattern).toBe("tv_media");
+    expect(draft.assumptions.some((a) => /CORE 1/.test(a))).toBe(false);
+    expect(draft.exclusions.some((x) => /4Sight/.test(x))).toBe(false);
+    const view = customerView(proposal);
+    expect(view.title).not.toMatch(/Automation/);
+    expect(view.intro.systems).not.toMatch(/automation/);
+    // The kept controller is still listed to field-test.
+    expect(proposal.remaining_verification.some((v) => /Control4 CORE 1 controller \(retained/.test(v))).toBe(true);
+    // A job that prices from every part keeps the full title and wording.
+    const both = await built({ functional_systems: ["TV", "Control4"], requested_changes: ['Provide a new 65" TV for the family room', "Add a Control4 CORE 1 controller and a Halo remote"], requested_quantities: [{ item: '65" TV', quantity: 1 }] });
+    expect(both.draft.title_pattern).toBeUndefined();
+    expect(both.draft.assumptions.some((a) => /CORE 1/.test(a))).toBe(true);
+  });
+
+  it("Biscuit Belly: the verify list doesn't ask for the amplifier model once the amplifier is priced", async () => {
+    const { proposal } = await built({
+      market: "commercial",
+      client: "Ronnie Santillo",
+      functional_systems: ["audio"],
+      requested_changes: ["1 x new amplifier for background music on the existing 3 indoor and 2 terrace speakers", "1 x Klipsch in-ceiling speaker in the female and male restrooms each"],
+      requested_quantities: [{ item: "Klipsch in-ceiling speaker", quantity: 2 }],
+      unresolved_questions: [
+        "Amplifier model and number of zones/channels not specified; the message says the same music plays on all speakers",
+        "Opening date is Oct 26, 2026; installation date not specified",
+      ],
+    });
+    expect(proposal.sections.flatMap((s) => s.lines).some((l) => l.role === "zone_amplifier")).toBe(true);
+    expect(proposal.remaining_verification.filter((v) => /^Amplifier model/.test(v))).toEqual([]);
+    expect(proposal.remaining_verification).toContain("Opening date is Oct 26, 2026; installation date not specified");
+  });
+});

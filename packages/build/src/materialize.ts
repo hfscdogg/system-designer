@@ -510,13 +510,19 @@ export function materialize(stated: ScopeDraftV1, pattern: PatternSpec, namedPro
   const verifyOnly = new Set<string>();
   // Existing equipment the job keeps: nothing to price, its field test is listed to verify.
   const keptRoles = new Set<string>();
+  // Roles an add-on prices only for the devices they power: dropped when none of those is priced.
+  const poweredOnly = new Set<string>();
   for (const role of candidates) {
     if (role.alternative_group && namedGroups.has(role.alternative_group) && !namedSpecifically(scope, role, pattern.roles)) continue;
     // In an add-on, a role is priced when the request names it or names its own system (smoke detection alongside sensors).
     const ownSystemRequested = role.systems.some((s) => scope.functional_systems.includes(s) && !pattern.applies_when_any.includes(s));
     const products = requested.get(role.role) ?? [];
     const product = products[0];
-    if (addOn && !names(role) && !ownSystemRequested) continue;
+    // A PoE switch for the wired cameras an add-on prices still comes with them: they need its power (Zack's Bowen-Rees job, 2026-10-23).
+    const powersNew =
+      !!role.powers && !scope.retained_equipment.some((e) => role.powers!.unless_kept.some((t) => hasWord(fold(e), fold(t)))) && candidates.some((r) => role.powers!.roles.includes(r.role) && names(r));
+    if (addOn && !names(role) && !ownSystemRequested && !powersNew) continue;
+    if (addOn && powersNew && !names(role)) poweredOnly.add(role.role);
     // A stated count of the device ("3 doors" of contacts) asks for it too, and so does existing alarm
     // gear the rep says stays (it is field-tested before reuse).
     const keptHere = role.critical && !!role.retained_match?.length && scope.retained_equipment.some((e) => role.retained_match!.some((t) => hasWord(fold(e), fold(t))));
@@ -630,6 +636,10 @@ export function materialize(stated: ScopeDraftV1, pattern: PatternSpec, namedPro
   for (const role of included) {
     if (!role.count_group || role.critical || requested.has(role.role) || namedExplicitly(scope, role, pattern.roles)) continue;
     if (included.some((r) => r !== role && r.count_group === role.count_group && counted(r))) notAsked.add(role.role);
+  }
+  // A floodlight camera and a doorbell take no switch: one an add-on priced for wired cameras goes when none is priced.
+  for (const role of included) {
+    if (poweredOnly.has(role.role) && !lines.some((l) => role.powers!.roles.includes(l.role))) notAsked.add(role.role);
   }
   // Gear that serves another role (a switch for the eero network) is priced only with it, unless the request names it itself.
   for (let changed = true; changed; ) {
@@ -820,12 +830,15 @@ const FEET = /\b(\d{1,3}(?:,\d{3})*|\d+)\s*(?:-\s*)?(?:ft\b\.?|feet\b|foot\b|'(?
 const DEPTH_AFTER = /^\s*(?:down|deep|depth|below|under(?:ground)?)\b/;
 const DEPTH_BEFORE = /\b(?:depth of|deep|down)\s*$/;
 /** Material by the stick: "12 - 10ft sticks of 3/4 conduit" is 120 ft (Zack's Crowder job, 2026-10-19). */
-const STICKS = /\b(\d{1,3})\s*(?:-|x|×)?\s*(\d{1,3})\s*(?:-\s*)?(?:ft\b\.?|feet\b|foot\b|'(?!s|'))\s*(?:long\s+)?(?:sticks?|lengths?|pieces?|sections?)\b/g;
+// The count and the length are apart ("12 - 10ft", "12 10ft"): "10ft sticks" alone is not 1 stick of 0 ft (Crowder, 2026-10-23).
+const STICKS = /\b(\d{1,3})(?:\s*(?:-|x|×)\s*|\s+)(\d{1,3})\s*(?:-\s*)?(?:ft\b\.?|feet\b|foot\b|'(?!s|'))\s*(?:long\s+)?(?:sticks?|lengths?|pieces?|sections?)\b/g;
 
 /** The length one change gives: the sticks it counts, else the longest length that isn't a depth. */
-function lengthIn(text: string): { feet: number; sticks: boolean } {
-  const sticks = [...text.matchAll(STICKS)].reduce((n, m) => n + Number(m[1]) * Number(m[2]), 0);
-  if (sticks) return { feet: sticks, sticks: true };
+function lengthIn(text: string): { feet: number; sticks: boolean; material?: string } {
+  const counted = [...text.matchAll(STICKS)];
+  const sticks = counted.reduce((n, m) => n + Number(m[1]) * Number(m[2]), 0);
+  // What the sticks are ("of 3/4 conduit for data"), so the same material stated twice is counted once.
+  if (sticks) return { feet: sticks, sticks: true, material: text.slice(counted.at(-1)!.index! + counted.at(-1)![0].length).trim() };
   const lengths = [...text.matchAll(FEET)]
     .filter((m) => !DEPTH_AFTER.test(text.slice(m.index! + m[0].length)) && !DEPTH_BEFORE.test(text.slice(0, m.index)))
     .map((m) => Number(m[1]!.replace(/,/g, "")));
@@ -840,16 +853,17 @@ function lengthIn(text: string): { feet: number; sticks: boolean } {
  */
 function feetAsked(texts: string[], mentions: string[]): { feet: number; run: number } | undefined {
   let best = 0;
-  let sticks = 0;
+  // Sticks by material: a change and a stated count of the same sticks are one length, data and electrical two.
+  const sticks = new Map<string, number>();
   let run = 0;
   for (const t of texts) {
     const l = lengthIn(t);
     if (!l.feet) continue;
     run = Math.max(run, l.feet);
-    if (l.sticks) sticks += l.feet;
+    if (l.sticks) sticks.set(l.material!, Math.max(sticks.get(l.material!) ?? 0, l.feet));
     else best = Math.max(best, l.feet * runsIn(t, mentions));
   }
-  const feet = Math.max(best, sticks);
+  const feet = Math.max(best, [...sticks.values()].reduce((n, f) => n + f, 0));
   return feet ? { feet, run } : undefined;
 }
 
@@ -867,18 +881,29 @@ function runsIn(text: string, mentions: string[]): number {
   );
 }
 
+/** A wall port or jack, not a run: "ethernet ports", "data jack". */
+const WALL_PORT = /\b(ports?|jacks?|outlets?|plates?)\b/;
+
+/** A stated count of sticks ("10ft sticks of 3/4 conduit", 12): written with its count, so the sticks add up to their length. */
+const STICK_ITEM = /^\s*\d{1,3}\s*(?:-\s*)?(?:ft\b\.?|feet\b|foot\b|')\s*(?:long\s+)?(?:sticks?|lengths?|pieces?|sections?)\b/i;
+
+/** The request's changes and stated counts, as allowance texts: a count of sticks keeps its count (Zack's Crowder job, 2026-10-23). */
+const allowanceTexts = (scope: ScopeDraftV1) => [...scope.requested_changes, ...scope.requested_quantities.map((q) => (STICK_ITEM.test(q.item) ? `${q.quantity} - ${q.item}` : q.item))].map(fold);
+
 function allowancesFor(templates: AllowanceSpec[], scope: ScopeDraftV1, uncovered: string[], lines: SelectionLine[]): Array<AllowanceSpec & { texts: string[]; quantity: number; feet?: number; trenched?: true }> {
   const any = (t: string, words?: string[]) => !!words?.some((w) => hasWord(t, fold(w)));
   const found = templates.flatMap((a) => {
     if (a.covered_by_systems?.some((s) => scope.functional_systems.includes(s))) return [];
     const asks = (t: string) => any(t, a.mentions) && (!a.require || any(t, a.require)) && !any(t, a.exclude);
-    const fromRequest = requestTexts(scope).filter(asks);
+    const fromRequest = allowanceTexts(scope).filter(asks);
     const asking = [...fromRequest, ...uncovered].filter(asks);
     if (!asking.length) return [];
     const stated = scope.requested_quantities.filter((q) => asks(fold(q.item))).reduce((n, q) => n + q.quantity, 0);
     const changes = new Set(scope.requested_changes.map(fold).filter(asks)).size;
     // The wired access point's own drop (Zack's Britt job, 2026-10-15: 4 Ethernet ports and a PoE access point are 5 runs).
-    const forRoles = stated ? 0 : lines.filter((l) => a.per_role?.includes(l.role)).reduce((n, l) => n + l.quantity, 0);
+    // A count of wall ports ("4 Ethernet ports") leaves the access point's drop out; a count of drops or runs may include it (2026-10-23).
+    const countsDrops = scope.requested_quantities.some((q) => asks(fold(q.item)) && !WALL_PORT.test(fold(q.item)));
+    const forRoles = countsDrops ? 0 : lines.filter((l) => a.per_role?.includes(l.role)).reduce((n, l) => n + l.quantity, 0);
     // Work sized by length ("120 ft of hand trench") at the template's per-foot rate (Crowder, 2026-10-15).
     const length = a.hours_per_foot ? feetAsked(asking, a.mentions) : undefined;
     return [{ ...a, texts: asking, asked: fromRequest.length > 0, run: length?.run, quantity: a.counted ? Math.max(1, (stated || changes) + forRoles) : 1, ...(length ? { feet: length.feet } : {}) }];
@@ -897,7 +922,7 @@ function allowancesFor(templates: AllowanceSpec[], scope: ScopeDraftV1, uncovere
     const trench = a.in_trench && sized.find((t) => t.key === a.in_trench!.trench);
     if (!trench?.feet) return a;
     const runs = Math.max(1, ...a.texts.map((t) => runsIn(t, a.mentions)));
-    const own = a.texts.reduce((n, t) => n + (lengthIn(t).sticks ? lengthIn(t).feet : 0), 0);
+    const own = feetAsked(a.texts.filter((t) => lengthIn(t).sticks), a.mentions)?.feet ?? 0;
     return { ...a, feet: Math.max(trench.feet * runs, own), trenched: true as const };
   });
 }
@@ -905,12 +930,15 @@ function allowancesFor(templates: AllowanceSpec[], scope: ScopeDraftV1, uncovere
 /**
  * The mount for a TV larger than the standard is rated for: Sanus VLF628-B1 (46-90") indoors and the
  * Sanus VODLF125-B2 (40-85") outdoors over 70", in place of the Strong ART2-L (37-70") (Henry, 2026-10-19).
+ * An outdoor TV gets the outdoor mount at any size it fits: Britt's 55" outdoor TV was on the indoor Strong
+ * mount while McGetrick's got the Sanus outdoor one (Zack, 2026-10-23).
  */
 function largerTvVariant(scope: ScopeDraftV1, role: RoleSpec, pattern: PatternSpec) {
   const tv = pattern.roles.find((r) => r.role === "television");
   const inches = tv && sizeAsked(scope, tv);
-  if (!role.fits_tv_inches || !inches || inches <= role.fits_tv_inches[1]) return undefined;
+  if (!role.fits_tv_inches || !inches) return undefined;
   const outdoor = !!tv && outdoorAsked(scope, tv);
+  if (!outdoor && inches <= role.fits_tv_inches[1]) return undefined;
   return role.larger_tv_variants?.find((v) => !!v.outdoor === outdoor && inches >= v.fits_tv_inches[0] && inches <= v.fits_tv_inches[1]);
 }
 
