@@ -372,6 +372,9 @@ describe("conversation controls", () => {
     expect(params(r[1])).toEqual({ action: "conversation_control", control: "edit_scope", ref: "R-X-1" });
     const a = buttons(renderGoogleChat({ kind: "budget_actions", runId: "run_1", text: "Need changes?" }));
     expect(a.map((b: any) => [b.text, params(b).control])).toEqual([["Send design retainer", "send_retainer"], ["Revise this budget", "revise_budget"], ["New request", "new_request"]]);
+    // Under a build that stopped after approval there is no budget to collect a retainer on.
+    const blocked = buttons(renderGoogleChat({ kind: "budget_actions", runId: "run_1", text: "I couldn't build this budget", retainer: false }));
+    expect(blocked.map((b: any) => [b.text, params(b).control])).toEqual([["Revise this request", "revise_budget"], ["New request", "new_request"]]);
   });
 
   it("parses a control click and ignores unknown controls", () => {

@@ -95,6 +95,12 @@ export const RoleSpecSchema = z
      */
     unpriced: z.literal("verify").optional(),
     /**
+     * Other makers' brands for this device (Luma cameras): when the request asks for one ("Requested product:
+     * Luma cameras"), the device is listed to price in that brand instead of priced as the standard, which
+     * may not work with what the customer keeps (Zack's Jinny's job, 2026-10-26: Alarm.com cameras on a Luma NVR).
+     */
+    other_brands: z.array(z.string().min(1)).min(1).optional(),
+    /**
      * Alternative approved records chosen by the size the request names ("75-inch" → the 77" model).
      * An `outdoor` variant is chosen only for a request that says the device goes outside (and only one is):
      * an outdoor TV is never priced as an indoor one.

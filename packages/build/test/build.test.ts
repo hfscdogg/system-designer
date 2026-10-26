@@ -1871,3 +1871,141 @@ describe("Zack's round 6 (2026-10-23)", () => {
     expect(proposal.remaining_verification).toContain("Opening date is Oct 26, 2026; installation date not specified");
   });
 });
+
+describe("Zack's round 7 (2026-10-26)", () => {
+  const none = { existing_equipment: { status: "none" as const, retained: [], removed_or_replaced: [] } };
+  const quantities = (sel: ReturnType<typeof materialize>) => Object.fromEntries(sel.lines.map((l) => [l.role, l.quantity]));
+  async function job(o: object) {
+    const patterns = await loadPatterns();
+    const { scope, scopeHash, receiptId } = approvedScope({ ...none, existing_detectors: "not_provided", project_type: null, ...o });
+    const pattern = selectPattern(scope.functional_systems, patterns)!;
+    return { scope, scopeHash, receiptId, pattern, selection: materialize(scope, pattern) };
+  }
+  /** Synthetic records at $300 a device, the $1 parts record; compiled, bound and validated. */
+  async function built(o: object) {
+    const { scope, scopeHash, receiptId, pattern, selection } = await job(o);
+    const catalog = Object.fromEntries(
+      patternRecordIds(pattern).map((id, i) => [
+        id,
+        id === pattern.parts!.product_id ? product(id, "Livewire", "PARTS", 1, 0.01, { laborItems: [] }) : product(id, "TestCo", `DEV-${i}`, 300, 150, { laborItems: [] }),
+      ]),
+    );
+    const { admitted } = await admitAll(pattern, catalog);
+    const result = compile(selection, admitted, pattern);
+    if (!result.ok) throw new Error(result.errors.join("\n"));
+    const proposal = bind(result.draft, { runId: "run_test", receiptId, approvalId: "ap_1", scopeHash, scope, policy: POLICY, releaseId: "rel" });
+    return { scope, selection, draft: result.draft, proposal, validation: validateProposal(proposal, scope, scopeHash, admitted, POLICY) };
+  }
+
+  // Andrew Giessel (run_799c5e88, run_9745cbb5, run_df1c3f43): Cat6 home runs and a keystone patch panel into a finished house.
+  const giessel = {
+    client: "Andrew Giessel",
+    requested_changes: [
+      "Replace a loose Ethernet plate in the great room with a 2-port Cat6 keystone plate (one port terminates the Fios ONT feed, the other is a new run down to a basement hub)",
+      "Cat6 home runs from the unfinished basement (drill-up access to all first-floor walls) to the library (2 ports), living room and mud room",
+      "Terminate all runs on a small 8-port keystone patch panel in the basement mech room, tested and labeled",
+      "Two-story Cat6 run up to the master bedroom via the bath/laundry plumbing chase, priced separately",
+    ],
+  };
+
+  it("Giessel: cabling with no Wi-Fi is structured wiring, whatever the model calls it, never the Wi-Fi pattern", () => {
+    for (const label of ["Structured cabling", "Network cabling", "Cat6 cabling", "Ethernet home runs", "Low-voltage cabling", "Keystone patch panel"]) {
+      expect(normalizeFunctionalSystems([label]), label).toEqual(["structured_wiring"]);
+    }
+    // Wi-Fi is still networking; speaker and HDMI cabling are not structured wiring; a Wi-Fi job's Ethernet ports stay its cable runs.
+    expect(normalizeFunctionalSystems(["home network"])).toEqual(["networking"]);
+    expect(normalizeFunctionalSystems(["speaker cabling"])).toEqual(["whole_home_audio"]);
+    expect(normalizeFunctionalSystems(["Ethernet ports"])).toEqual(["ethernet ports"]);
+  });
+
+  it("Dunham (the Giessel request): a keystone patch panel replaces the enclosure, its 8 ports are not 8 enclosures, the jacks take the stated count", async () => {
+    // run_df1c3f43 priced WP-SW-PL-ENCL-42-1PK × 8: the enclosure's "panel" took the patch panel's count.
+    for (const requested_quantities of [[], [{ item: "patch panel ports", quantity: 8 }], [{ item: "8-port keystone patch panel", quantity: 1 }]]) {
+      const { pattern, selection } = await job({ ...giessel, functional_systems: ["structured cabling"], requested_quantities });
+      expect(pattern.pattern).toBe("prewire");
+      expect(quantities(selection), JSON.stringify(requested_quantities)).toEqual({ data_drop: 6, cat6_cable: 450 });
+      expect(selection.to_verify).toEqual([
+        "Requested product: Keystone patch panel (no Livewire standard; priced in the final proposal)",
+        "Requested product: Keystone wall plate (no Livewire standard; priced in the final proposal)",
+      ]);
+    }
+    const counted = await job({ ...giessel, functional_systems: ["structured cabling"], requested_quantities: [{ item: "Cat6 data ports", quantity: 7 }] });
+    expect(quantities(counted.selection)).toMatchObject({ data_drop: 7 });
+    // With no patch panel named, new construction still gets the enclosure.
+    const prewire = await job({ functional_systems: ["prewire"], requested_changes: ["Prewire the new construction home for data"] });
+    expect(quantities(prewire.selection)).toMatchObject({ media_enclosure: 1 });
+  });
+
+  it("Dunham: a retrofit is worded as one, not as open walls with retrofit fishing excluded", async () => {
+    const retrofit = await built({ ...giessel, functional_systems: ["structured cabling"] });
+    expect(retrofit.selection.retrofit).toBe(true);
+    expect(retrofit.draft.assumptions).toContain("Cables are fished through finished walls or drilled up from an unfinished basement or attic; no wall is opened.");
+    expect(retrofit.draft.assumptions.some((a) => /open walls/.test(a))).toBe(false);
+    expect(retrofit.draft.exclusions).toContain("Opening, patching and painting walls or ceilings.");
+    expect(retrofit.draft.exclusions.some((x) => /^Retrofit fishing/.test(x))).toBe(false);
+    const open = await built({ functional_systems: ["prewire"], requested_changes: ["Prewire the new construction home before drywall"] });
+    expect(open.selection.retrofit).toBeUndefined();
+    expect(open.draft.assumptions).toContain("New construction or open walls: cables are run before drywall.");
+  });
+
+  it("Giessel: Ethernet drops alone on a network job are a budget of cable-run allowances, not 'no products could be priced'", async () => {
+    const { selection, validation } = await built({ functional_systems: ["networking"], requested_changes: ["Add an Ethernet drop in the office", "Add an Ethernet drop in the den"] });
+    expect(selection.lines).toEqual([]);
+    expect(selection.labor_allowances.map((a) => [a.key, a.quantity])).toEqual([["wiring_run", 2]]);
+    expect(validation.findings.filter((f) => f.code === "empty_bom")).toEqual([]);
+  });
+
+  it("Young: moving the customer's TV with the tilt mount asked for is one mount, not two", async () => {
+    // run_362dce0d: Sanus CILT4-B1 × 2 for one 55" LG the client supplies.
+    const { selection } = await job({
+      client: "Rich Young",
+      functional_systems: ["TV mounting"],
+      existing_equipment: { status: "described", retained: ["55-inch LG TV (client-supplied)", "Sonos Playbar (client-supplied)"], removed_or_replaced: [] },
+      requested_changes: ["Move the existing TV closer to the wall on a Sanus Advanced Tilt mount", "Mount the Sonos Playbar with a compatible mount"],
+    });
+    expect(quantities(selection)).toMatchObject({ tv_mount: 1 });
+  });
+
+  it("Paulenich: two new TVs get two mounts; a ProRemote is the TVs' remote, not a Control4 CORE 1", async () => {
+    // run_1d29cdcd: Sony K65XR80 × 2 with Sanus CILT4-B1 × 1, and a Control4 C4-CORE1 nobody asked for.
+    const tvs = await job({
+      client: "Randy Paulenich",
+      functional_systems: ["TV"],
+      requested_changes: ["Replace 2 TVs"],
+      requested_quantities: [{ item: "Upstairs TV", quantity: 1 }, { item: "Downstairs TV", quantity: 1 }],
+    });
+    expect(quantities(tvs.selection)).toMatchObject({ television: 2, tv_mount: 2 });
+    expect(normalizeFunctionalSystems(["Universal remote control (ProRemote)", "TV"])).toEqual(["audio_video"]);
+    expect(normalizeFunctionalSystems(["Control4 Halo remote"])).toEqual(["home_automation"]);
+  });
+
+  it("Paulenich: a Sonos Amp Multi the rep asks for stays on the verify list beside the Sonos Amp the budget prices", async () => {
+    const { proposal } = await built({
+      client: "Randy Paulenich",
+      functional_systems: ["Sonos whole-home audio"],
+      requested_changes: ["Sonos Amp for the downstairs bedroom in-ceiling speakers", "2 Sonos Amp Multi for the independently controlled music zones"],
+      unresolved_questions: ["Requested product: Sonos Amp Multi (4 zones)", "Requested product: Sonos Amp"],
+    });
+    expect(proposal.remaining_verification).toContain("Requested product: Sonos Amp Multi (4 zones)");
+    expect(proposal.remaining_verification).not.toContain("Requested product: Sonos Amp");
+  });
+
+  it("Jinny's: Luma cameras on the Luma NVR they keep are listed to price as Luma, with no Alarm.com cameras and no PoE switch", async () => {
+    // run_95c25155: Alarm.com ADC-VC838PF × 2 and an Araknis PoE switch beside the client's Luma NVR.
+    const jinny = {
+      client: "Mark Dunham & Jinny",
+      market: "commercial",
+      functional_systems: ["video surveillance"],
+      existing_equipment: { status: "described", retained: ["Luma NVR", "2 existing cameras"], removed_or_replaced: ["2 indoor dome cameras"] },
+      requested_changes: ["Replace the front desk indoor dome camera with a Luma camera", "Replace the back room indoor dome camera with a Luma camera"],
+      requested_quantities: [{ item: "Luma cameras", quantity: 2 }],
+      unresolved_questions: ["Requested product: Luma cameras"],
+    };
+    const { selection } = await job(jinny);
+    expect(selection.lines.map((l) => l.role)).toEqual([]);
+    expect(selection.to_verify).toContain("Requested product: Luma outdoor turret camera (not Livewire's standard brand for this; priced in the final proposal)");
+    // Alarm.com cameras the rep asks for still price, with their switch.
+    const adc = await job({ ...jinny, existing_equipment: none.existing_equipment, requested_changes: ["Install 2 turret cameras"], requested_quantities: [], unresolved_questions: [] });
+    expect(quantities(adc.selection)).toMatchObject({ outdoor_camera: 2, camera_poe_switch: 1 });
+  });
+});

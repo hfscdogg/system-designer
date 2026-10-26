@@ -380,6 +380,9 @@ function modelPicked(question: string, lines: BoundLine[]): boolean {
   return lines.some((l) => [...l.role.split("_"), ...modelWords(`${l.brand} ${l.model}`)].some((w) => named(w.toLowerCase())));
 }
 
+/** Words that tell one model of a product line from another. */
+const VARIANT_WORDS = new Set(["multi", "pro", "max", "mini", "ultra", "plus", "port", "sub", "duo", "lite", "playbar", "playbase", "beam", "arc"]);
+
 /**
  * "Requested product: Araknis AN-520-AP-I" when a priced line is that product (its model, requested model or label),
  * in any word order ("Outdoor Eero PoE 7" is the eero Outdoor PoE 7), or a product the client supplies.
@@ -392,9 +395,15 @@ function pricedProduct(question: string, lines: BoundLine[]): boolean {
   if (asked.length < 3) return false;
   const askedWords = new Set(modelWords(m[1]!));
   const within = (xs: string[], set: Set<string>) => xs.length > 0 && xs.every((x) => set.has(x));
+  // A word that names another model of the line's product ("Sonos Amp Multi" is not the Sonos Amp priced;
+  // Zack's Paulenich job, 2026-10-26) means the request is for something else.
+  const otherModel = (l: BoundLine) => {
+    const own = new Set(modelWords(`${l.brand} ${l.model} ${l.label}`));
+    return [...askedWords].some((w) => VARIANT_WORDS.has(w) && !own.has(w));
+  };
   return lines.some(
     (l) =>
-      [l.model, l.label].map(compactText).some((x) => x.length >= 4 && (asked.includes(x) || x.includes(asked))) ||
+      ([l.model, l.label].map(compactText).some((x) => x.length >= 4 && (asked.includes(x) || x.includes(asked))) && !otherModel(l)) ||
       // The line's brand and model are all named, or every word named is the line's own (two words at least).
       within(modelWords(`${l.brand} ${l.model}`), askedWords) ||
       (askedWords.size >= 2 && within([...askedWords], new Set(modelWords(`${l.brand} ${l.model} ${l.label}`)))),

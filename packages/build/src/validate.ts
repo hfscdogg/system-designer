@@ -48,7 +48,8 @@ export function validateProposal(
 
   // BOM references and product provenance.
   const lines = p.sections.flatMap((s) => s.lines);
-  if (lines.length === 0) {
+  // Cable runs alone (an Ethernet drop) are a budget: labor allowances price it (Zack's Giessel job, 2026-10-26).
+  if (lines.length === 0 && !p.labor_allowances?.length) {
     block("empty_bom", "no products could be priced; Livewire standard products must be configured for this pattern's roles");
   }
   for (const l of lines) {

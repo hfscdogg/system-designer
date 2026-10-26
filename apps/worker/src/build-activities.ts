@@ -406,12 +406,13 @@ export function createBuildStage(deps: BuildDeps) {
         catalog_evidence: await store.catalogEvidence(runId),
       });
       await advance(runId, "READY_HELD", { pdfSha256: pdf.sha256, providerMessageId: posted.messageId });
-      // A revision replaces the budget it revises.
-      if (run.parent_run_id && (await store.getRun(run.parent_run_id)).state === "READY_HELD") {
+      // A revision replaces the budget it revises, or the build that stopped before making one.
+      if (run.parent_run_id && ["READY_HELD", "BLOCKED"].includes((await store.getRun(run.parent_run_id)).state)) {
         await store.transitionRun(run.parent_run_id, "SUPERSEDED", "system", { by: runId });
       }
       // A revision that prices exactly what the earlier budget did was not applied: say so, in the rep's words.
-      if (run.parent_run_id && (await pricedAs(runId)) === (await pricedAs(run.parent_run_id))) {
+      const parentPriced = run.parent_run_id && (await store.readArtifact(run.parent_run_id, "selection", "selection")) !== null;
+      if (parentPriced && (await pricedAs(runId)) === (await pricedAs(run.parent_run_id!))) {
         const asked = (await store.getIntake(run.intake_id)).text.trim();
         await deps.notify(
           run,

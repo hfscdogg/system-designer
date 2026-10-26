@@ -27,6 +27,8 @@ export interface Selection {
   pattern_version: string;
   /** Priced as an add-on to an existing system: only the named devices, no system setup hours. */
   add_on: boolean;
+  /** Cabling into a finished home (fished, drilled up from a basement), not open walls: worded so on the budget. */
+  retrofit?: boolean;
   lines: SelectionLine[];
   services: Array<{ category: string; record_id: string; quantity: 1 }>;
   /** Project labor estimate; null when the pattern has no labor model. */
@@ -50,6 +52,17 @@ const escape = (s: string) => s.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
 /** Count terms are short words ("door"), so they match whole words only: "doors" yes, "doorbell" no. */
 function hasWord(text: string, term: string): boolean {
   return new RegExp(`\\b${escape(term)}(s|es)?\\b`).test(text);
+}
+
+/**
+ * Cabling into a finished home: the request says it is fished or drilled through existing walls, not run
+ * before drywall (Zack's Giessel / Dunham job, 2026-10-26: "drill-up access to all first-floor walls").
+ */
+const RETROFIT = /\b(retro-?fit|retro|fish(ed|ing)?|drill(ed|ing)?(-| )?up|drill(ed|ing)? (up|down|through)|finished (walls?|ceilings?|rooms?|spaces?)|existing (walls?|home|house)|plumbing chase|chase)\b/;
+const NEW_CONSTRUCTION = /\b(new construction|new build|new home build|open walls|open studs|before drywall|rough[- ]?in)\b/;
+function retrofit(scope: ScopeDraftV1): boolean {
+  const texts = [scope.project_type ?? "", ...scope.requested_changes].map(fold);
+  return texts.some((t) => RETROFIT.test(t)) && !texts.some((t) => NEW_CONSTRUCTION.test(t));
 }
 
 /** The request's own words, one entry per change or stated count. System names and rooms are not requests ("Patio" is not outdoor Wi-Fi). */
@@ -335,6 +348,19 @@ function wantsNew(scope: ScopeDraftV1, role: RoleSpec, roles: RoleSpec[]): boole
   return outdoorAsked(scope, role) && sizeAsked(scope, role) !== undefined && !customerOwned(scope, role) && !deviceChanges(scope, role).some((c) => EXISTING_ITEM.test(c));
 }
 
+/** The other brand the request asks for this device in: a "Requested product" it lists that names the brand and the device. */
+function otherBrandAsked(scope: ScopeDraftV1, role: RoleSpec): string | undefined {
+  if (!role.other_brands) return undefined;
+  const devices = deviceTerms(role).concat((role.count_terms ?? []).map(fold));
+  for (const q of scope.unresolved_questions.map(fold)) {
+    const m = /^requested product:\s*(.+)$/.exec(q);
+    if (!m || !devices.some((d) => hasWord(m[1]!, d.replace(/s$/, "")) || hasWord(m[1]!, d))) continue;
+    const brand = role.other_brands.find((b) => hasWord(m[1]!, fold(b)));
+    if (brand) return brand;
+  }
+  return undefined;
+}
+
 /** How many existing items matching these terms the request moves ("move the existing TV and soundbar upstairs"). */
 function movedCount(scope: ScopeDraftV1, terms: string[]): number {
   return moveChanges(scope).filter((c) => terms.some((t) => c.includes(fold(t)))).length;
@@ -573,6 +599,12 @@ export function materialize(stated: ScopeDraftV1, pattern: PatternSpec, namedPro
       keptRoles.add(role.role);
       continue;
     }
+    const brand = product ? undefined : otherBrandAsked(scope, role);
+    if (brand) {
+      toVerify.push(`Requested product: ${brand} ${role.label.replace(/^\S+\s+/, "")} (not Livewire's standard brand for this; priced in the final proposal)`);
+      verifyOnly.add(role.role);
+      continue;
+    }
     if (!product && outdoorAsked(scope, role) && !variantFor(scope, role)) {
       // An outdoor device in a size with no approved outdoor model is listed to price, never priced as the indoor one.
       const size = sizeAsked(scope, role);
@@ -645,6 +677,14 @@ export function materialize(stated: ScopeDraftV1, pattern: PatternSpec, namedPro
   for (const role of included) {
     if (poweredOnly.has(role.role) && !lines.some((l) => role.powers!.roles.includes(l.role))) notAsked.add(role.role);
   }
+  // On any job, a switch the request doesn't name goes when the customer keeps what powers the cameras, or the cameras
+  // it would power are another brand's, listed to price (Zack's Jinny's job, 2026-10-26: a PoE switch beside the Luma NVR they keep).
+  for (const role of included) {
+    if (!role.powers || requested.has(role.role) || namesItself(scope, role, pattern.roles)) continue;
+    const kept = scope.retained_equipment.some((e) => role.powers!.unless_kept.some((t) => hasWord(fold(e), fold(t))));
+    const otherBrand = role.powers.roles.some((r) => verifyOnly.has(r)) && !lines.some((l) => role.powers!.roles.includes(l.role));
+    if (kept || otherBrand) notAsked.add(role.role);
+  }
   // Gear that serves another role (a switch for the eero network) is priced only with it, unless the request names it itself.
   for (let changed = true; changed; ) {
     changed = false;
@@ -666,8 +706,11 @@ export function materialize(stated: ScopeDraftV1, pattern: PatternSpec, namedPro
     const role = pattern.roles.find((r) => r.role === line.role);
     if (!role?.quantity_follows || statedQuantity(scope, role, pattern.roles) !== null || line.requested_model) continue;
     const units = lines.filter((l) => role.quantity_follows!.includes(l.role)).reduce((n, l) => n + l.quantity, 0);
-    if (units > 0) {
-      line.quantity = units;
+    // A mount per new TV, plus one per existing TV the request moves (Zack's Paulenich job, 2026-10-26: 2 TVs, 1 mount).
+    // With no new TV, the moved ones are all the mounts: one moved TV is one mount (Zack's Young job, 2026-10-26: 2).
+    const moved = role.per_moved ? movedNeedingMount(scope, role.per_moved) : 0;
+    if (units > 0 || moved > 0) {
+      line.quantity = units + moved;
       line.quantity_basis = "fixed";
       line.verify = null;
     }
@@ -802,6 +845,7 @@ export function materialize(stated: ScopeDraftV1, pattern: PatternSpec, namedPro
     pattern: pattern.pattern,
     pattern_version: pattern.version,
     add_on: addOn,
+    ...(retrofit(stated) ? { retrofit: true } : {}),
     lines,
     services,
     labor,

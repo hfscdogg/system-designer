@@ -128,6 +128,14 @@ Pricing decisions (Henry, 2026-10-15, from 1,348 accepted or presented Livewire 
 - Klipsch in-ceiling speakers are the Klipsch Professional PIC-650-T (70V) on commercial jobs and the CS-16C II at home.
 - Trench and conduit labor scale with a length the request gives: trench 0.083 h/ft, conduit 0.17 h/ft, and conduit laid in the request's trench runs the trench length per conduit at 0.05 h/ft, each at least the flat 6 h. Materials stay in Design & Delivery.
 
+Zack's round 7 (2026-10-26):
+- Cabling with no Wi-Fi ("structured cabling", "network cabling", "Cat6 home runs", a keystone patch panel) is structured wiring, priced by the prewire pattern, not the Wi-Fi pattern. A budget of cable-run allowances alone is a budget, not "no products could be priced".
+- A keystone patch panel the request names replaces the structured media enclosure, and wall plates it names are listed too. Livewire has no standard for either yet, so both are listed to price in the final proposal. A stated count of drops or ports sets the jacks. Cabling fished or drilled into a finished home is worded as a retrofit.
+- A build that stops after the scope is approved gets **Revise this request** and **New request**. The revision rebuilds from the approved scope and replaces the blocked run. Typing "revise …" works too.
+- Wall mounts follow the TVs priced, plus one per existing TV the request moves. A moved TV with no new TV is one mount, not two.
+- A ProRemote (Pro Control) or URC remote is the TVs' remote, not Control4. A requested product named with a model word the priced line doesn't have ("Sonos Amp Multi" beside a priced Sonos Amp) stays on the verify list.
+- Cameras the request asks for in another brand (`other_brands`: "Requested product: Luma cameras") are listed to price in that brand instead of priced as Alarm.com. On any job, the camera PoE switch goes when the customer keeps a switch, recorder or cameras, or when the cameras it would power are another brand's.
+
 Design & Delivery (the parts line) is `design_delivery.base_pct` of product + labor + services, costed at the parts margin. When a budget would fall under the margin floor, it rises in half-point steps up to `design_delivery.max_pct` until the budget clears the floor; past that, the budget waits for an admin's approval. Without `design_delivery`, parts are sized to the parts share of the subtotal. `tax` can also be `{ "mode": "rate", "rate_pct": <n>, "applies_to": "taxable_equipment" }`.
 
 The file ships in the image. Publish it with the admin job (see `docs/deploy.md`):

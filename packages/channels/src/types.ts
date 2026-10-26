@@ -78,8 +78,11 @@ export type View =
       lines: string[];
       approve: { receiptId: string; scopeHash: string } | null;
     }
-  /** Posted under a finished budget: send its design retainer, revise it, or start a new request. */
-  | { kind: "budget_actions"; runId: string; text: string }
+  /**
+   * Posted under a finished budget: send its design retainer, revise it, or start a new request.
+   * retainer false: under a build that stopped after approval, which can be revised but has no budget to collect on.
+   */
+  | { kind: "budget_actions"; runId: string; text: string; retainer?: boolean }
   /**
    * The receipt's next blocking question, with tap-to-answer choices when the
    * field has them. `lines` is the full receipt, shown verbatim (collapsed).

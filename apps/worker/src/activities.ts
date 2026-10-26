@@ -335,10 +335,17 @@ export function createActivities(deps: ActivityDeps): RunActivities {
         );
       }
       if (state === "BLOCKED") {
-        const text = duringBuild
-          ? `I stopped the build after ${run.state}: ${reason}. Nothing was sent to a customer or written to D-Tools. The run is kept for review.`
-          : `I stopped before writing a scope: ${reason}. Nothing was sent anywhere. Reply with a new message to try again.`;
-        await adapterFor(run).post(threadOf(run), { kind: "text", text }, `${runId}:blocked`);
+        if (duringBuild) {
+          // The approved scope can still be changed and rebuilt: a run blocked after approval is not a dead end
+          // with a Revise button only on a budget that was never made (Zack's Giessel job, 2026-10-26).
+          const text =
+            `I couldn't build this budget: ${reason}. Nothing was sent to a customer or written to D-Tools. ` +
+            "Tap Revise this request and say what to change in plain words, and I'll rebuild it from the approved scope, or tap New request.";
+          await adapterFor(run).post(threadOf(run), { kind: "budget_actions", runId, text, retainer: false }, `${runId}:blocked`);
+        } else {
+          const text = `I stopped before writing a scope: ${reason}. Nothing was sent anywhere. Reply with a new message to try again.`;
+          await adapterFor(run).post(threadOf(run), { kind: "text", text }, `${runId}:blocked`);
+        }
       }
     },
 

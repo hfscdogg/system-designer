@@ -433,10 +433,11 @@ export class Store {
     return res.rows[0] ?? null;
   }
 
-  /** The most recent finished budget in this thread, if it is younger than `maxAgeDays`. */
+  /** The most recent finished budget in this thread (or build blocked after approval), if it is younger than `maxAgeDays`. */
   async findLatestFinishedRun(t: ThreadRef, maxAgeDays: number): Promise<RunRecord | null> {
     const res = await this.db.query<RunRecord>(
-      `SELECT * FROM runs WHERE platform = $1 AND space_id = $2 AND thread_id = $3 AND state = 'READY_HELD'
+      `SELECT * FROM runs WHERE platform = $1 AND space_id = $2 AND thread_id = $3
+         AND (state = 'READY_HELD' OR (state = 'BLOCKED' AND EXISTS (SELECT 1 FROM approvals a WHERE a.run_id = runs.id)))
          AND updated_at > now() - make_interval(days => $4)
        ORDER BY updated_at DESC LIMIT 1`,
       [t.platform, t.spaceId, t.threadId, maxAgeDays],
