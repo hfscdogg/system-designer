@@ -130,11 +130,18 @@ Pricing decisions (Henry, 2026-10-15, from 1,348 accepted or presented Livewire 
 
 Zack's round 7 (2026-10-26):
 - Cabling with no Wi-Fi ("structured cabling", "network cabling", "Cat6 home runs", a keystone patch panel) is structured wiring, priced by the prewire pattern, not the Wi-Fi pattern. A budget of cable-run allowances alone is a budget, not "no products could be priced".
-- A keystone patch panel the request names replaces the structured media enclosure, and wall plates it names are listed too. Livewire has no standard for either yet, so both are listed to price in the final proposal. A stated count of drops or ports sets the jacks. Cabling fished or drilled into a finished home is worded as a retrofit.
+- A keystone patch panel the request names replaces the structured media enclosure, and wall plates it names are priced too (see Henry's decisions, 2026-10-27). A stated count of drops or ports sets the jacks. Cabling fished or drilled into a finished home is worded as a retrofit.
 - A build that stops after the scope is approved gets **Revise this request** and **New request**. The revision rebuilds from the approved scope and replaces the blocked run. Typing "revise …" works too.
 - Wall mounts follow the TVs priced, plus one per existing TV the request moves. A moved TV with no new TV is one mount, not two.
-- A ProRemote (Pro Control) or URC remote is the TVs' remote, not Control4. A requested product named with a model word the priced line doesn't have ("Sonos Amp Multi" beside a priced Sonos Amp) stays on the verify list.
+- A ProRemote (Pro Control) or URC remote is the TVs' remote, not Control4. A requested product named with a model word the priced line doesn't have stays on the verify list (the Sonos Amp Multi is now priced: see 2026-10-27).
 - Cameras the request asks for in another brand (`other_brands`: "Requested product: Luma cameras") are listed to price in that brand instead of priced as Alarm.com. On any job, the camera PoE switch goes when the customer keeps a switch, recorder or cameras, or when the cameras it would power are another brand's.
+
+Henry's decisions (2026-10-27), from 2,035 accepted or presented D-Tools quotes since 2024:
+- A named patch panel is priced as the C2G 03857 12-port keystone panel, one per 12 drops (`follows_per`). A count of "patch panel ports" is ports. Named keystone plates are Wirepath PLATE-1-WH, one per drop, or the 2- or 4-port plate the request names (`port_variants`), one per 2 or 4 drops, verified per location. A retrofit drop takes a keystone jack at each end and 2 hours (`retrofit_units`).
+- Troubleshooting existing cameras is a 2-hour allowance (`camera_troubleshooting`).
+- The soundbar and its mount follow the words the request uses (`word_variants`): a Sonos Beam gets the Beam and the Sanus WSSBM1-B2, an Arc or Arc Ultra the WSSATM1-B2, and a mount for the customer's Playbar is listed to price.
+- Sonos Amps follow the speakers at one per 4 and at least one per room with speakers (`drives.per_room`). A named Sonos Amp Multi is priced with its 2U rack mount, in place of the Sonos Amps unless the request also names one.
+- A TV with no model named is the Sony BRAVIA 7 (K65XR70, K55XR70, K75XR70). A BRAVIA 8 or an OLED the request names is the BRAVIA 8. Outdoor TVs stay the Samsung Terrace; there is no 55-inch LST9, so 55 inches is the partial-sun LST7.
 
 Design & Delivery (the parts line) is `design_delivery.base_pct` of product + labor + services, costed at the parts margin. When a budget would fall under the margin floor, it rises in half-point steps up to `design_delivery.max_pct` until the budget clears the floor; past that, the budget waits for an admin's approval. Without `design_delivery`, parts are sized to the parts share of the subtotal. `tax` can also be `{ "mode": "rate", "rate_pct": <n>, "applies_to": "taxable_equipment" }`.
 

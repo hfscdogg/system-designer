@@ -209,7 +209,9 @@ export function compile(raw: unknown, catalog: Map<string, AdmittedProduct>, pat
     const variant =
       role.variants?.find((v) => v.product_id === line.record_id) ??
       role.market_variants?.find((v) => v.product_id === line.record_id) ??
-      role.larger_tv_variants?.find((v) => v.product_id === line.record_id);
+      role.larger_tv_variants?.find((v) => v.product_id === line.record_id) ??
+      role.port_variants?.find((v) => v.product_id === line.record_id) ??
+      role.word_variants?.find((v) => v.product_id === line.record_id);
     const product = catalog.get(line.record_id);
     // A product the request named by model replaces the standard only when the admitted record carries that model.
     const key = (s: string | null | undefined) => (s ?? "").toLowerCase().replace(/[^a-z0-9]/g, "");

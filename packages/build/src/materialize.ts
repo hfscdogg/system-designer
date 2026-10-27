@@ -187,6 +187,31 @@ const deviceOf = (item: string) =>
     .replace(/\s+/g, " ")
     .trim();
 
+/** Rooms a speaker request can name ("in-ceiling speakers in the kitchen and great room"). Floors and sides are not rooms. */
+const ROOMS = [
+  "kitchen", "living room", "family room", "great room", "dining room", "dining", "den", "office", "study", "library", "media room", "theater", "theatre",
+  "bonus room", "game room", "rec room", "playroom", "gym", "bar", "sunroom", "mud room", "laundry", "garage", "basement", "foyer", "entry",
+  "primary bedroom", "master bedroom", "primary bath", "master bath", "bedroom", "bathroom", "bath", "guest room", "nursery", "loft",
+  "patio", "porch", "deck", "pool", "backyard", "yard", "lanai", "pergola", "terrace", "balcony",
+];
+
+/**
+ * How many rooms the request asks the driven speakers for: each room named in a change or stated count that names them,
+ * once ("master bedroom" is not also "bedroom").
+ */
+function speakerRooms(scope: ScopeDraftV1, driven: RoleSpec[]): number {
+  const names = (t: string) => driven.some((r) => deviceTerms(r).some((d) => hasWord(t, d)) || (r.count_terms ?? []).some((c) => hasAllWords(t, fold(c))));
+  const rooms = new Set<string>();
+  for (let t of requestTexts(scope).filter(names)) {
+    for (const room of [...ROOMS].sort((a, b) => b.length - a.length)) {
+      if (!hasWord(t, room)) continue;
+      rooms.add(room);
+      t = t.replace(new RegExp(`\\b${escape(room)}(s|es)?\\b`, "g"), " ");
+    }
+  }
+  return rooms.size;
+}
+
 /** Words that say what kind of thing, not which one: a total of "4 exterior cameras" counts doorbell and wired cameras alike. */
 const KIND_WORDS = new Set(["exterior", "interior", "outdoor", "indoor", "outside", "inside", "wired", "wireless", "hardwired", "new", "total", "additional", "more", "smart", "security"]);
 const itemWords = (item: string) =>
@@ -241,6 +266,8 @@ function statedItem(scope: ScopeDraftV1, role: RoleSpec, roles: RoleSpec[]): { i
 function statedItems(scope: ScopeDraftV1, role: RoleSpec, roles: RoleSpec[]): number | null {
   const q = statedItem(scope, role, roles);
   if (!q) return null;
+  // "8 patch panel ports" is one 12-port panel, not eight panels ("8-port patch panel" is a panel).
+  if (role.follows_per && /\bports\b/.test(fold(q.item))) return Math.ceil(q.quantity / role.follows_per);
   if (!role.units_per_item || /\bpairs?\b/.test(fold(q.item))) return q.quantity;
   return Math.ceil(q.quantity / role.units_per_item);
 }
@@ -279,12 +306,17 @@ function named(scope: ScopeDraftV1, role: RoleSpec, roles: RoleSpec[]): boolean 
  */
 function namedSpecifically(scope: ScopeDraftV1, role: RoleSpec, roles: RoleSpec[]): boolean {
   let changes = fold(scope.requested_changes.join(" | "));
-  // Another alternative's words, and the words right after them, describe that alternative: an "articulating TV mount" is not the tilt "TV mount".
-  for (const r of roles.filter((x) => x !== role && role.alternative_group && x.alternative_group === role.alternative_group)) {
-    for (const t of [r.label, ...(r.mentions ?? []), ...(r.count_terms ?? [])].map(fold)) {
-      changes = changes.replace(new RegExp(`\\b${escape(t)}(s|es)?\\b(\\s+[\\w-]+){0,2}`, "g"), " ");
-    }
+  const others = roles.filter((x) => x !== role && role.alternative_group && x.alternative_group === role.alternative_group);
+  const termsOf = (r: RoleSpec) => [r.label, ...(r.mentions ?? []), ...(r.count_terms ?? [])].map(fold);
+  // This role's own phrases that contain another alternative's ("Sonos Amp Multi" holds "Sonos Amp") are kept whole while those are taken out.
+  const otherTerms = others.flatMap(termsOf);
+  const kept: string[] = [];
+  for (const o of termsOf(role).filter((o) => otherTerms.some((t) => t !== o && o.includes(t))).sort((a, b) => b.length - a.length)) {
+    changes = changes.replace(new RegExp(`\\b${escape(o)}(s|es)?\\b`, "g"), (m) => ` \u0000${kept.push(m) - 1}\u0000 `);
   }
+  // Another alternative's words, and the words right after them, describe that alternative: an "articulating TV mount" is not the tilt "TV mount".
+  for (const t of otherTerms) changes = changes.replace(new RegExp(`\\b${escape(t)}(s|es)?\\b(\\s+[\\w-]+){0,2}`, "g"), " ");
+  changes = changes.replace(/\u0000(\d+)\u0000/g, (_, i: string) => kept[Number(i)]!);
   return (
     [role.label, ...(role.mentions ?? [])].some((t) => changes.includes(fold(t))) ||
     (role.count_terms ?? []).some((t) => hasWord(changes, fold(t))) ||
@@ -426,6 +458,34 @@ function variantFor(scope: ScopeDraftV1, role: RoleSpec) {
   return role.variants?.find((v) => !!v.outdoor === outdoor && v.sizes.some((n) => sizes.includes(n)));
 }
 
+/**
+ * The approved record the request's words choose for this device ("Sonos Beam" → the Beam and its Sanus WSSBM1-B2),
+ * first match in pattern order. An outdoor device takes its outdoor size variant instead.
+ */
+function wordVariant(scope: ScopeDraftV1, role: RoleSpec) {
+  if (!role.word_variants || outdoorAsked(scope, role)) return undefined;
+  const sizes = otherChanges(scope).flatMap((c) => [...c.matchAll(SIZE)].map((m) => Number(m[1])));
+  const sized = new Set(role.word_variants.flatMap((v) => v.sizes ?? []));
+  return role.word_variants.find((v) => {
+    const texts = [...requestTexts(scope), ...(v.with_kept ? scope.retained_equipment.map(fold) : [])];
+    const said = texts.some((t) => v.words.some((w) => hasWord(t, fold(w))) && (!v.require || v.require.some((r) => hasWord(t, fold(r)))));
+    if (!said) return false;
+    if (v.sizes) return v.sizes.some((n) => sizes.includes(n));
+    return !v.default_size || !sizes.some((n) => sized.has(n));
+  });
+}
+
+const PORT_WORDS: Record<string, number> = { one: 1, single: 1, two: 2, dual: 2, double: 2, three: 3, triple: 3, four: 4, quad: 4 };
+const PORTS = /\b(\d|one|single|two|dual|double|three|triple|four|quad)[- ]?(?:port|gang)\b/g;
+
+/** The record for the port count the request gives this device ("a 2-port Cat6 keystone plate"): the largest one named that has a record. */
+function portVariant(scope: ScopeDraftV1, role: RoleSpec) {
+  if (!role.port_variants) return undefined;
+  const texts = requestTexts(scope).filter((t) => (role.mentions ?? []).some((m) => hasWord(t, fold(m))));
+  const named = texts.flatMap((t) => [...t.matchAll(PORTS)].map((m) => PORT_WORDS[m[1]!] ?? Number(m[1])));
+  return [...role.port_variants].sort((a, b) => b.ports - a.ports).find((v) => named.includes(v.ports));
+}
+
 /** The size the request names for this device, if any. */
 function sizeAsked(scope: ScopeDraftV1, role: RoleSpec): number | undefined {
   return deviceChanges(scope, role).flatMap((c) => [...c.matchAll(SIZE)].map((m) => Number(m[1])))[0];
@@ -511,6 +571,7 @@ function statedForProduct(scope: ScopeDraftV1, n: NamedProduct | undefined): num
 
 export function materialize(stated: ScopeDraftV1, pattern: PatternSpec, namedProducts: NamedProduct[] = []): Selection {
   const original = withoutTotals(stated);
+  const retro = retrofit(stated);
   const lines: SelectionLine[] = [];
   const allowances: Selection["allowances"] = [];
   const unresolved: Selection["unresolved"] = [];
@@ -613,6 +674,13 @@ export function materialize(stated: ScopeDraftV1, pattern: PatternSpec, namedPro
       verifyOnly.add(role.role);
       continue;
     }
+    const word = product ? undefined : wordVariant(scope, role);
+    if (word && !word.product_id) {
+      // Words that name a device Livewire has no standard for (a mount for the customer's Playbar): listed to price, not priced as the standard.
+      toVerify.push(`Requested product: ${word.label} (no Livewire standard; priced in the final proposal)`);
+      verifyOnly.add(role.role);
+      continue;
+    }
     if (!role.product_id && !product && role.unpriced === "verify") {
       // Asked for, but Livewire has no standard to price: listed to verify instead of silently becoming something else.
       const said = scope.unresolved_questions.some((q) => /^requested product:/i.test(q) && (role.mentions ?? []).some((t) => hasWord(fold(q), fold(t))));
@@ -654,12 +722,22 @@ export function materialize(stated: ScopeDraftV1, pattern: PatternSpec, namedPro
     }
     // "The amplifier" is the rep's own count of one, like a stated count: nothing left to verify.
     const asOne = minimum && role.quantity.qty > 1 && namedAsOne(scope, role);
+    // A fished drop is terminated at both ends: two jacks per drop, each with its install time (2 h a retrofit drop).
+    const perUnit = retro && role.retrofit_units && !product ? role.retrofit_units.units : 1;
+    const baseVerify = asOne ? null : moved && verify ? `${verify}; includes ${moved} for moved existing equipment (confirm wall and power in the new room)` : verify;
     lines.push({
       role: role.role,
-      record_id: product?.record_id ?? variantFor(scope, role)?.product_id ?? largerTvVariant(original, role, pattern)?.product_id ?? marketVariant(scope, role)?.product_id ?? role.product_id!,
-      quantity: (stated ?? (asOne ? 1 : role.quantity.qty)) + moved,
+      record_id:
+        product?.record_id ??
+        word?.product_id ??
+        portVariant(scope, role)?.product_id ??
+        variantFor(scope, role)?.product_id ??
+        largerTvVariant(original, role, pattern)?.product_id ??
+        marketVariant(scope, role)?.product_id ??
+        role.product_id!,
+      quantity: ((stated ?? (asOne ? 1 : role.quantity.qty)) + moved) * perUnit,
       quantity_basis: minimum && !asOne ? "minimum_to_verify" : "fixed",
-      verify: asOne ? null : moved && verify ? `${verify}; includes ${moved} for moved existing equipment (confirm wall and power in the new room)` : verify,
+      verify: perUnit > 1 ? [baseVerify, role.retrofit_units!.verify].filter(Boolean).join("; ") : baseVerify,
       // A single-room scope places devices in that room; otherwise use the pattern's location.
       location,
       precedent: role.precedent,
@@ -705,14 +783,20 @@ export function materialize(stated: ScopeDraftV1, pattern: PatternSpec, namedPro
   for (const line of lines) {
     const role = pattern.roles.find((r) => r.role === line.role);
     if (!role?.quantity_follows || statedQuantity(scope, role, pattern.roles) !== null || line.requested_model) continue;
-    const units = lines.filter((l) => role.quantity_follows!.includes(l.role)).reduce((n, l) => n + l.quantity, 0);
+    const followed = lines.filter((l) => role.quantity_follows!.includes(l.role));
+    // Units of what it follows, not items: a retrofit drop's two jacks are one drop.
+    const units = followed.reduce((n, l) => n + l.quantity / (retro ? (pattern.roles.find((r) => r.role === l.role)?.retrofit_units?.units ?? 1) : 1), 0);
+    // A 12-port panel per 12 drops; a 2-port plate per 2.
+    const per = role.port_variants?.find((v) => v.product_id === line.record_id)?.ports ?? role.follows_per ?? 1;
     // A mount per new TV, plus one per existing TV the request moves (Zack's Paulenich job, 2026-10-26: 2 TVs, 1 mount).
     // With no new TV, the moved ones are all the mounts: one moved TV is one mount (Zack's Young job, 2026-10-26: 2).
     const moved = role.per_moved ? movedNeedingMount(scope, role.per_moved) : 0;
     if (units > 0 || moved > 0) {
-      line.quantity = units + moved;
-      line.quantity_basis = "fixed";
-      line.verify = null;
+      line.quantity = Math.ceil(Math.round((units / per) * 1000) / 1000) + moved;
+      // Plates go one per outlet location, which the drops don't say: always a minimum to verify.
+      const toCheck = !!role.port_variants && role.quantity.kind === "minimum";
+      line.quantity_basis = toCheck ? "minimum_to_verify" : "fixed";
+      line.verify = toCheck && role.quantity.kind === "minimum" ? role.quantity.verify : null;
     }
   }
 
@@ -732,11 +816,14 @@ export function materialize(stated: ScopeDraftV1, pattern: PatternSpec, namedPro
     };
     const speakers = speakerLines.reduce((n, l) => n + l.quantity * perItem(l), 0) + existing;
     if (!speakers) continue;
-    const per = marketVariant(scope, role)?.speakers_per_unit ?? role.drives.speakers_per_unit;
+    const market = marketVariant(scope, role);
+    const per = market?.speakers_per_unit ?? role.drives.speakers_per_unit;
+    // One per room as well, on the standard (a commercial 70V amplifier runs every room on one line).
+    const rooms = role.drives.per_room && !market ? speakerRooms(scope, driven) : 0;
     const toCheck = speakerLines.some((l) => l.quantity_basis === "minimum_to_verify");
-    line.quantity = Math.ceil(speakers / per);
+    line.quantity = Math.max(Math.ceil(speakers / per), rooms);
     line.quantity_basis = toCheck ? "minimum_to_verify" : "fixed";
-    line.verify = toCheck ? `one amplifier per ${per} speakers; ${speakers} speakers so far` : null;
+    line.verify = toCheck ? `one amplifier per ${per} speakers${rooms > 1 ? ` and at least one per room (${rooms} rooms)` : ""}; ${speakers} speakers so far` : null;
   }
 
   // One product priced by two combined patterns (the network's PoE switch and the cameras') is one line, at

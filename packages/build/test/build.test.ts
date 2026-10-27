@@ -89,11 +89,15 @@ describe("patterns", () => {
       expect(p.roles.every((r) => r.product_id !== null || r.unpriced === "verify"), p.pattern).toBe(true);
       expect(p.services.every((s) => s.product_id === null), p.pattern).toBe(true);
       expect(p.labor?.labor_type, p.pattern).toBe("07LABOR1MAN");
-      // Each priced role, its size, market, brand and larger-TV variants and the parts record.
-      const records = p.roles.filter((r) => r.product_id).length + p.roles.reduce((n, r) => n + (r.variants?.length ?? 0) + (r.market_variants?.length ?? 0) + (r.brand_variants?.length ?? 0) + (r.larger_tv_variants?.length ?? 0), 0) + 1;
+      // Each priced role, its size, market, brand, larger-TV, port and word variants (those that aren't the role's own standard) and the parts record.
+      const words = (r: (typeof p.roles)[number]) => (r.word_variants ?? []).filter((v) => v.product_id && v.product_id !== r.product_id).length;
+      const records =
+        p.roles.filter((r) => r.product_id).length +
+        p.roles.reduce((n, r) => n + (r.variants?.length ?? 0) + (r.market_variants?.length ?? 0) + (r.brand_variants?.length ?? 0) + (r.larger_tv_variants?.length ?? 0) + (r.port_variants?.length ?? 0) + words(r), 0) +
+        1;
       expect(patternRecordIds(p), p.pattern).toHaveLength(records);
       // The allowance templates ride along with every pattern.
-      expect(p.allowances?.map((a) => a.key), p.pattern).toEqual(["outdoor_outlet", "electrical_outlet", "conduit", "trenching", "wiring_run"]);
+      expect(p.allowances?.map((a) => a.key), p.pattern).toEqual(["outdoor_outlet", "electrical_outlet", "conduit", "trenching", "wiring_run", "camera_troubleshooting"]);
     }
     const network = patterns.find((p) => p.pattern === "home_network")!;
     expect(network.applies_when_any).toEqual(["networking"]);
@@ -367,7 +371,7 @@ describe("patterns", () => {
       existing_detectors: "not_provided",
     }).scope;
     const sel = materialize(scope, tv);
-    expect(sel.to_verify).toEqual(["Sony BRAVIA 8 65\" OLED TV (retained: 65-inch Sony TV): existing equipment must be field-tested before it can be reused"]);
+    expect(sel.to_verify).toEqual(["Sony BRAVIA 7 65\" TV (retained: 65-inch Sony TV): existing equipment must be field-tested before it can be reused"]);
     expect(sel.unresolved).toEqual([]);
     expect(sel.lines.map((l) => l.role)).toEqual(["soundbar", "soundbar_mount"]);
   });
@@ -401,7 +405,8 @@ describe("patterns", () => {
     // "The amplifier" is one amp, still verified on site; without a count the pattern's minimum stands.
     expect(amps({ requested_changes: ["Replace the amplifier for the existing ceiling speakers"] })).toBe(1);
     expect(amps({ requested_changes: ["Install an amp in the rack"] })).toBe(1);
-    expect(amps({ requested_changes: ["Sonos in the kitchen, family room and back patio"] })).toBe(2);
+    // Three rooms of speakers are three amps, at least one per room (Henry, 2026-10-27).
+    expect(amps({ requested_changes: ["Sonos in the kitchen, family room and back patio"] })).toBe(3);
     // Several, or a stated count, are never cut to one.
     expect(amps({ requested_changes: ["Replace the amps"] })).toBe(2);
     expect(amps({ requested_changes: ["Install 3 amplifiers"] })).toBe(2);
@@ -1316,7 +1321,7 @@ describe("Zack's round 3 (2026-10-13)", () => {
       expect(proposal.remaining_verification, name).toEqual(
         expect.arrayContaining([
           "Sanus tilt TV wall mount: one mount per wall-mounted TV",
-          expect.stringMatching(/^Sony BRAVIA 8 65" OLED TV \(retained: .*65-inch Sony TV\): existing equipment must be field-tested before it can be reused$/),
+          expect.stringMatching(/^Sony BRAVIA 7 65" TV \(retained: .*65-inch Sony TV\): existing equipment must be field-tested before it can be reused$/),
           "Requested product: Leon frame",
           "Requested product: Sony ultra slim mount",
         ]),
@@ -1457,9 +1462,9 @@ describe("Zack's round 4 (2026-10-15)", () => {
     // The customer's outdoor TV is theirs, as before.
     const own = await job({ functional_systems: ["outdoor TV"], requested_changes: ["Mount the customer's 55-inch outdoor TV on the porch"] });
     expect(own.selection.lines.find((l) => l.role === "television")).toBeUndefined();
-    // An indoor 75" TV still prices the 77" Sony.
+    // An indoor 75" TV prices the 75" BRAVIA 7 (Henry, 2026-10-27).
     const inside = await job({ functional_systems: ["TV"], requested_changes: ['Provide a new 75" TV for the family room'], requested_quantities: [{ item: '75" TV', quantity: 1 }] });
-    expect(inside.selection.lines.find((l) => l.role === "television")!.record_id).toBe("b89ed236-fff6-4985-a526-31d12b9c796f");
+    expect(inside.selection.lines.find((l) => l.role === "television")!.record_id).toBe("37d42d83-6eb6-47d2-90a3-ccbd95110fd5");
   });
 
   it("Biscuit Belly: Klipsch in-ceiling speakers price Klipsch, 70V on a commercial job, each at the count stated", async () => {
@@ -1920,17 +1925,18 @@ describe("Zack's round 7 (2026-10-26)", () => {
 
   it("Dunham (the Giessel request): a keystone patch panel replaces the enclosure, its 8 ports are not 8 enclosures, the jacks take the stated count", async () => {
     // run_df1c3f43 priced WP-SW-PL-ENCL-42-1PK × 8: the enclosure's "panel" took the patch panel's count.
+    // Henry, 2026-10-27: the panel is the C2G 12-port keystone panel, the plates Wirepath keystone plates, and a retrofit
+    // drop takes a jack at each end. Giessel names 2-port plates, so they are PLATE-2-WH, one per 2 drops.
     for (const requested_quantities of [[], [{ item: "patch panel ports", quantity: 8 }], [{ item: "8-port keystone patch panel", quantity: 1 }]]) {
       const { pattern, selection } = await job({ ...giessel, functional_systems: ["structured cabling"], requested_quantities });
       expect(pattern.pattern).toBe("prewire");
-      expect(quantities(selection), JSON.stringify(requested_quantities)).toEqual({ data_drop: 6, cat6_cable: 450 });
-      expect(selection.to_verify).toEqual([
-        "Requested product: Keystone patch panel (no Livewire standard; priced in the final proposal)",
-        "Requested product: Keystone wall plate (no Livewire standard; priced in the final proposal)",
-      ]);
+      expect(quantities(selection), JSON.stringify(requested_quantities)).toEqual({ patch_panel: 1, data_drop: 12, wall_plate: 3, cat6_cable: 450 });
+      expect(selection.lines.find((l) => l.role === "patch_panel")!.record_id).toBe("1d118218-96f0-421e-a29e-b686b6b2f069");
+      expect(selection.lines.find((l) => l.role === "wall_plate")!.record_id).toBe("90b2d65c-6d4f-4dc0-bc7e-752688f5197b");
+      expect(selection.to_verify).toEqual([]);
     }
     const counted = await job({ ...giessel, functional_systems: ["structured cabling"], requested_quantities: [{ item: "Cat6 data ports", quantity: 7 }] });
-    expect(quantities(counted.selection)).toMatchObject({ data_drop: 7 });
+    expect(quantities(counted.selection)).toMatchObject({ data_drop: 14, patch_panel: 1 });
     // With no patch panel named, new construction still gets the enclosure.
     const prewire = await job({ functional_systems: ["prewire"], requested_changes: ["Prewire the new construction home for data"] });
     expect(quantities(prewire.selection)).toMatchObject({ media_enclosure: 1 });
@@ -1979,14 +1985,17 @@ describe("Zack's round 7 (2026-10-26)", () => {
     expect(normalizeFunctionalSystems(["Control4 Halo remote"])).toEqual(["home_automation"]);
   });
 
-  it("Paulenich: a Sonos Amp Multi the rep asks for stays on the verify list beside the Sonos Amp the budget prices", async () => {
-    const { proposal } = await built({
+  it("Paulenich: a Sonos Amp Multi the rep asks for is priced, with its rack mount, beside the Sonos Amp", async () => {
+    // Henry, 2026-10-27: the Amp Multi is in the catalog (on 3 Livewire quotes), so it is priced when named.
+    const { selection, proposal } = await built({
       client: "Randy Paulenich",
       functional_systems: ["Sonos whole-home audio"],
       requested_changes: ["Sonos Amp for the downstairs bedroom in-ceiling speakers", "2 Sonos Amp Multi for the independently controlled music zones"],
       unresolved_questions: ["Requested product: Sonos Amp Multi (4 zones)", "Requested product: Sonos Amp"],
     });
-    expect(proposal.remaining_verification).toContain("Requested product: Sonos Amp Multi (4 zones)");
+    expect(selection.lines.map((l) => l.role)).toEqual(expect.arrayContaining(["zone_amplifier", "multi_zone_amplifier", "amp_multi_rack_mount"]));
+    expect(selection.lines.find((l) => l.role === "multi_zone_amplifier")!.record_id).toBe("4cd69589-af0d-4ac0-8694-f0c9f673c82f");
+    expect(proposal.remaining_verification).not.toContain("Requested product: Sonos Amp Multi (4 zones)");
     expect(proposal.remaining_verification).not.toContain("Requested product: Sonos Amp");
   });
 
@@ -2007,5 +2016,125 @@ describe("Zack's round 7 (2026-10-26)", () => {
     // Alarm.com cameras the rep asks for still price, with their switch.
     const adc = await job({ ...jinny, existing_equipment: none.existing_equipment, requested_changes: ["Install 2 turret cameras"], requested_quantities: [], unresolved_questions: [] });
     expect(quantities(adc.selection)).toMatchObject({ outdoor_camera: 2, camera_poe_switch: 1 });
+  });
+});
+
+describe("Henry's decisions (2026-10-27): D-Tools quote history for cabling, cameras, soundbars, outdoor TVs, amps and the TV", () => {
+  const none = { existing_detectors: "not_provided" as const, project_type: null, existing_equipment: { status: "none" as const, retained: [], removed_or_replaced: [] } };
+  const quantities = (sel: ReturnType<typeof materialize>) => Object.fromEntries(sel.lines.map((l) => [l.role, l.quantity]));
+  const record = (sel: ReturnType<typeof materialize>, role: string) => sel.lines.find((l) => l.role === role)?.record_id;
+  async function job(o: object) {
+    const patterns = await loadPatterns();
+    const { scope } = approvedScope({ ...none, ...o });
+    const pattern = selectPattern(scope.functional_systems, patterns)!;
+    return { pattern, selection: materialize(scope, pattern) };
+  }
+
+  it("patterns carry the new version", async () => {
+    const versions = Object.fromEntries((await loadPatterns()).map((p) => [p.pattern, p.version]));
+    expect(versions).toMatchObject({ prewire: "2026-10-27.1", tv_media: "2026-10-27.1", whole_home_audio: "2026-10-27.1" });
+  });
+
+  it("Q1: a retrofit drop is two keystone jacks and 2 hours; a new-construction drop one jack and 1 hour", async () => {
+    const drops = (change: string, n: number, extra: string[] = []) =>
+      job({ functional_systems: ["structured cabling"], requested_changes: [change, ...extra], requested_quantities: [{ item: "Cat6 drops", quantity: n }] });
+    const retro = await drops("Fish Cat6 drops through the finished walls to a patch panel in the basement", 4);
+    expect(retro.selection.retrofit).toBe(true);
+    expect(quantities(retro.selection)).toMatchObject({ data_drop: 8, patch_panel: 1 });
+    expect(retro.selection.lines.find((l) => l.role === "data_drop")!.verify).toBe("2 keystone jacks per retrofit drop: one at the wall plate, one at the patch panel or enclosure");
+    // 1 h setup + 8 jacks at 1 h + the panel's 1 h: 2 hours a drop.
+    expect(laborHoursFor(retro.pattern, retro.selection.lines)).toBe(10);
+    const open = await drops("Prewire the new construction home before drywall, with a patch panel", 4);
+    expect(open.selection.retrofit).toBeUndefined();
+    expect(quantities(open.selection)).toMatchObject({ data_drop: 4, patch_panel: 1 });
+    // A 12-port panel per 12 drops: 14 retrofit drops (28 jacks) are two panels.
+    expect(quantities((await drops("Fish Cat6 drops through the finished walls to a patch panel", 14)).selection)).toMatchObject({ data_drop: 28, patch_panel: 2 });
+  });
+
+  it("Q1: keystone plates are Wirepath PLATE-1-WH, one per drop, or the 2- or 4-port plate the request names, always verified per location", async () => {
+    const plates = async (change: string) =>
+      (await job({ functional_systems: ["prewire"], requested_changes: ["Prewire the new construction home before drywall", change], requested_quantities: [{ item: "data drops", quantity: 8 }] })).selection;
+    const one = await plates("Keystone wall plates at each outlet");
+    expect([record(one, "wall_plate"), quantities(one).wall_plate]).toEqual(["8a3ac5a3-aa6f-4e6e-a668-f0a2242804c4", 8]);
+    expect(one.lines.find((l) => l.role === "wall_plate")).toMatchObject({ quantity_basis: "minimum_to_verify", verify: "one plate per outlet location, sized to its ports" });
+    const four = await plates("4-port keystone wall plates in the office and den");
+    expect([record(four, "wall_plate"), quantities(four).wall_plate]).toEqual(["9f38f625-4696-4a83-a30a-00369deb72a2", 2]);
+    // No plate named, none priced.
+    const bare = (await job({ functional_systems: ["prewire"], requested_changes: ["Prewire the new construction home before drywall"] })).selection;
+    expect(quantities(bare).wall_plate).toBeUndefined();
+  });
+
+  it("Q2: troubleshooting the customer's cameras is a 2-hour allowance, with no new cameras", async () => {
+    const { selection } = await job({
+      functional_systems: ["security cameras"],
+      requested_changes: ["Troubleshoot the offline cameras on the existing DVR"],
+      existing_equipment: { status: "described", retained: ["4 existing cameras", "DVR"], removed_or_replaced: [] },
+    });
+    expect(selection.lines).toEqual([]);
+    expect(selection.labor_allowances.map((a) => [a.key, a.hours])).toEqual([["camera_troubleshooting", 2]]);
+    // Replacing a camera is a new camera, not a service call.
+    const replace = await job({ functional_systems: ["security cameras"], requested_changes: ["Replace the offline driveway camera with a new turret camera"] });
+    expect(replace.selection.labor_allowances.map((a) => a.key)).not.toContain("camera_troubleshooting");
+  });
+
+  it("Q3: a Sonos Beam is priced with the Sanus WSSBM1-B2; the Arc and Arc Ultra keep the WSSATM1-B2; a Playbar's mount is listed to price", async () => {
+    const BEAM = "b8dc2e4b-a25b-4508-bf5b-e7f19959e73d";
+    const WSSBM1 = "7fb73570-69b6-4b86-b9b6-613bc02370ff";
+    const WSSATM1 = "5e66b358-6e5b-44b9-85ef-8945af55280a";
+    const beam = (await job({ functional_systems: ["TV", "soundbar"], requested_changes: ["Mount a new 65-inch TV with a Sonos Beam soundbar"] })).selection;
+    expect([record(beam, "soundbar"), record(beam, "soundbar_mount")]).toEqual([BEAM, WSSBM1]);
+    const arc = (await job({ functional_systems: ["TV", "soundbar"], requested_changes: ["Mount a new 65-inch TV with a Sonos Arc Ultra soundbar"] })).selection;
+    expect([record(arc, "soundbar"), record(arc, "soundbar_mount")]).toEqual(["5eb671b0-b05d-4671-940a-0d77f3bbeac7", WSSATM1]);
+    // The Arc it replaces the Beam with sets the mount.
+    const swap = (await job({ functional_systems: ["soundbar"], requested_changes: ["Replace the Sonos Beam with an Arc Ultra"], existing_equipment: { status: "described", retained: [], removed_or_replaced: ["Sonos Beam"] } })).selection;
+    expect(record(swap, "soundbar_mount")).toBe(WSSATM1);
+    // The customer's Beam is theirs; its mount is the Beam's.
+    const kept = (await job({ functional_systems: ["soundbar"], requested_changes: ["Mount the existing Sonos Beam below the TV"], existing_equipment: { status: "described", retained: ["Sonos Beam"], removed_or_replaced: [] } })).selection;
+    expect([record(kept, "soundbar"), record(kept, "soundbar_mount")]).toEqual([undefined, WSSBM1]);
+    const playbar = (
+      await job({
+        functional_systems: ["TV mounting"],
+        requested_changes: ["Move the existing TV closer to the wall on a Sanus Advanced Tilt mount", "Mount the Sonos Playbar with a compatible mount"],
+        existing_equipment: { status: "described", retained: ["55-inch LG TV (client-supplied)", "Sonos Playbar (client-supplied)"], removed_or_replaced: [] },
+      })
+    ).selection;
+    expect(record(playbar, "soundbar_mount")).toBeUndefined();
+    expect(playbar.to_verify).toContain("Requested product: Soundbar mount for the Sonos Playbar (no Livewire standard; priced in the final proposal)");
+  });
+
+  it("Q4: a 55-inch outdoor TV is the partial-sun Terrace LST7 (there is no 55-inch LST9); 65 and 75 inches are the LST9", async () => {
+    const outdoor = async (size: number) =>
+      record((await job({ functional_systems: ["outdoor TV"], requested_changes: [`Provide a new ${size}" outdoor TV for the patio`] })).selection, "television");
+    expect(await outdoor(55)).toBe("25fa5dd7-fb1f-4d71-bec2-7bcb7b9db9ac");
+    expect(await outdoor(65)).toBe("9ad8ffc2-6092-4cf2-a483-d95a5086933d");
+    expect(await outdoor(75)).toBe("23502905-bbcf-4e3f-af0d-9bf230a9ad14");
+  });
+
+  it("Q5: at least one Sonos Amp per room with speakers, still one per 4 speakers; the Amp Multi alone replaces the Sonos Amps", async () => {
+    const amps = async (o: object) => quantities((await job({ functional_systems: ["in-ceiling speakers"], ...o })).selection).zone_amplifier;
+    // 4 speakers in two rooms: 2 amps (one per 4 speakers would be 1).
+    expect(await amps({ requested_changes: ["In-ceiling speakers in the kitchen and the office"], requested_quantities: [{ item: "in-ceiling speakers", quantity: 4 }] })).toBe(2);
+    // 10 speakers in two rooms: 3 amps, one per 4 speakers.
+    expect(await amps({ requested_changes: ["In-ceiling speakers in the kitchen and great room"], requested_quantities: [{ item: "in-ceiling speakers", quantity: 10 }] })).toBe(3);
+    // One room of 4: one amp. A master bedroom is one room, not also a bedroom.
+    expect(await amps({ requested_changes: ["In-ceiling speakers in the master bedroom"], requested_quantities: [{ item: "in-ceiling speakers", quantity: 4 }] })).toBe(1);
+    const multi = (await job({ functional_systems: ["Sonos whole-home audio"], requested_changes: ["Sonos Amp Multi for 4 zones of in-ceiling speakers"], requested_quantities: [{ item: "in-ceiling speakers", quantity: 8 }] })).selection;
+    expect(quantities(multi)).toMatchObject({ multi_zone_amplifier: 1, amp_multi_rack_mount: 1 });
+    expect(quantities(multi).zone_amplifier).toBeUndefined();
+    // No Multi named: no Multi and no rack mount.
+    const plain = (await job({ functional_systems: ["in-ceiling speakers"], requested_changes: ["In-ceiling speakers in the kitchen"] })).selection;
+    expect(plain.lines.map((l) => l.role)).not.toEqual(expect.arrayContaining(["multi_zone_amplifier"]));
+    expect(plain.lines.map((l) => l.role)).not.toEqual(expect.arrayContaining(["amp_multi_rack_mount"]));
+  });
+
+  it("Q6: a TV with no model named is the Sony BRAVIA 7; a BRAVIA 8 or an OLED the request names is the BRAVIA 8", async () => {
+    const tv = async (change: string) => record((await job({ functional_systems: ["TV"], requested_changes: [change] })).selection, "television");
+    expect(await tv("Provide and mount a new 65-inch TV")).toBe("430b2a72-ece3-42c6-ab88-baff1d0bf464");
+    expect(await tv("Provide and mount a new TV")).toBe("430b2a72-ece3-42c6-ab88-baff1d0bf464");
+    expect(await tv("Provide and mount a new 55-inch TV")).toBe("0cf5b1a4-63e2-403d-b458-12d6b0d4764c");
+    expect(await tv("Provide and mount a new 75-inch TV")).toBe("37d42d83-6eb6-47d2-90a3-ccbd95110fd5");
+    expect(await tv("Provide and mount a new 65-inch Sony BRAVIA 8 TV")).toBe("47e8ba9b-b520-4890-b2d0-d92d37378382");
+    expect(await tv("Provide and mount a new 55-inch OLED TV")).toBe("9984eb72-588e-448c-831a-d734c401c15f");
+    expect(await tv("Provide and mount a new 77-inch OLED TV")).toBe("b89ed236-fff6-4985-a526-31d12b9c796f");
   });
 });
