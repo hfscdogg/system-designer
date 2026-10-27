@@ -68,7 +68,51 @@ export const RoleSpecSchema = z
      * An amplifier's count follows the speakers it drives (Henry, 2026-10-12): one per `speakers_per_unit`
      * passive speakers (pairs count as two), new or existing, once the request asks for speakers.
      */
-    drives: z.object({ roles: z.array(z.string()).min(1), speakers_per_unit: z.number().int().positive() }).strict().optional(),
+    drives: z
+      .object({
+        roles: z.array(z.string()).min(1),
+        speakers_per_unit: z.number().int().positive(),
+        /**
+         * At least one per room the speakers are asked for, too: two rooms of 4 speakers are 2 Sonos Amps, not 1
+         * (Henry, 2026-10-27: one per zone on 11 of 25 multi-room Livewire quotes, one per 4 speakers on 7).
+         */
+        per_room: z.boolean().optional(),
+      })
+      .strict()
+      .optional(),
+    /** Each unit serves this many units of the roles it follows, and a stated count of "ports" is a count of them (a 12-port patch panel per 12 drops). */
+    follows_per: z.number().int().positive().optional(),
+    /**
+     * On a retrofit each unit of this role is `units` items, each with its install time, and `verify` says why: a fished drop
+     * takes a keystone jack at the wall and one at the head end (Henry, 2026-10-27: 2 jacks on 75 of 114 Livewire Cat6 Retro drops).
+     */
+    retrofit_units: z.object({ units: z.number().int().min(2), verify: z.string().min(1) }).strict().optional(),
+    /** Approved records by port count, chosen when the request sizes this device ("2-port keystone plate"); each serves that many units it follows. */
+    port_variants: z
+      .array(z.object({ ports: z.number().int().min(2), product_id: z.string().uuid(), model: z.string().min(1), label: z.string().min(1) }).strict())
+      .optional(),
+    /**
+     * Approved records chosen by the words the request uses for this device ("Sonos Beam" → the Beam). With `require`, the same
+     * text must also name one of those; with `with_kept`, kept equipment's words count too (the customer's Playbar). With no product_id the
+     * device is listed to price instead of priced as the standard. With `sizes`, only for those sizes; with `default_size`, only
+     * when the request names none of the other entries' sizes (the 65" BRAVIA 8 unless 55" or 77" is asked for).
+     */
+    word_variants: z
+      .array(
+        z
+          .object({
+            words: z.array(z.string().min(1)).min(1),
+            require: z.array(z.string().min(1)).min(1).optional(),
+            with_kept: z.boolean().optional(),
+            sizes: z.array(z.number().int().positive()).min(1).optional(),
+            default_size: z.boolean().optional(),
+            product_id: z.string().uuid().nullable(),
+            model: z.string().min(1).optional(),
+            label: z.string().min(1),
+          })
+          .strict(),
+      )
+      .optional(),
     /**
      * Another brand's approved record, priced when the request names that brand for this device ("Klipsch
      * in-ceiling speakers" on Biscuit Belly, 2026-10-15) instead of the standard's. Sold each, like a product
@@ -94,6 +138,12 @@ export const RoleSpecSchema = z
      * as a requested product, priced in the final proposal, instead of withholding the budget total.
      */
     unpriced: z.literal("verify").optional(),
+    /**
+     * Other makers' brands for this device (Luma cameras): when the request asks for one ("Requested product:
+     * Luma cameras"), the device is listed to price in that brand instead of priced as the standard, which
+     * may not work with what the customer keeps (Zack's Jinny's job, 2026-10-26: Alarm.com cameras on a Luma NVR).
+     */
+    other_brands: z.array(z.string().min(1)).min(1).optional(),
     /**
      * Alternative approved records chosen by the size the request names ("75-inch" → the 77" model).
      * An `outdoor` variant is chosen only for a request that says the device goes outside (and only one is):
@@ -275,7 +325,8 @@ export function laborHoursFor(pattern: PatternSpec, lines: Array<{ role: string;
     const role = pattern.roles.find((r) => r.role === line.role);
     const each = role?.hours_each ?? spec.hours_per_device;
     // A named product in place of a multi-unit standard (one speaker, not a pair) takes that standard's hours per unit.
-    const substitute = !!role?.units_per_item && !!line.record_id && line.record_id !== role.product_id && !role.variants?.some((v) => v.product_id === line.record_id);
+    const substitute =
+      !!role?.units_per_item && !!line.record_id && line.record_id !== role.product_id && ![...(role.variants ?? []), ...(role.word_variants ?? [])].some((v) => v.product_id === line.record_id);
     return substitute ? each / role!.units_per_item! : each;
   };
   const extraHours = extras.reduce((h, id) => h + (pattern.labor_extras?.find((x) => x.id === id)?.hours ?? 0), 0);
@@ -342,7 +393,11 @@ export function combinePatterns(ps: PatternSpec[]): PatternSpec | null {
 
 /** Every product record a pattern may need, for exact-record reads. */
 export function patternRecordIds(p: PatternSpec): string[] {
-  const ids = [...p.roles, ...p.services, ...p.roles.flatMap((r) => [...(r.variants ?? []), ...(r.market_variants ?? []), ...(r.brand_variants ?? []), ...(r.larger_tv_variants ?? [])])]
+  const ids = [
+    ...p.roles,
+    ...p.services,
+    ...p.roles.flatMap((r) => [...(r.variants ?? []), ...(r.market_variants ?? []), ...(r.brand_variants ?? []), ...(r.larger_tv_variants ?? []), ...(r.port_variants ?? []), ...(r.word_variants ?? [])]),
+  ]
     .map((x) => x.product_id)
     .filter((x): x is string => x !== null);
   if (p.parts) ids.push(p.parts.product_id);

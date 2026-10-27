@@ -60,8 +60,8 @@ export function renderGoogleChat(view: View, opts: RenderOptions = {}): Record<s
                     {
                       buttonList: {
                         buttons: [
-                          controlButton("Send design retainer", "send_retainer", view.runId, opts),
-                          controlButton("Revise this budget", "revise_budget", view.runId, opts),
+                          ...(view.retainer === false ? [] : [controlButton("Send design retainer", "send_retainer", view.runId, opts)]),
+                          controlButton(view.retainer === false ? "Revise this request" : "Revise this budget", "revise_budget", view.runId, opts),
                           controlButton("New request", "new_request", view.runId, opts),
                         ],
                       },

@@ -192,7 +192,7 @@ async function control(deps: GatewayDeps, person: Person, event: Extract<Inbound
     await store.setPendingRetainer(event.thread, run.id, person.id, suggested);
     return reply(suggested ? retainerConfirmPrompt(suggested) : RETAINER_EMAIL_PROMPT);
   }
-  if (run.state !== "READY_HELD") {
+  if (!(await revisable(store, run))) {
     return reply(run.state === "SUPERSEDED" ? "That budget was already revised. Use the newest one." : "That budget isn't finished, so it can't be revised yet.");
   }
   await store.clearPendingRetainer(event.thread);
@@ -215,13 +215,21 @@ async function pendingRetainerRun(
   return null;
 }
 
+/**
+ * A finished budget, or a build that stopped after its scope was approved: both revise from the approved scope
+ * (Zack's Giessel job, 2026-10-26: the blocked run could only be revised from a budget that was never made).
+ */
+async function revisable(store: Store, run: RunRecord): Promise<boolean> {
+  return run.state === "READY_HELD" || (run.state === "BLOCKED" && (await store.getApprovalForRun(run.id)) !== null);
+}
+
 /** The finished run a new message revises: one the requester tapped Revise on, or their latest budget when the message starts with "revise". */
 async function revisionTarget(deps: GatewayDeps, person: Person, event: Extract<InboundEvent, { kind: "message" }>): Promise<string | null> {
   const { store } = deps;
   const pending = await store.pendingRevision(event.thread);
   if (pending && pending.person_id === person.id) {
     const run = await store.getRun(pending.run_id);
-    if (run.state === "READY_HELD") return run.id;
+    if (await revisable(store, run)) return run.id;
     await store.clearPendingRevision(event.thread);
   }
   if (!REVISE_WORDS.test(event.text.trim())) return null;

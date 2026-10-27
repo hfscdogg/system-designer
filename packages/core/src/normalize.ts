@@ -22,9 +22,11 @@ const FUNCTIONAL_SYSTEMS: Array<[canonical: string, patterns: RegExp[]]> = [
   // source (an Apple TV), priced by the TV pattern (Zack's Crowder job, 2026-10-13).
   ["audio_video", [/\b(tvs?|television|home theater|theatre|media room|audio[/ -]?video|a\/v|av|soundbar|surround( sound)?|video(?! ?(door ?bell|surveillance|cameras?|security|recorders?))|streaming(?! video recorders?)( devices?| media| players?| boxes?| sticks?)?|streamers?|apple ?tv( 4k)?|roku|fire ?tv( stick)?|chromecast|media players?)\b/]],
   // New-construction cabling; listed before networking so "network drops" are wiring, not Wi-Fi.
-  ["structured_wiring", [/\b(structured wiring|pre-?wire|prewiring|pre-?wired|low[- ]voltage wiring|cat ?6 (runs?|drops?|wiring)|data (drops?|outlets?|runs?)|network (drops?|outlets?|wiring)|rough[- ]?in)\b/]],
+  // Cabling into a finished home is the same work: "structured cabling", "Cat6 home runs", a patch panel
+  // (Zack's Giessel job, 2026-10-26, went to the Wi-Fi pattern as "network cabling" and priced nothing).
+  ["structured_wiring", [/\b(structured (wiring|cabling)|pre-?wire|prewiring|pre-?wired|low[- ]voltage (wiring|cabling)|cat ?6 (runs?|drops?|wiring)|data (drops?|outlets?|runs?)|network (drops?|outlets?|wiring)|(cat ?6|ethernet|data|network) (cabling|home runs?)|patch panels?|keystone (jacks?|plates?|patch panels?)|rough[- ]?in)\b/]],
   // "wireless" alone names how a device connects (wireless contacts, sensors), not a network.
-  ["networking", [/\b(wi-?fi|network(ing)?(?! (drops?|outlets?|wiring))|access points?|router|wireless (network|internet|coverage))\b/]],
+  ["networking", [/\b(wi-?fi|network(ing)?(?! (drops?|outlets?|wiring|cabling|home runs?))|access points?|router|wireless (network|internet|coverage))\b/]],
   // Bare "automation" is too broad (pool automation): only whole-home control platforms.
   ["home_automation", [/\b(control4|c4|halo( remotes?)?|(home|house) automation|smart home|whole[- ](home|house) control|universal remote|savant|crestron)\b/]],
   ["lighting_control", [/\b(lighting control|lutron|dimmers?|keypads? for lighting|lighting)\b/]],
@@ -75,8 +77,18 @@ function matchAll(table: Array<[string, RegExp[]]>, text: string): string[] {
 const CAMERA_ITEM = /\b(cameras?|cams?|surveillance|cctv|nvr|svr)\b/;
 const CAMERA_FEATURES = /\b(security|wi-?fi|wireless|hard-?wired|lighting|lights?|flood ?lights?|motion|power(ed)?|poe)\b/g;
 
+/**
+ * A Pro Control remote ("ProRemote", URC) runs the TV and its sources, not a Control4 system: it is the
+ * TV's, and prices no CORE 1 controller (Zack's Paulenich job, 2026-10-26).
+ */
+const OTHER_REMOTE = /\b(pro ?remotes?|pro ?control( remotes?)?|urc( remotes?)?)\b/;
+
 function systemHits(item: string): string[] {
   const t = fold(item);
+  if (OTHER_REMOTE.test(t) && !/\b(control4|c4|halo)\b/.test(t)) {
+    const hits = matchAll(FUNCTIONAL_SYSTEMS, t.replace(OTHER_REMOTE, " ")).filter((h) => h !== "home_automation");
+    return [...new Set([...hits, "audio_video"])];
+  }
   return matchAll(FUNCTIONAL_SYSTEMS, CAMERA_ITEM.test(t) ? t.replace(CAMERA_FEATURES, " ") : t);
 }
 

@@ -14,6 +14,7 @@ const SelectionSchema = z
     pattern: z.string(),
     pattern_version: z.string(),
     add_on: z.boolean(),
+    retrofit: z.boolean().optional(),
     lines: z.array(
       z
         .object({
@@ -149,9 +150,18 @@ function fittingAssumptions(pattern: PatternSpec, sel: Selection, catalog: Map<s
       if (roles.has("tv_cart")) return "The TV goes on a rolling cart; no wall mounting is included.";
       if (outdoorTv) return "The outdoor TV mounts to a solid exterior wall or structure, with weatherproof power and data at the mount.";
     }
+    if (sel.retrofit && /^New construction or open walls/.test(a)) {
+      return "Cables are fished through finished walls or drilled up from an unfinished basement or attic; no wall is opened.";
+    }
     if (!sonos) return a.replace(/; Sonos is controlled from the Sonos app\./, ".");
     return a;
   });
+}
+
+/** The pattern's exclusions, worded for the job: retrofit fishing is the work itself on a retrofit (Zack's Dunham job, 2026-10-26). */
+function fittingExclusions(sel: Selection, exclusions: string[]): string[] {
+  if (!sel.retrofit) return exclusions;
+  return exclusions.map((x) => (/^Retrofit fishing in finished walls/.test(x) ? "Opening, patching and painting walls or ceilings." : x));
 }
 
 /**
@@ -199,7 +209,9 @@ export function compile(raw: unknown, catalog: Map<string, AdmittedProduct>, pat
     const variant =
       role.variants?.find((v) => v.product_id === line.record_id) ??
       role.market_variants?.find((v) => v.product_id === line.record_id) ??
-      role.larger_tv_variants?.find((v) => v.product_id === line.record_id);
+      role.larger_tv_variants?.find((v) => v.product_id === line.record_id) ??
+      role.port_variants?.find((v) => v.product_id === line.record_id) ??
+      role.word_variants?.find((v) => v.product_id === line.record_id);
     const product = catalog.get(line.record_id);
     // A product the request named by model replaces the standard only when the admitted record carries that model.
     const key = (s: string | null | undefined) => (s ?? "").toLowerCase().replace(/[^a-z0-9]/g, "");
@@ -341,7 +353,7 @@ export function compile(raw: unknown, catalog: Map<string, AdmittedProduct>, pat
       unresolved: sel.unresolved,
       to_verify: sel.to_verify,
       assumptions: fittingAssumptions(pattern, sel, catalog, used ? uniq(used.flatMap((s) => s.assumptions)) : pattern.assumptions),
-      exclusions: used ? uniq(used.flatMap((s) => s.exclusions)) : pattern.exclusions,
+      exclusions: fittingExclusions(sel, used ? uniq(used.flatMap((s) => s.exclusions)) : pattern.exclusions),
     },
   };
 }

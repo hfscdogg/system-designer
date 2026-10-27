@@ -124,7 +124,10 @@ async function setup(extractions: unknown[] = [], patches: unknown[] = [], build
   const questions = () => chat.list().map((m) => m.view).filter((v): v is Extract<View, { kind: "question" }> => v.kind === "question");
   const statusCard = () => chat.list().find((m) => m.view.kind === "status")?.view as Extract<View, { kind: "status" }> | undefined;
   const texts = () => chat.list().map((m) => m.view).filter((v): v is Extract<View, { kind: "text" }> => v.kind === "text").map((v) => v.text);
-  return { store, db, chat, workflows, send, receipts, questions, statusCard, texts, dtools, acts };
+  /** What each message or action card says, in order. */
+  const said = () => chat.list().map((m) => m.view).flatMap((v) => (v.kind === "text" || v.kind === "budget_actions" ? [v.text] : []));
+  const actions = () => chat.list().map((m) => m.view).filter((v): v is Extract<View, { kind: "budget_actions" }> => v.kind === "budget_actions");
+  return { store, db, chat, workflows, send, receipts, questions, statusCard, texts, said, actions, dtools, acts };
 }
 
 beforeEach(() => {
@@ -346,8 +349,11 @@ describe("Google Chat → scope approval vertical slice", () => {
     await t.send(click(receipt!.receiptId, receipt!.approve!.scopeHash));
     const [run] = await t.store.listRunsForPerson("zack");
     expect(run!.state).toBe("BLOCKED");
-    expect(t.texts().at(-1)).toContain("Nothing was sent to a customer or written to D-Tools");
+    expect(t.said().at(-1)).toContain("Nothing was sent to a customer or written to D-Tools");
     expect(t.statusCard()?.steps[5]!.state).toBe("failed");
+    // The approved scope isn't a dead end: the card offers Revise and New request, with no retainer to collect.
+    expect(t.actions().at(-1)).toMatchObject({ runId: run!.id, retainer: false });
+    expect((await t.send(controlClick("revise_budget", run!.id))).body).toMatchObject({ text: expect.stringMatching(/^What should change\?/) });
   });
 
   it("blocks at validation when no commercial policy has been published", async () => {
@@ -357,7 +363,7 @@ describe("Google Chat → scope approval vertical slice", () => {
     await t.send(click(receipt!.receiptId, receipt!.approve!.scopeHash));
     const [run] = await t.store.listRunsForPerson("zack");
     expect(run!.state).toBe("BLOCKED");
-    expect(t.texts().at(-1)).toContain("no commercial policy is configured");
+    expect(t.said().at(-1)).toContain("no commercial policy is configured");
   });
 
   it("blocks scopes with no approved architecture pattern and asks for Zack's review", async () => {
@@ -365,7 +371,7 @@ describe("Google Chat → scope approval vertical slice", () => {
     await t.send(chatMessage("Smith theater"));
     const [receipt] = t.receipts();
     await t.send(click(receipt!.receiptId, receipt!.approve!.scopeHash));
-    expect(t.texts().at(-1)).toContain("Zack needs to review");
+    expect(t.said().at(-1)).toContain("Zack needs to review");
     expect(t.dtools.calls).toEqual([]);
   });
 
@@ -604,7 +610,7 @@ describe("margin exceptions (2026 sales comp policy)", () => {
     await t.workflows.settled(run.id);
     expect((await t.store.getRun(run.id)).state).toBe("BLOCKED");
     expect(t.chat.files).toHaveLength(0);
-    expect(t.texts().some((x) => x.includes("margin exception declined by Henry Clifford"))).toBe(true);
+    expect(t.said().some((x) => x.includes("margin exception declined by Henry Clifford"))).toBe(true);
   });
 
   it("holds even when no admin can be reached, and accepts a typed approval later", async () => {
@@ -911,6 +917,25 @@ describe("editing a scope and revising a finished budget", () => {
     ]);
     expect(scored[1]!.changes).toMatch(/glass_break/);
     expect(learnReport(scored)).toContain("Quantities reps changed most");
+  });
+
+  it("revises a build that stopped after approval: the revision builds from the approved scope and replaces it (Zack's Giessel job, 2026-10-26)", async () => {
+    const t = await setup([completeExtraction({ functional_systems: ["home theater"] })], [{ ...noPatch, functional_systems: ["security system"] }]);
+    await t.send(chatMessage("Smith theater"));
+    const [first] = t.receipts();
+    await t.send(click(first!.receiptId, first!.approve!.scopeHash));
+    const [blocked] = await t.store.listRunsForPerson("zack");
+    expect(blocked!.state).toBe("BLOCKED");
+
+    // Typing "revise …" finds the blocked run as well as tapping the card.
+    await t.send(chatMessage("revise: it's a security system, not a theater"));
+    const revision = (await t.store.listRunsForPerson("zack")).find((r) => r.id !== blocked!.id)!;
+    expect(revision).toMatchObject({ parent_run_id: blocked!.id, revision: 2, state: "AWAITING_SCOPE_APPROVAL" });
+    const second = t.receipts().at(-1)!;
+    await t.send(click(second.receiptId, second.approve!.scopeHash));
+    expect((await t.store.getRun(revision.id)).state).toBe("READY_HELD");
+    expect((await t.store.getRun(blocked!.id)).state).toBe("SUPERSEDED");
+    expect(t.said().some((x) => x.startsWith("I couldn't apply your change"))).toBe(false);
   });
 
   it("says a revision that changed nothing priced couldn't be applied, in the rep's words", async () => {
