@@ -28,7 +28,7 @@ import { hashCanonical, RUN_STATES, sha256Hex, type RunState, type ScopeDraftV1 
 import type { OutboundFile, View } from "@sd/channels";
 import { loadBrand, preflightPdf, renderProposalHtml, type PreflightResult } from "@sd/render";
 import type { CustomerProposal } from "@sd/build";
-import { DToolsReadError, type DToolsReader } from "@sd/dtools";
+import { DToolsReadError, transientRead, type DToolsReader } from "@sd/dtools";
 import { IntegrityError, type RunRecord, type Store } from "@sd/store";
 import type { BuildStage, StageOutcome } from "./workflows/logic.ts";
 
@@ -181,8 +181,8 @@ export function createBuildStage(deps: BuildDeps) {
         try {
           read = await deps.dtools.getProduct(id);
         } catch (err) {
-          // Missing records block; outages are thrown so the activity retries, then fails visibly.
-          if (err instanceof DToolsReadError && err.status !== null && err.status < 500) {
+          // Missing records block; outages and rate limits are thrown so the activity retries, then fails visibly.
+          if (err instanceof DToolsReadError && !transientRead(err)) {
             reject(err.message);
             continue;
           }
@@ -313,7 +313,8 @@ export function createBuildStage(deps: BuildDeps) {
         try {
           read = await deps.dtools.getProduct(p.record_id);
         } catch (err) {
-          if (err instanceof DToolsReadError && err.status !== null && err.status < 500) {
+          // A rate limit or outage is retried by the activity, not reported as a changed record.
+          if (err instanceof DToolsReadError && !transientRead(err)) {
             changed.push(`${p.brand} ${p.model} is no longer readable (${err.message})`);
             continue;
           }

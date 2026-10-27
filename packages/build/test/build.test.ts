@@ -2032,7 +2032,7 @@ describe("Henry's decisions (2026-10-27): D-Tools quote history for cabling, cam
 
   it("patterns carry the new version", async () => {
     const versions = Object.fromEntries((await loadPatterns()).map((p) => [p.pattern, p.version]));
-    expect(versions).toMatchObject({ prewire: "2026-10-27.1", tv_media: "2026-10-27.1", whole_home_audio: "2026-10-27.1" });
+    expect(versions).toMatchObject({ prewire: "2026-10-27.2", tv_media: "2026-10-27.1", whole_home_audio: "2026-10-27.1" });
   });
 
   it("Q1: a retrofit drop is two keystone jacks and 2 hours; a new-construction drop one jack and 1 hour", async () => {
@@ -2041,6 +2041,8 @@ describe("Henry's decisions (2026-10-27): D-Tools quote history for cabling, cam
     const retro = await drops("Fish Cat6 drops through the finished walls to a patch panel in the basement", 4);
     expect(retro.selection.retrofit).toBe(true);
     expect(quantities(retro.selection)).toMatchObject({ data_drop: 8, patch_panel: 1 });
+    // The line is the jacks, not outlets: 8 jacks for 4 retrofit drops.
+    expect(retro.pattern.roles.find((r) => r.role === "data_drop")!.label).toBe("Cat6 keystone jack");
     expect(retro.selection.lines.find((l) => l.role === "data_drop")!.verify).toBe("2 keystone jacks per retrofit drop: one at the wall plate, one at the patch panel or enclosure");
     // 1 h setup + 8 jacks at 1 h + the panel's 1 h: 2 hours a drop.
     expect(laborHoursFor(retro.pattern, retro.selection.lines)).toBe(10);
@@ -2091,6 +2093,12 @@ describe("Henry's decisions (2026-10-27): D-Tools quote history for cabling, cam
     // The customer's Beam is theirs; its mount is the Beam's.
     const kept = (await job({ functional_systems: ["soundbar"], requested_changes: ["Mount the existing Sonos Beam below the TV"], existing_equipment: { status: "described", retained: ["Sonos Beam"], removed_or_replaced: [] } })).selection;
     expect([record(kept, "soundbar"), record(kept, "soundbar_mount")]).toEqual([undefined, WSSBM1]);
+    // "New" sells the mount: the soundbar words describe the mount or name the customer's Beam (Henry, 2026-10-27).
+    const newMount = (await job({ functional_systems: ["soundbar"], requested_changes: ["New soundbar mount for the existing Sonos Beam"], existing_equipment: { status: "described", retained: ["Sonos Beam"], removed_or_replaced: [] } })).selection;
+    expect([record(newMount, "soundbar"), record(newMount, "soundbar_mount")]).toEqual([undefined, WSSBM1]);
+    // A new soundbar is still sold when the request sells one.
+    const sold = (await job({ functional_systems: ["soundbar"], requested_changes: ["Sell a new Sonos Beam soundbar and mount it"], existing_equipment: { status: "described", retained: ["Sonos Beam"], removed_or_replaced: [] } })).selection;
+    expect(record(sold, "soundbar")).toBe(BEAM);
     const playbar = (
       await job({
         functional_systems: ["TV mounting"],

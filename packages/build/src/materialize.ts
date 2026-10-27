@@ -374,7 +374,11 @@ function wantsNew(scope: ScopeDraftV1, role: RoleSpec, roles: RoleSpec[]): boole
   const more = (c: string, t: string) => new RegExp(`\\b(more|additional|another|extra)\\s+(?:[\\w-]+\\s+){0,2}${escape(t)}`).test(c);
   // "Customer-supplied" is who supplies it, not a sale.
   const sold = (c: string) => NEW_DEVICE.test(c.replace(OWNED_PHRASE, " "));
-  if (otherChanges(scope).some((c) => roleTerms(role).some((t) => c.includes(t) && (sold(c) || more(c, t))))) return true;
+  // The device's own words, not ones that describe another device ("soundbar mount") or name the customer's
+  // ("the existing Sonos Beam"): "New soundbar mount for the existing Sonos Beam" sells a mount, not a soundbar.
+  const asks = (c: string, t: string) =>
+    new RegExp(`(?<!\\b(?:existing|current|old|their|customer'?s|client'?s)\\s+(?:[\\w-]+\\s+){0,2})${escape(t)}`).test(withoutModifiers(c, role, roles));
+  if (otherChanges(scope).some((c) => roleTerms(role).some((t) => asks(c, t) && (sold(c) || more(c, t))))) return true;
   // An outdoor device the request specifies by size ("55'' Outdoor rated TV with cover") is one to sell
   // unless the request says it's the customer's or existing (Zack's Britt job, 2026-10-19: the TV was dropped).
   return outdoorAsked(scope, role) && sizeAsked(scope, role) !== undefined && !customerOwned(scope, role) && !deviceChanges(scope, role).some((c) => EXISTING_ITEM.test(c));

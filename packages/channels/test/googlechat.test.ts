@@ -94,6 +94,32 @@ describe("renderGoogleChat", () => {
   });
 });
 
+describe("new request or answer cards", () => {
+  it("offers the message as an answer or as a new request, and the taps parse back to controls on that message", () => {
+    const view: View = { kind: "intake_choice", intakeId: "in_123", text: "This names Mark Dunham, but the open request is for Andrew Giessel." };
+    const body = renderGoogleChat(view, { actionFunction: "https://gateway.example/chat/google" }) as any;
+    const buttons = body.cardsV2[0].card.sections[0].widgets[1].buttonList.buttons;
+    expect(buttons.map((b: any) => [b.text, b.onClick.action.function, Object.fromEntries(b.onClick.action.parameters.map((p: any) => [p.key, p.value]))])).toEqual([
+      ["Answer to my questions", "https://gateway.example/chat/google", { action: "conversation_control", control: "intake_answer", ref: "in_123" }],
+      ["New request", "https://gateway.example/chat/google", { action: "conversation_control", control: "intake_new", ref: "in_123" }],
+    ]);
+    expect(body.fallbackText).toBe(view.text);
+    const event = parseGoogleChatEvent(
+      new TextEncoder().encode(
+        JSON.stringify({
+          type: "CARD_CLICKED",
+          eventTime: "2026-10-27T12:00:00Z",
+          space: { name: "spaces/A", spaceType: "SPACE" },
+          message: { name: "spaces/A/messages/x", thread: { name: "spaces/A/threads/T" } },
+          user: { name: "users/zack", type: "HUMAN" },
+          common: { invokedFunction: "conversation_control", parameters: { control: "intake_new", ref: "in_123" } },
+        }),
+      ),
+    );
+    expect(event).toMatchObject({ kind: "control_click", control: "intake_new", ref: "in_123" });
+  });
+});
+
 describe("margin exception cards", () => {
   it("renders approve and decline buttons that parse back to a margin decision", () => {
     const view: View = { kind: "margin_exception", exceptionId: "MX-ABC", title: "Margin exception MX-ABC", lines: ["Gross margin 36% vs the 40% residential floor."] };

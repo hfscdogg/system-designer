@@ -249,6 +249,28 @@ export class Store {
     });
   }
 
+  /**
+   * Close the thread's open request so a new one can start in the same session: its run goes stale and its receipts
+   * can no longer be approved. Unlike resetSession the generation stays, so a message captured in it can start the
+   * new run (a new intake pasted while another request waited for answers; Zack's Giessel/Dunham job, 2026-10-26).
+   */
+  async closeOpenRuns(t: ThreadRef, actor: string, data: Record<string, unknown> = {}): Promise<string[]> {
+    return this.db.transaction(async (tx) => {
+      const stale = await tx.query<{ id: string }>(
+        `UPDATE runs SET state = 'STALE', updated_at = now()
+         WHERE platform = $1 AND space_id = $2 AND thread_id = $3 AND state = ANY($4)
+         RETURNING id`,
+        [t.platform, t.spaceId, t.threadId, OPEN_INTAKE_STATES],
+      );
+      const staleRunIds = stale.rows.map((r) => r.id);
+      if (staleRunIds.length) {
+        await tx.query(`UPDATE receipts SET superseded_at = now() WHERE run_id = ANY($1) AND superseded_at IS NULL`, [staleRunIds]);
+        for (const id of staleRunIds) await this.event(tx, id, "closed_for_new_request", actor, data);
+      }
+      return staleRunIds;
+    });
+  }
+
   // ---------- intake evidence ----------
 
   /**

@@ -484,6 +484,98 @@ describe("Google Chat → scope approval vertical slice", () => {
   });
 });
 
+describe("a new request sent while another waits (Zack's Giessel/Dunham job, 2026-10-26)", () => {
+  // run_df1c3f43: the Dunham/Jinny's intake landed in the Giessel thread while it waited, and was read as Giessel's answer.
+  const giessel = () => completeExtraction({ client: "Andrew Giessel" });
+  const dunham = () => completeExtraction({ client: "Mark Dunham & Jinny" });
+  const runs = async (t: Awaited<ReturnType<typeof setup>>) => (await t.store.listRunsForPerson("zack", 10)).reverse(); // oldest first
+
+  it('"New request: …" closes the open request and starts this one', async () => {
+    const t = await setup([giessel(), dunham()]);
+    await t.send(chatMessage("Andrew Giessel: Cat6 home runs to a keystone patch panel"));
+    const old = t.receipts()[0]!;
+    const fresh = chatMessage("New request: Mark Dunham & Jinny, replace two dome cameras with Luma cameras");
+    const res = await t.send(fresh);
+    expect(res.body).toEqual({ text: "Closed the open request for Andrew Giessel. Working on this new request now." });
+    // Chat redelivers the same message: the new request stays open.
+    expect((await t.send(fresh)).body).toEqual({});
+    const [first, second] = await runs(t);
+    expect(first!.state).toBe("STALE");
+    expect(second!.state).toBe("AWAITING_SCOPE_APPROVAL");
+    expect(t.receipts().at(-1)!.lines).toContain("Client: Mark Dunham & Jinny");
+    // The closed request's receipt can no longer be approved.
+    expect((await t.send(click(old.receiptId, old.approve!.scopeHash))).body).toMatchObject({ text: expect.stringContaining("can't accept") });
+  });
+
+  it('"new request" alone closes the open request and waits for the next message', async () => {
+    const t = await setup([giessel(), dunham()]);
+    await t.send(chatMessage("Andrew Giessel: Cat6 home runs to a keystone patch panel"));
+    expect((await t.send(chatMessage("new request"))).body).toEqual({ text: "Closed the open request for Andrew Giessel. Send the new request whenever you're ready." });
+    await t.send(chatMessage("Mark Dunham & Jinny: Luma cameras"));
+    const [first, second] = await runs(t);
+    expect([first!.state, second!.state]).toEqual(["STALE", "AWAITING_SCOPE_APPROVAL"]);
+  });
+
+  it("asks when a message names another client, and starts it as a new request on a tap", async () => {
+    const t = await setup([giessel(), dunham()]);
+    await t.send(chatMessage("Andrew Giessel: Cat6 home runs to a keystone patch panel"));
+    const res = await t.send(chatMessage("Client: Mark Dunham & Jinny\nReplace the front desk and back room dome cameras with Luma cameras"));
+    const body = res.body as { fallbackText: string; cardsV2: Array<{ card: unknown }> };
+    expect(body.fallbackText).toBe(
+      "This names Mark Dunham & Jinny, but the open request is for Andrew Giessel. Is it an answer to my questions, or a new request? A new request closes the open one.",
+    );
+    const buttons = JSON.stringify(body.cardsV2);
+    expect(buttons).toContain("Answer to my questions");
+    expect(buttons).toContain('"intake_new"');
+    // Nothing is read into the open request until the rep chooses.
+    expect((await runs(t)).map((r) => r.state)).toEqual(["AWAITING_SCOPE_APPROVAL"]);
+    const intakeId = JSON.parse(buttons).flatMap((c: any) => c.card.sections[0].widgets[1].buttonList.buttons).find((b: any) => b.text === "New request").onClick.action.parameters.find((p: any) => p.key === "ref").value;
+    expect((await t.send(controlClick("intake_new", intakeId))).body).toEqual({ text: "Closed the open request for Andrew Giessel. Working on this new request now." });
+    const [first, second] = await runs(t);
+    expect([first!.state, second!.state]).toEqual(["STALE", "AWAITING_SCOPE_APPROVAL"]);
+    expect(t.receipts().at(-1)!.lines).toContain("Client: Mark Dunham & Jinny");
+    // A second tap changes nothing.
+    expect((await t.send(controlClick("intake_new", intakeId))).body).toEqual({ text: "That message was already used." });
+  });
+
+  it("uses the message as the answer when the rep says so", async () => {
+    const t = await setup([giessel()], [{ ...noPatch, client: "Mark Dunham" }]);
+    await t.send(chatMessage("Andrew Giessel: Cat6 home runs to a keystone patch panel"));
+    await t.send(chatMessage("Client: Mark Dunham"));
+    const [run] = await runs(t);
+    const asked = (await t.store.listEvents(run!.id)).find((e) => e.type === "intake_choice_asked")!;
+    expect((await t.send(controlClick("intake_answer", asked.data.intakeId as string))).body).toEqual({ text: "✓ Using it as your answer." });
+    expect(await runs(t)).toHaveLength(1);
+    expect(t.receipts().at(-1)!.lines).toContain("Client: Mark Dunham");
+  });
+
+  it("reads an answer that restates the same client, or a short reply, as an answer without asking", async () => {
+    const t = await setup([completeExtraction({ client: null })], [{ ...noPatch, client: "Andrew Giessel" }]);
+    await t.send(chatMessage("Cat6 home runs to a keystone patch panel"));
+    // Giessel's own answer (run_9745cbb5): a client line with nothing open to compare is an answer.
+    expect((await t.send(chatMessage("Client: Andrew Giessel. Any other info mark NA"))).body).toEqual({});
+    expect(await runs(t)).toHaveLength(1);
+    expect(t.receipts().at(-1)!.lines).toContain("Client: Andrew Giessel");
+  });
+
+  it("asks about a whole intake even when no client is named, and wraps the card for add-on events", async () => {
+    const t = await setup([giessel()]);
+    await t.send(chatMessage("Andrew Giessel: Cat6 home runs to a keystone patch panel"));
+    const intake = "Address: 12 Oak St\nRooms: kitchen, office\nBudget: $5k\nTimeline: next month";
+    const res = await t.send({
+      commonEventObject: { hostApp: "CHAT" },
+      chat: {
+        user: { name: "users/zack", type: "HUMAN" },
+        eventTime: "2026-10-05T12:00:00Z",
+        messagePayload: { space: { name: SPACE, spaceType: "SPACE" }, message: { name: `${SPACE}/messages/a9`, text: intake, sender: { name: "users/zack", type: "HUMAN" }, thread: { name: THREAD } } },
+      },
+    });
+    expect(res.body).toMatchObject({
+      hostAppDataAction: { chatDataAction: { createMessageAction: { message: { fallbackText: expect.stringContaining("This reads like a whole new request, and the open request is for Andrew Giessel.") } } } },
+    });
+  });
+});
+
 describe("runs whose workflow stopped", () => {
   it("reports a step that keeps failing instead of going silent", async () => {
     const t = await setup([new Error("Chat rejected the post")]);

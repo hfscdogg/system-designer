@@ -45,6 +45,17 @@ export interface DToolsHttpConfig {
   timeoutMs?: number;
   fetch?: typeof fetch;
   now?: () => Date;
+  /** Waits between retries of a rate-limited read; injectable for tests. */
+  sleep?: (ms: number) => Promise<void>;
+}
+
+/** Retries of a read D-Tools rate-limits (429) before it is reported: a build reads every pattern record twice. */
+const RATE_LIMIT_RETRIES = 4;
+const MAX_RETRY_WAIT_MS = 30_000;
+
+/** Whether a failed read may succeed if tried again: D-Tools rate-limited it, or had an outage. Not a missing or rejected record. */
+export function transientRead(err: unknown): boolean {
+  return err instanceof DToolsReadError && (err.status === null || err.status === 429 || err.status >= 500);
 }
 
 const DEFAULT_BASE_URL = "https://dtcloudapi.d-tools.cloud/api/v1";
@@ -53,19 +64,27 @@ export function httpDToolsReader(cfg: DToolsHttpConfig): DToolsReader {
   const base = (cfg.baseUrl ?? DEFAULT_BASE_URL).replace(/\/+$/, "");
   const doFetch = cfg.fetch ?? fetch;
   const now = cfg.now ?? (() => new Date());
+  const sleep = cfg.sleep ?? ((ms: number) => new Promise<void>((r) => setTimeout(r, ms)));
 
   async function get(endpoint: string, query: Record<string, string>): Promise<DToolsRead> {
     const url = new URL(`${base}/${endpoint}`);
     for (const [k, v] of Object.entries(query)) url.searchParams.set(k, v);
     let res: Response;
-    try {
-      res = await doFetch(url, {
-        method: "GET",
-        headers: { Authorization: cfg.basicAuth, "X-API-Key": cfg.apiKey, Accept: "application/json" },
-        signal: AbortSignal.timeout(cfg.timeoutMs ?? 30_000),
-      });
-    } catch (err) {
-      throw new DToolsReadError(`D-Tools request failed: ${(err as Error).message}`, endpoint, null);
+    for (let attempt = 0; ; attempt++) {
+      try {
+        res = await doFetch(url, {
+          method: "GET",
+          headers: { Authorization: cfg.basicAuth, "X-API-Key": cfg.apiKey, Accept: "application/json" },
+          signal: AbortSignal.timeout(cfg.timeoutMs ?? 30_000),
+        });
+      } catch (err) {
+        throw new DToolsReadError(`D-Tools request failed: ${(err as Error).message}`, endpoint, null);
+      }
+      // Rate-limited (staging smoke, 2026-10-27: 30 records of one Britt build returned 429): wait as asked, then read again.
+      if (res.status !== 429 || attempt >= RATE_LIMIT_RETRIES) break;
+      const asked = Number(res.headers.get("retry-after"));
+      await res.arrayBuffer().catch(() => undefined);
+      await sleep(Math.min(MAX_RETRY_WAIT_MS, Number.isFinite(asked) && asked > 0 ? asked * 1000 : 1000 * 2 ** attempt));
     }
     const body = new Uint8Array(await res.arrayBuffer());
     if (!res.ok) throw new DToolsReadError(`D-Tools ${endpoint} returned ${res.status}`, endpoint, res.status);
