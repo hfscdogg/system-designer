@@ -233,7 +233,17 @@ function withoutTotals(scope: ScopeDraftV1): ScopeDraftV1 {
       const words = itemWords(q.item).filter((w) => !KIND_WORDS.has(w));
       if (!words.length) return false;
       const parts = qs.filter((o) => o !== q && words.every((w) => itemWords(o.item).includes(w)));
-      return parts.length >= 2 && parts.reduce((n, o) => n + o.quantity, 0) === q.quantity;
+      if (parts.length < 2 || parts.reduce((n, o) => n + o.quantity, 0) !== q.quantity) return false;
+      // Parts that are each another device ("wired floodlight camera", "wired smart doorbell camera") are not this count's
+      // items when the request also names this device on its own ("1 x wired camera on the side of the house"): "wired
+      // cameras × 2" is those two, not a total that happens to match (staging smoke, Bowen-Rees, 2026-10-27).
+      const extra = (o: { item: string }) => itemWords(o.item).filter((w) => !words.includes(w) && !KIND_WORDS.has(w));
+      if (!parts.every((o) => extra(o).length)) return true;
+      const theirs = new Set(parts.flatMap(extra));
+      return !scope.requested_changes.some((c) => {
+        const said = itemWords(c);
+        return words.every((w) => said.includes(w)) && !said.some((w) => theirs.has(w));
+      });
     }),
   );
   return totals.size ? { ...scope, requested_quantities: qs.filter((q) => !totals.has(q)) } : scope;

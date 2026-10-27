@@ -1365,6 +1365,31 @@ describe("Zack's round 4 (2026-10-15)", () => {
     const q = quantities(selection);
     expect(q).toMatchObject({ outdoor_camera: 2, floodlight_camera: 1, doorbell_camera: 1, nvr: 1, network_switch: 1 });
     expect(q.outdoor_camera! + q.floodlight_camera! + q.doorbell_camera!).toBe(4);
+    // Staging smoke, 2026-10-27: "wired cameras × 2" beside one wired floodlight and one wired doorbell camera is the two
+    // wired cameras the request names on their own, not a total of the other two that happens to match.
+    const counts = (extra: Array<{ item: string; quantity: number }>) =>
+      job({
+        functional_systems: ["video surveillance", "video doorbell"],
+        requested_changes: [
+          "Install 1 wired smart doorbell camera at the front door (current doorbell and chime work)",
+          "Install 1 wired camera on the side of the house",
+          "Install 1 wired camera at the back of the house",
+          "Install 1 wired floodlight camera above the garage",
+          "SVR in the basement closet",
+        ],
+        existing_equipment: { status: "described", retained: ["existing doorbell and chime"], removed_or_replaced: [] },
+        requested_quantities: [
+          ...extra,
+          { item: "svr", quantity: 1 },
+          { item: "wired cameras", quantity: 2 },
+          { item: "wired floodlight camera", quantity: 1 },
+          { item: "wired smart doorbell camera", quantity: 1 },
+        ],
+      });
+    expect(quantities((await counts([])).selection)).toMatchObject({ outdoor_camera: 2, floodlight_camera: 1, doorbell_camera: 1, nvr: 1 });
+    // A real total over them still goes: "4 exterior cameras" is the 2 wired cameras, the floodlight and the doorbell.
+    const totaled = quantities((await counts([{ item: "exterior cameras", quantity: 4 }])).selection);
+    expect(totaled).toMatchObject({ outdoor_camera: 2, floodlight_camera: 1, doorbell_camera: 1 });
     // A total of something else stays: 4 motion detectors are not the 2 smoke and 2 CO detectors.
     const security = await job({
       existing_detectors: "none",
