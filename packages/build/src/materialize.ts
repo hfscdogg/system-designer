@@ -43,6 +43,8 @@ export interface Selection {
   labor_allowances: Array<{ key: string; label: string; hours: number; labor_type: string; quantity?: number; feet?: number; trenched?: true }>;
   /** Requested products with no Livewire standard (a TV cart), listed to verify and priced in the final proposal. */
   to_verify: string[];
+  /** Roles listed to price in to_verify instead of priced (another brand's cameras): accounted for, not unresolved. */
+  listed?: string[];
 }
 
 const fold = (s: string) => s.toLowerCase();
@@ -777,6 +779,12 @@ export function materialize(stated: ScopeDraftV1, pattern: PatternSpec, namedPro
     const otherBrand = role.powers.roles.some((r) => verifyOnly.has(r)) && !lines.some((l) => role.powers!.roles.includes(l.role));
     if (kept || otherBrand) notAsked.add(role.role);
   }
+  // Likewise a role counted from devices that are all another brand's, listed to price: no microSD cards for UniFi
+  // cameras (Zack's Standon job, 2026-10-27).
+  for (const role of included) {
+    if (!role.quantity_follows || requested.has(role.role) || namedExplicitly(scope, role, pattern.roles)) continue;
+    if (role.quantity_follows.some((r) => verifyOnly.has(r)) && !lines.some((l) => role.quantity_follows!.includes(l.role))) notAsked.add(role.role);
+  }
   // Gear that serves another role (a switch for the eero network) is priced only with it, unless the request names it itself.
   for (let changed = true; changed; ) {
     changed = false;
@@ -964,6 +972,7 @@ export function materialize(stated: ScopeDraftV1, pattern: PatternSpec, namedPro
       ...(a.trenched ? { trenched: true as const } : {}),
     })),
     to_verify: toVerify,
+    ...(verifyOnly.size ? { listed: [...verifyOnly] } : {}),
   };
 }
 

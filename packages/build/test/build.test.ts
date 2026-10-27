@@ -2171,3 +2171,71 @@ describe("Henry's decisions (2026-10-27): D-Tools quote history for cabling, cam
     expect(await tv("Provide and mount a new 77-inch OLED TV")).toBe("b89ed236-fff6-4985-a526-31d12b9c796f");
   });
 });
+
+describe("Zack's Standon job (2026-10-27): another brand's cameras are listed to price and the rest still builds", () => {
+  const none = { existing_detectors: "not_provided" as const, project_type: null, existing_equipment: { status: "none" as const, retained: [], removed_or_replaced: [] } };
+  /** Materialized and compiled against synthetic records for every product the pattern names, at $300 a device. */
+  async function build(o: object) {
+    const patterns = await loadPatterns();
+    const { scope } = approvedScope({ ...none, ...o });
+    const pattern = selectPattern(scope.functional_systems, patterns)!;
+    const selection = materialize(scope, pattern);
+    const catalog = Object.fromEntries(
+      patternRecordIds(pattern).map((id, i) => [id, id === pattern.parts?.product_id ? product(id, "Livewire", "PARTS", 1, 0.01, { laborItems: [] }) : product(id, "TestCo", `DEV-${i}`, 300, 150, { laborItems: [] })]),
+    );
+    const { admitted } = await admitAll(pattern, catalog);
+    return { selection, compiled: compile(selection, admitted, pattern) };
+  }
+  const UNIFI = "Requested product: UniFi outdoor turret camera (not Livewire's standard brand for this; priced in the final proposal)";
+
+  it("UniFi cameras with a network, UPS and audio: the cameras are listed to price, everything else prices, and the build compiles", async () => {
+    // Both runs failed: "critical role Alarm.com outdoor turret camera … is neither priced nor unresolved".
+    const { selection, compiled } = await build({
+      functional_systems: ["video surveillance", "home network", "whole home audio"],
+      requested_changes: ["Install 4 UniFi cameras", "Install a network rack with a UPS", "Install 2 pairs of in-ceiling speakers"],
+      requested_quantities: [{ item: "UniFi cameras", quantity: 4 }],
+      unresolved_questions: ["Requested product: UniFi cameras"],
+    });
+    expect(compiled.ok ? [] : compiled.errors).toEqual([]);
+    expect(selection.to_verify).toContain(UNIFI);
+    const roles = selection.lines.map((l) => l.role);
+    expect(roles).not.toContain("outdoor_camera");
+    // No microSD cards or PoE switch for cameras that aren't ours to price.
+    expect(roles).not.toContain("camera_storage");
+    expect(roles).not.toContain("camera_poe_switch");
+    expect(roles).toEqual(expect.arrayContaining(["power_protection", "zone_amplifier", "in_ceiling_speakers"]));
+  });
+
+  it("a cameras-only job in another brand compiles with the cameras listed to price (Jinny's Luma cameras too)", async () => {
+    const unifi = await build({
+      functional_systems: ["video surveillance"],
+      requested_changes: ["Install 4 UniFi outdoor cameras"],
+      requested_quantities: [{ item: "UniFi cameras", quantity: 4 }],
+      unresolved_questions: ["Requested product: UniFi cameras"],
+    });
+    expect(unifi.compiled.ok ? [] : unifi.compiled.errors).toEqual([]);
+    expect(unifi.selection.lines).toEqual([]);
+    expect(unifi.selection.requirements).toEqual([expect.objectContaining({ system: "video_surveillance", classification: "allowance" })]);
+    const luma = await build({
+      market: "commercial",
+      functional_systems: ["video surveillance"],
+      existing_equipment: { status: "described", retained: ["Luma NVR", "2 existing cameras"], removed_or_replaced: ["2 indoor dome cameras"] },
+      requested_changes: ["Replace the front desk indoor dome camera with a Luma camera", "Replace the back room indoor dome camera with a Luma camera"],
+      requested_quantities: [{ item: "Luma cameras", quantity: 2 }],
+      unresolved_questions: ["Requested product: Luma cameras"],
+    });
+    expect(luma.compiled.ok ? [] : luma.compiled.errors).toEqual([]);
+  });
+
+  it("Alarm.com cameras still price with their cards, and named cards stay with another brand's cameras", async () => {
+    const adc = await build({ functional_systems: ["video surveillance"], requested_changes: ["Install 2 turret cameras"] });
+    expect(adc.compiled.ok).toBe(true);
+    expect(adc.selection.lines.map((l) => l.role)).toEqual(expect.arrayContaining(["outdoor_camera", "camera_storage"]));
+    const cards = await build({
+      functional_systems: ["video surveillance"],
+      requested_changes: ["Install 4 UniFi outdoor cameras", "Add a 256 GB microSD card to each camera"],
+      unresolved_questions: ["Requested product: UniFi cameras"],
+    });
+    expect(cards.selection.lines.map((l) => l.role)).toContain("camera_storage");
+  });
+});

@@ -44,6 +44,7 @@ const SelectionSchema = z
       .array(z.object({ key: z.string(), label: z.string(), hours: z.number().positive(), labor_type: z.string(), quantity: z.number().int().min(2).optional(), feet: z.number().positive().optional(), trenched: z.literal(true).optional() }).strict())
       .default([]),
     to_verify: z.array(z.string()).default([]),
+    listed: z.array(z.string()).optional(),
   })
   .strict();
 
@@ -317,7 +318,7 @@ export function compile(raw: unknown, catalog: Map<string, AdmittedProduct>, pat
     else laborAllowances.push({ key: spec.key, label: spec.label, hours: a.hours, labor_type: spec.labor_type, basis: spec.basis, ...(units > 1 ? { quantity: units } : {}), ...(a.feet ? { feet: a.feet } : {}), ...(a.trenched ? { trenched: true as const } : {}) });
   }
 
-  // Critical role coverage: every critical role the selection implies is priced or explicitly unresolved.
+  // Critical role coverage: every critical role the selection implies is priced, listed to price or explicitly unresolved.
   for (const req of sel.requirements) {
     for (const roleName of req.roles) {
       const role = roles.get(roleName);
@@ -325,8 +326,9 @@ export function compile(raw: unknown, catalog: Map<string, AdmittedProduct>, pat
         errors.push(`requirement ${req.system} names unknown role ${roleName}`);
         continue;
       }
-      const accounted = seenRoles.has(roleName) || sel.unresolved.some((u) => u.role === roleName);
-      if (role.critical && !accounted) errors.push(`critical role ${role.label} for ${req.system} is neither priced nor unresolved`);
+      // Another brand's cameras listed to price are accounted for (Zack's Standon job, 2026-10-27: UniFi cameras blocked the build).
+      const accounted = seenRoles.has(roleName) || !!sel.listed?.includes(roleName) || sel.unresolved.some((u) => u.role === roleName);
+      if (role.critical && !accounted) errors.push(`critical role ${role.label} for ${req.system} is neither priced, listed to price nor unresolved`);
     }
     if (req.classification === "supported" && !req.roles.some((r) => seenRoles.has(r))) {
       errors.push(`${req.system} is marked supported but has no priced role`);
