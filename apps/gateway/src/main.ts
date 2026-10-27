@@ -14,6 +14,8 @@ async function main() {
     projectNumber ? [CHAT_ISSUER, addonIssuer(projectNumber)] : [CHAT_ISSUER],
   );
   const log = (entry: Record<string, unknown>) => console.log(JSON.stringify(entry));
+  // Card buttons in a reply call the gateway back at its endpoint, as the worker's cards do (add-on Chat apps need the URL).
+  const renderOptions = { actionFunction: requireEnv("GOOGLE_CHAT_ENDPOINT_URL") };
 
   const server = createServer(async (req, res) => {
     try {
@@ -29,7 +31,7 @@ async function main() {
       for await (const chunk of req) chunks.push(chunk as Buffer);
       // Keep the exact provider bytes: they are the original intake evidence.
       const body = new Uint8Array(Buffer.concat(chunks));
-      const out = await handleGoogleChat({ store, workflows, verifyGoogleChat, log }, { authorization: req.headers.authorization, body });
+      const out = await handleGoogleChat({ store, workflows, verifyGoogleChat, log, renderOptions }, { authorization: req.headers.authorization, body });
       res.writeHead(out.status, { "content-type": "application/json" }).end(JSON.stringify(out.body));
     } catch (err) {
       log({ msg: "request failed", error: String(err) });

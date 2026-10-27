@@ -1,5 +1,16 @@
 import { answerLabels, OPEN_INTAKE_STATES, parseApprovalText, type RunSignal, type ThreadRef } from "@sd/core";
-import { googleChatReplyBody, isAddonBody, parseGoogleChatEvent, type InboundEvent, type RequestVerifier, type WebhookReply } from "@sd/channels";
+import {
+  googleChatMessageReplyBody,
+  googleChatReplyBody,
+  isAddonBody,
+  parseGoogleChatEvent,
+  renderGoogleChat,
+  type InboundEvent,
+  type RenderOptions,
+  type RequestVerifier,
+  type View,
+  type WebhookReply,
+} from "@sd/channels";
 import type { Person, RunRecord, Store } from "@sd/store";
 import { WorkflowClosedError, type RetainerInvoiceRecord, type WorkflowPort } from "@sd/worker";
 
@@ -13,6 +24,8 @@ export interface GatewayDeps {
   workflows: WorkflowPort;
   verifyGoogleChat: RequestVerifier;
   log?: (entry: Record<string, unknown>) => void;
+  /** How card buttons in a synchronous reply call back (the endpoint URL for add-on Chat apps). */
+  renderOptions?: RenderOptions;
 }
 
 export interface WebhookRequest {
@@ -21,12 +34,14 @@ export interface WebhookRequest {
 }
 
 const reply = (text: string): WebhookReply => ({ status: 200, body: { text } });
+const card = (deps: GatewayDeps, view: View): WebhookReply => ({ status: 200, body: renderGoogleChat(view, deps.renderOptions) });
 const silent: WebhookReply = { status: 200, body: {} };
 
 const HELP = [
   "I turn a project description into a scope receipt and, once you approve it, a held conceptual-budget PDF.",
   "Send the client, address, rooms, what they want, what happens to existing gear, budget and timeline. \"Unknown\" is a fine answer.",
   "To change a scope before approving, tap Edit or just reply. To change a finished budget, tap \"Revise this budget\" under it (or start a message with \"revise\").",
+  'To start a different job while one is still open here, start your message with "new request".',
   "Commands: `status` (your recent runs), `reset` (abandon the request in this conversation), `help`.",
 ].join("\n");
 
@@ -48,8 +63,10 @@ export async function handleGoogleChat(deps: GatewayDeps, req: WebhookRequest): 
   if (!(await deps.verifyGoogleChat(req.authorization))) return { status: 401, body: { error: "unauthenticated" } };
   const out = await handleEvent(deps, parseGoogleChatEvent(req.body));
   // Workspace add-on Chat apps expect replies wrapped in a host-app action.
-  const text = (out.body as { text?: unknown }).text;
-  if (typeof text === "string" && isAddonBody(req.body)) return { status: out.status, body: googleChatReplyBody(text, true) };
+  const body = out.body as Record<string, unknown>;
+  if (!isAddonBody(req.body)) return out;
+  if (typeof body.text === "string") return { status: out.status, body: googleChatReplyBody(body.text, true) };
+  if (body.cardsV2) return { status: out.status, body: googleChatMessageReplyBody(body, true) };
   return out;
 }
 
@@ -156,6 +173,7 @@ async function emailInRequest(store: Store, run: RunRecord): Promise<string | nu
 /** Card controls: edit or restart an open scope, revise a finished budget, or start a new request. */
 async function control(deps: GatewayDeps, person: Person, event: Extract<InboundEvent, { kind: "control_click" }>): Promise<WebhookReply> {
   const { store } = deps;
+  if (event.control === "intake_answer" || event.control === "intake_new") return intakeChoice(deps, person, event);
   if (event.control === "edit_scope" || event.control === "start_over") {
     const receipt = await store.getReceipt(event.ref);
     if (!receipt) return reply("I can't find that receipt any more.");
@@ -198,6 +216,40 @@ async function control(deps: GatewayDeps, person: Person, event: Extract<Inbound
   await store.clearPendingRetainer(event.thread);
   await store.setPendingRevision(event.thread, run.id, person.id);
   return reply(EDIT_PROMPT);
+}
+
+/** The rep's answer to "an answer to my questions, or a new request?" about a message they sent (`ref` is that message). */
+async function intakeChoice(deps: GatewayDeps, person: Person, event: Extract<InboundEvent, { kind: "control_click" }>): Promise<WebhookReply> {
+  const { store } = deps;
+  const intake = await store.getIntake(event.ref).catch(() => null);
+  if (!intake) return reply("I can't find that message any more.");
+  if (intake.person_id !== person.id) return reply("Only the person who sent that message can choose.");
+  const open = await store.findOpenRun(event.thread);
+  if (!(await store.claimMessage(event.platform, event.providerEventId, event.control, open?.id ?? null))) return silent;
+  if (event.control === "intake_answer") {
+    if (!open || open.person_id !== person.id) return reply("That request is no longer open. Send your message again to start it as a new request.");
+    if (!(await store.claimMessage(intake.platform, intake.provider_message_id, "clarification", open.id))) return reply("That message was already used.");
+    if ((await signal(deps, open.id, { type: "clarification", intakeId: intake.id })) === "closed") {
+      await store.transitionRun(open.id, "FAILED", "system", { error: "workflow is no longer running", intakeId: intake.id });
+      return reply("Your previous request in this conversation stopped with an error, so I've closed it. Please send your request again as a new message.");
+    }
+    return reply("✓ Using it as your answer.");
+  }
+  // A new request: the message starts its own run in this session, after the open one closes.
+  if (intake.session_generation !== (await store.currentGeneration(event.thread))) return reply("This conversation was reset since then. Send the request again.");
+  const building = await store.findBuildingRun(event.thread);
+  if (building && (await deps.workflows.isRunning(building.id))) return reply("I'm still building the proposal approved here. Send the new request after it's posted.");
+  const client = open ? await openClient(store, open) : null;
+  const closed = await closeForNewRequest(deps, person, event.thread, intake.id);
+  const started = await store.startRun(intake);
+  if (!started.ok) return reply(started.reason === "already_claimed" ? "That message was already used." : "Another request is open here. Send the new request again in a moment.");
+  try {
+    await withRetry(() => deps.workflows.start(started.run.id));
+  } catch (err) {
+    await store.appendEvent(started.run.id, "workflow_start_failed", "system", { error: String(err) });
+    return reply("I saved your request but couldn't start working on it. It will be picked up automatically; nothing was sent anywhere.");
+  }
+  return reply(closed.length ? `Closed the open request${client ? ` for ${client}` : ""}. Working on this new request now.` : "Working on it as a new request now.");
 }
 
 /** The finished budget this person asked to send a retainer for in this thread, while it is still finished and the ask is fresh. */
@@ -319,12 +371,37 @@ async function message(deps: GatewayDeps, person: Person, event: Extract<Inbound
     }
   }
 
+  const newRequest = NEW_REQUEST_WORDS.test(text);
+  // "New request …" is never a revision of the last budget, even after Revise was tapped.
+  if (newRequest) await store.clearPendingRevision(event.thread);
+  let closedFor: string | null = null;
   const open = await store.findOpenRun(event.thread);
   if (open) {
     if (open.person_id !== person.id) {
       await claim("ignored_not_requester", open.id);
       return reply("This conversation has an open request from someone else. Start a new thread for yours.");
     }
+    // A redelivered "new request …" finds the run it started open: nothing more to do.
+    if (open.intake_id === intake.id) return silent;
+    if (newRequest) {
+      // "New request" alone closes the open one and waits; with a request after it, that request starts now.
+      const client = await openClient(store, open);
+      await closeForNewRequest(deps, person, event.thread, intake.id);
+      if (!text.replace(NEW_REQUEST_WORDS, "").trim()) {
+        await claim("new_request", open.id);
+        return reply(`Closed the open request${client ? ` for ${client}` : ""}. Send the new request whenever you're ready.`);
+      }
+      closedFor = client ?? "";
+    } else {
+      // A message that reads like another job is asked about, not read into this one's answers (Zack's Giessel/Dunham job, 2026-10-26).
+      const why = await looksLikeNewRequest(store, open, text);
+      if (why) {
+        await store.appendEvent(open.id, "intake_choice_asked", person.id, { intakeId: intake.id, why });
+        return card(deps, { kind: "intake_choice", intakeId: intake.id, text: `${why} Is it an answer to my questions, or a new request? A new request closes the open one.` });
+      }
+    }
+  }
+  if (open && closedFor === null) {
     if (!(await claim("clarification", open.id))) return silent;
     if ((await signal(deps, open.id, { type: "clarification", intakeId: intake.id })) === "closed") {
       // The run's workflow stopped without closing the run (for example after an error): close it, don't go silent.
@@ -362,7 +439,45 @@ async function message(deps: GatewayDeps, person: Person, event: Extract<Inbound
     await store.appendEvent(started.run.id, "workflow_start_failed", "system", { error: String(err) });
     return reply("I saved your request but couldn't start working on it. It will be picked up automatically; nothing was sent anywhere.");
   }
+  if (closedFor !== null) return reply(`Closed the open request${closedFor ? ` for ${closedFor}` : ""}. Working on this new request now.`);
   return closedBuild ? reply("The previous build in this conversation stopped with an error, so I've closed it. Working on this new request now.") : silent;
+}
+
+/** "New request: …" starts a different job even while another waits for answers here. */
+const NEW_REQUEST_WORDS = /^\s*new\s+(?:request|job|project)\b\s*[:.,\-–—]?\s*/i;
+
+/** Labeled intake fields at the start of a line ("Client:", "Address -"): three or more read as a request, not an answer. */
+const INTAKE_FIELD = /^\s*[-*•]?\s*(client|customer|address|property|location|rooms?|systems?|scope|budget|timeline|existing(?: gear| equipment)?|contact|phone|email)\s*[:\-–]/gim;
+const CLIENT_LINE = /(?:^|\n|\.\s)\s*[-*•]?\s*(?:client|customer)(?:\s+name)?\s*[:\-–]\s*([^\n.;,]+)/i;
+const NAME_FILLER = new Set(["and", "the", "family", "residence", "res", "inc", "llc", "mr", "mrs", "ms", "dr", "job", "project"]);
+const nameWords = (s: string) => new Set(s.toLowerCase().split(/[^a-z]+/).filter((w) => w.length > 2 && !NAME_FILLER.has(w)));
+
+/** The client the open request is for, as its latest receipt read it. */
+async function openClient(store: Store, run: RunRecord): Promise<string | null> {
+  return (await store.latestReceipt(run.id))?.body.extraction.client?.trim() || null;
+}
+
+/**
+ * Why a message sent while a request waits for answers looks like a different job, or null: it names a client
+ * who isn't the open request's, or it is a whole intake (three or more labeled fields such as Client, Address, Budget).
+ */
+async function looksLikeNewRequest(store: Store, run: RunRecord, text: string): Promise<string | null> {
+  const current = await openClient(store, run);
+  const named = CLIENT_LINE.exec(text)?.[1]?.trim();
+  if (named && current) {
+    const [a, b] = [nameWords(named), nameWords(current)];
+    if (a.size && b.size && ![...a].some((w) => b.has(w))) return `This names ${named}, but the open request is for ${current}.`;
+  }
+  const fields = new Set([...text.matchAll(INTAKE_FIELD)].map((m) => m[1]!.toLowerCase().replace(/s$/, "")));
+  if (fields.size >= 3) return `This reads like a whole new request${current ? `, and the open request is for ${current}` : ""}.`;
+  return null;
+}
+
+/** Close the open request here so a new one can start, and stop its workflow. */
+async function closeForNewRequest(deps: GatewayDeps, person: Person, thread: ThreadRef, intakeId: string): Promise<string[]> {
+  const ids = await deps.store.closeOpenRuns(thread, person.id, { intakeId });
+  for (const id of ids) await signal(deps, id, { type: "invalidate", reason: "new request" });
+  return ids;
 }
 
 async function approve(

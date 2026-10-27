@@ -73,6 +73,32 @@ export function renderGoogleChat(view: View, opts: RenderOptions = {}): Record<s
           },
         ],
       };
+    case "intake_choice":
+      return {
+        fallbackText: view.text,
+        cardsV2: [
+          {
+            cardId: `intake-choice-${view.intakeId}`,
+            card: {
+              sections: [
+                {
+                  widgets: [
+                    { textParagraph: { text: escape(view.text) } },
+                    {
+                      buttonList: {
+                        buttons: [
+                          controlButton("Answer to my questions", "intake_answer", view.intakeId, opts),
+                          controlButton("New request", "intake_new", view.intakeId, opts),
+                        ],
+                      },
+                    },
+                  ],
+                },
+              ],
+            },
+          },
+        ],
+      };
     case "text":
       return { text: view.text };
     case "status":
@@ -240,5 +266,10 @@ export function renderGoogleChat(view: View, opts: RenderOptions = {}): Record<s
 
 /** Synchronous webhook reply text, in the envelope the event's format expects. */
 export function googleChatReplyBody(text: string, addon: boolean): Record<string, unknown> {
-  return addon ? { hostAppDataAction: { chatDataAction: { createMessageAction: { message: { text } } } } } : { text };
+  return googleChatMessageReplyBody({ text }, addon);
+}
+
+/** A synchronous webhook reply message (text or a card from renderGoogleChat), in the envelope the event's format expects. */
+export function googleChatMessageReplyBody(message: Record<string, unknown>, addon: boolean): Record<string, unknown> {
+  return addon ? { hostAppDataAction: { chatDataAction: { createMessageAction: { message } } } } : message;
 }

@@ -143,6 +143,10 @@ Henry's decisions (2026-10-27), from 2,035 accepted or presented D-Tools quotes 
 - Sonos Amps follow the speakers at one per 4 and at least one per room with speakers (`drives.per_room`). A named Sonos Amp Multi is priced with its 2U rack mount, in place of the Sonos Amps unless the request also names one.
 - A TV with no model named is the Sony BRAVIA 7 (K65XR70, K55XR70, K75XR70). A BRAVIA 8 or an OLED the request names is the BRAVIA 8. Outdoor TVs stay the Samsung Terrace; there is no 55-inch LST9, so 55 inches is the partial-sun LST7.
 
+Starting a different job while another is open (Zack's Giessel/Dunham job, 2026-10-26; Henry, 2026-10-27):
+- A message starting "new request" closes the open request in the conversation and starts the rest of the message as a new one ("new request" alone closes it and waits).
+- A message sent while a request waits for answers that names a different client, or reads as a whole intake (three or more labeled fields such as Client, Address, Budget), is not read into the open request: the reply asks "Answer to my questions" or "New request", and nothing changes until the rep taps one.
+
 Design & Delivery (the parts line) is `design_delivery.base_pct` of product + labor + services, costed at the parts margin. When a budget would fall under the margin floor, it rises in half-point steps up to `design_delivery.max_pct` until the budget clears the floor; past that, the budget waits for an admin's approval. Without `design_delivery`, parts are sized to the parts share of the subtotal. `tax` can also be `{ "mode": "rate", "rate_pct": <n>, "applies_to": "taxable_equipment" }`.
 
 The file ships in the image. Publish it with the admin job (see `docs/deploy.md`):
