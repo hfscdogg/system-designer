@@ -2239,3 +2239,81 @@ describe("Zack's Standon job (2026-10-27): another brand's cameras are listed to
     expect(cards.selection.lines.map((l) => l.role)).toContain("camera_storage");
   });
 });
+
+describe("Henry's 10/28 asks: one record never stops the build; Dunham's separately priced run; Paulenich's CD player", () => {
+  const none = { existing_detectors: "not_provided" as const, project_type: null, existing_equipment: { status: "none" as const, retained: [], removed_or_replaced: [] } };
+  /** Materialized with only the records in `admitted` (all of the pattern's by default), then compiled against them. */
+  async function build(o: object, drop: (pattern: PatternSpec) => string[] = () => []) {
+    const patterns = await loadPatterns();
+    const { scope } = approvedScope({ ...none, ...o });
+    const pattern = selectPattern(scope.functional_systems, patterns)!;
+    const missing = new Set(drop(pattern));
+    const catalog = Object.fromEntries(
+      patternRecordIds(pattern)
+        .filter((id) => !missing.has(id))
+        .map((id, i) => [id, id === pattern.parts?.product_id ? product(id, "Livewire", "PARTS", 1, 0.01, { laborItems: [] }) : product(id, "TestCo", `DEV-${i}`, 300, 150, { laborItems: [] })]),
+    );
+    const { admitted } = await admitAll(pattern, catalog);
+    const selection = materialize(scope, pattern, [], new Set(admitted.keys()));
+    return { pattern, selection, compiled: compile(selection, admitted, pattern) };
+  }
+  const roleId = (pattern: PatternSpec, role: string) => pattern.roles.find((r) => r.role === role)!.product_id!;
+
+  it("a device whose D-Tools record can't be read is listed to price; the rest prices and compiles", async () => {
+    const tv = { functional_systems: ["TV mounting"], requested_changes: ["Provide and mount a new 65-inch TV", "Add a soundbar"] };
+    const { selection, compiled } = await build(tv, (p) => [roleId(p, "tv_mount")]);
+    expect(compiled.ok ? [] : compiled.errors).toEqual([]);
+    expect(selection.lines.map((l) => l.role)).not.toContain("tv_mount");
+    expect(selection.lines.map((l) => l.role)).toEqual(expect.arrayContaining(["television", "soundbar"]));
+    expect(selection.to_verify.some((v) => /^Requested product: .*can't be read; priced in the final proposal\)$/.test(v))).toBe(true);
+    expect(selection.listed).toContain("tv_mount");
+    // Without the admitted set (every record taken as admitted), nothing changes.
+    const all = await build(tv);
+    expect(all.selection.lines.map((l) => l.role)).toContain("tv_mount");
+    expect(all.selection.listed).toBeUndefined();
+  });
+
+  it("a critical device's missing record doesn't stop the build either: a camera with no record drops its cards too", async () => {
+    const { selection, compiled } = await build({ functional_systems: ["video surveillance"], requested_changes: ["Install 2 turret cameras"] }, (p) => [roleId(p, "outdoor_camera")]);
+    expect(compiled.ok ? [] : compiled.errors).toEqual([]);
+    expect(selection.lines.map((l) => l.role)).not.toContain("camera_storage");
+  });
+
+  it("a missing parts record leaves the parts line out instead of stopping the build", async () => {
+    const { selection, compiled } = await build({ functional_systems: ["TV mounting"], requested_changes: ["Provide and mount a new 65-inch TV"] }, (p) => [p.parts!.product_id]);
+    expect(selection.parts).toBeNull();
+    expect(compiled.ok ? [] : compiled.errors).toEqual([]);
+  });
+
+  it("Dunham: the master-bedroom run the request wants priced separately is its own cable-run line", async () => {
+    const giessel = {
+      functional_systems: ["structured cabling"],
+      requested_changes: [
+        "Cat6 home runs from the unfinished basement (drill-up access to all first-floor walls) to the library (2 ports), living room and mud room",
+        "Terminate all runs on a small 8-port keystone patch panel in the basement mech room, tested and labeled",
+        "Two-story Cat6 run up to the master bedroom via the bath/laundry plumbing chase, priced separately",
+      ],
+    };
+    const { selection, compiled } = await build(giessel);
+    expect(compiled.ok ? [] : compiled.errors).toEqual([]);
+    expect(selection.labor_allowances).toEqual([expect.objectContaining({ key: "wiring_run", label: "Low-voltage cable run (allowance)", hours: 2 })]);
+    expect(selection.to_verify).toEqual([]);
+    // With a drop count stated, whether it includes the separate run is asked, not guessed.
+    const counted = await build({ ...giessel, requested_quantities: [{ item: "Cat6 data ports", quantity: 7 }] });
+    expect(counted.selection.to_verify).toContain("Cable runs priced separately (1): confirm the Cat6 keystone jack count leaves them out");
+    // Without "priced separately", a wiring job's runs stay in the drops.
+    const together = await build({ ...giessel, requested_changes: giessel.requested_changes.map((c) => c.replace(", priced separately", "")) });
+    expect(together.selection.labor_allowances).toEqual([]);
+  });
+
+  it("Paulenich: a CD player is asked about on the verify list, not ignored", async () => {
+    const audio = { functional_systems: ["whole home audio"], requested_changes: ["Install 2 pairs of in-ceiling speakers", "Connect the existing CD player"] };
+    const { selection, compiled } = await build(audio);
+    expect(compiled.ok).toBe(true);
+    expect(selection.to_verify).toContain("CD player: confirm how it connects to the music system (the amplifier's line-in, or a Sonos Port)");
+    const kept = await build({ ...audio, requested_changes: ["Install 2 pairs of in-ceiling speakers"], existing_equipment: { status: "described", retained: ["CD player"], removed_or_replaced: [] } });
+    expect(kept.selection.to_verify).toContain("CD player: confirm how it connects to the music system (the amplifier's line-in, or a Sonos Port)");
+    const plain = await build({ ...audio, requested_changes: ["Install 2 pairs of in-ceiling speakers"] });
+    expect(plain.selection.to_verify.some((v) => /CD player/.test(v))).toBe(false);
+  });
+});

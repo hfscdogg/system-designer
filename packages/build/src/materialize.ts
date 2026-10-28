@@ -585,7 +585,11 @@ function statedForProduct(scope: ScopeDraftV1, n: NamedProduct | undefined): num
   return scope.requested_quantities.find((q) => compact(q.item).includes(m))?.quantity ?? null;
 }
 
-export function materialize(stated: ScopeDraftV1, pattern: PatternSpec, namedProducts: NamedProduct[] = []): Selection {
+/**
+ * admitted: the D-Tools records admitted in this run. A device, service or parts record outside it (a retired SKU)
+ * is listed to price instead of stopping the build; omitted, every record is taken as admitted.
+ */
+export function materialize(stated: ScopeDraftV1, pattern: PatternSpec, namedProducts: NamedProduct[] = [], admitted?: ReadonlySet<string>): Selection {
   const original = withoutTotals(stated);
   const retro = retrofit(stated);
   const lines: SelectionLine[] = [];
@@ -761,6 +765,21 @@ export function materialize(stated: ScopeDraftV1, pattern: PatternSpec, namedPro
     });
   }
 
+  // A device whose D-Tools record can't be admitted in this run (a retired SKU) is listed to price, and the rest of
+  // the job still builds: one record no longer stops the whole budget (Zack's Standon job, 2026-10-27).
+  if (admitted) {
+    for (let i = lines.length - 1; i >= 0; i--) {
+      const line = lines[i]!;
+      if (admitted.has(line.record_id)) continue;
+      const role = pattern.roles.find((r) => r.role === line.role)!;
+      const variants = [...(role.variants ?? []), ...(role.brand_variants ?? []), ...(role.market_variants ?? []), ...(role.larger_tv_variants ?? []), ...(role.port_variants ?? []), ...(role.word_variants ?? [])];
+      const label = line.requested_model ?? variants.find((v) => v.product_id === line.record_id)?.label ?? role.label;
+      lines.splice(i, 1);
+      toVerify.push(`Requested product: ${label} (its D-Tools record can't be read; priced in the final proposal)`);
+      if (!lines.some((l) => l.role === line.role)) verifyOnly.add(line.role);
+    }
+  }
+
   // A count for one device of a group ("only need 1 eero") is the group's count: the others it only mentioned in passing go.
   const counted = (r: RoleSpec) => statedQuantity(scope, r, pattern.roles) !== null || (requested.get(r.role) ?? []).some((n) => statedForProduct(original, n) !== null);
   for (const role of included) {
@@ -871,6 +890,15 @@ export function materialize(stated: ScopeDraftV1, pattern: PatternSpec, namedPro
     if (w && lines.some((l) => l.role === role.role) && !lines.some((l) => w.roles.includes(l.role)) && !toVerify.includes(w.verify)) toVerify.push(w.verify);
   }
 
+  // A cable run the request wants priced separately ("Two-story Cat6 run up to the master bedroom …, priced separately")
+  // is its own cable-run allowance line on a wiring job too (Zack's Dunham job, 2026-10-26: not priced separately).
+  const wiring = (pattern.allowances ?? []).find((a) => a.key === "wiring_run");
+  const separateRuns = wiring ? scope.requested_changes.map(fold).filter((c) => SEPARATELY.test(c) && wiring.mentions.some((w) => hasWord(c, fold(w)))) : [];
+  // A drop count the rep stated may or may not include it: asked, not guessed.
+  if (separateRuns.length && lines.some((l) => l.role === "data_drop" && l.quantity_basis === "fixed")) {
+    toVerify.push(`Cable runs priced separately (${separateRuns.length}): confirm the Cat6 keystone jack count leaves them out`);
+  }
+
   const devices = lines.reduce((n, l) => n + l.quantity, 0);
   // Labor-only allowances the request mentions (framing a niche), priced as hours at the pattern's labor rate.
   const extras = (pattern.labor_extras ?? []).filter((x) => mentioned(scope, x.mentions)).map((x) => x.id);
@@ -886,13 +914,14 @@ export function materialize(stated: ScopeDraftV1, pattern: PatternSpec, namedPro
     // Services the pattern's labor estimate includes are never priced separately, even when no labor is needed.
     if ((labor ?? pattern.labor)?.covers.includes(category)) continue;
     const spec = pattern.services.find((s) => s.category === category);
-    if (spec?.product_id) services.push({ category, record_id: spec.product_id, quantity: 1 });
+    if (spec?.product_id && (!admitted || admitted.has(spec.product_id))) services.push({ category, record_id: spec.product_id, quantity: 1 });
+    else if (spec?.product_id) allowances.push({ label: spec.label, reason: "its D-Tools record can't be read; shown as a TBD allowance outside committed totals" });
     else allowances.push({ label: spec?.label ?? category, reason: "no authenticated price; shown as a TBD allowance outside committed totals" });
   }
 
   // Out-of-pattern work the request asks for, in its changes or as a system no role covers: one allowance per template.
   const uncovered = scope.functional_systems.filter((system) => !candidates.some((r) => r.systems.includes(system)));
-  const laborAllowances = allowancesFor(pattern.allowances ?? [], scope, uncovered.map(fold), lines);
+  const laborAllowances = allowancesFor(pattern.allowances ?? [], scope, uncovered.map(fold), lines, separateRuns);
   // A mount rated for smaller or larger TVs than the one the request gives is listed to confirm, never silently
   // priced as fitting: the Strong SM-CS-ART2-L is rated 37-70" and McGetrick's TV is 75" (Zack, 2026-10-19).
   const tvRole = pattern.roles.find((r) => r.role === "television");
@@ -908,6 +937,11 @@ export function materialize(stated: ScopeDraftV1, pattern: PatternSpec, namedPro
   const audio = lines.some((l) => pattern.roles.find((r) => r.role === l.role)?.systems.includes("whole_home_audio"));
   if (source && scope.market === "commercial" && audio && !lines.some((l) => l.role === source.role)) {
     toVerify.push("Music source: none is priced; confirm what plays the music (the client's phone, POS or music service, or a Sonos Port)");
+  }
+  // A CD player or tape deck the request mentions is connected, not ignored; how is a question (Zack's Paulenich job, 2026-10-26).
+  const player = [...requestTexts(scope), ...scope.retained_equipment.map(fold)].flatMap((c) => Object.keys(AUDIO_PLAYERS).filter((t) => hasWord(c, t)))[0];
+  if (player && audio && !(source && lines.some((l) => l.role === source.role))) {
+    toVerify.push(`${AUDIO_PLAYERS[player]}: confirm how it connects to the music system (the amplifier's line-in, or a Sonos Port)`);
   }
   // The cable runs the budget prices are the job's wiring: a "prewire" service with no price of its own
   // doesn't also withhold the total (Zack's Britt job, 2026-10-19: "TBD allowance: prewire").
@@ -958,7 +992,7 @@ export function materialize(stated: ScopeDraftV1, pattern: PatternSpec, namedPro
     lines,
     services,
     labor,
-    parts: pattern.parts && lines.length ? { record_id: pattern.parts.product_id } : null,
+    parts: pattern.parts && lines.length && (!admitted || admitted.has(pattern.parts.product_id)) ? { record_id: pattern.parts.product_id } : null,
     requirements,
     allowances,
     unresolved,
@@ -1046,12 +1080,27 @@ const WALL_PORT = /\b(ports?|jacks?|outlets?|plates?)\b/;
 const STICK_ITEM = /^\s*\d{1,3}\s*(?:-\s*)?(?:ft\b\.?|feet\b|foot\b|')\s*(?:long\s+)?(?:sticks?|lengths?|pieces?|sections?)\b/i;
 
 /** The request's changes and stated counts, as allowance texts: a count of sticks keeps its count (Zack's Crowder job, 2026-10-23). */
+/** Music sources the audio patterns have no role for, as the request words them and as the budget names them. */
+const AUDIO_PLAYERS: Record<string, string> = { "cd player": "CD player", "cd changer": "CD changer", "tape deck": "Tape deck", "cassette deck": "Cassette deck", "cassette player": "Cassette player" };
+
+/** A change the request wants priced on its own line ("priced separately", "as a separate price", "broken out"). */
+const SEPARATELY = /\b(?:priced|price|quoted?|listed|shown)\s+(?:out\s+)?separately\b|\bseparate(?:ly)?\s+(?:line|price|priced|quote)\b|\bbroken\s+out\b/;
+
 const allowanceTexts = (scope: ScopeDraftV1) => [...scope.requested_changes, ...scope.requested_quantities.map((q) => (STICK_ITEM.test(q.item) ? `${q.quantity} - ${q.item}` : q.item))].map(fold);
 
-function allowancesFor(templates: AllowanceSpec[], scope: ScopeDraftV1, uncovered: string[], lines: SelectionLine[]): Array<AllowanceSpec & { texts: string[]; quantity: number; feet?: number; trenched?: true }> {
+function allowancesFor(
+  templates: AllowanceSpec[],
+  scope: ScopeDraftV1,
+  uncovered: string[],
+  lines: SelectionLine[],
+  separateRuns: string[] = [],
+): Array<AllowanceSpec & { texts: string[]; quantity: number; feet?: number; trenched?: true }> {
   const any = (t: string, words?: string[]) => !!words?.some((w) => hasWord(t, fold(w)));
   const found = templates.flatMap((a) => {
-    if (a.covered_by_systems?.some((s) => scope.functional_systems.includes(s))) return [];
+    if (a.covered_by_systems?.some((s) => scope.functional_systems.includes(s))) {
+      // A system that covers the work still prices the runs the request wants priced separately, one line each.
+      return a.key === "wiring_run" && separateRuns.length ? [{ ...a, texts: separateRuns, asked: true, run: undefined, quantity: separateRuns.length }] : [];
+    }
     const asks = (t: string) => any(t, a.mentions) && (!a.require || any(t, a.require)) && !any(t, a.exclude);
     const fromRequest = allowanceTexts(scope).filter(asks);
     const asking = [...fromRequest, ...uncovered].filter(asks);
