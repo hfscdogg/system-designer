@@ -197,9 +197,14 @@ export function createBuildStage(deps: BuildDeps) {
         if (admission.ok) admitted.push({ ...admission.product, evidence: { ...admission.product.evidence, blob_key: blobKey } });
         else reject(admission.reason);
       }
-      if (rejected.length) return { ok: false, reason: `D-Tools records could not be admitted (${rejected.join("; ")})` };
+      // A standard record that can't be admitted (a retired SKU) no longer stops the run: the job's devices on it are
+      // listed to price and the rest builds (Zack's Standon job, 2026-10-27). Outages still retry above.
       await store.publishArtifact(runId, "catalog", "admitted", admitted);
-      await advance(runId, "CATALOG_EVIDENCE_ADMITTED", { records: admitted.length, ...(skipped.length ? { named_not_admitted: skipped } : {}) });
+      await advance(runId, "CATALOG_EVIDENCE_ADMITTED", {
+        records: admitted.length,
+        ...(rejected.length ? { standard_not_admitted: rejected } : {}),
+        ...(skipped.length ? { named_not_admitted: skipped } : {}),
+      });
       return { ok: true, summary: `${admitted.length} D-Tools records read` };
     },
 
@@ -207,7 +212,7 @@ export function createBuildStage(deps: BuildDeps) {
       const a = await approved(runId);
       const pattern = PatternSpecSchema.parse(await artifact(runId, "prebuild", "pattern"));
       const catalog = await admittedCatalog(runId);
-      const selection = materialize(a.scope, pattern, (await namedProducts(runId)).filter((n) => catalog.has(n.record_id)));
+      const selection = materialize(a.scope, pattern, (await namedProducts(runId)).filter((n) => catalog.has(n.record_id)), new Set(catalog.keys()));
       await store.publishArtifact(runId, "selection", "selection", selection);
       await advance(runId, "SELECTION_READY");
       const compiled = compile(selection, catalog, pattern);

@@ -340,10 +340,9 @@ describe("Google Chat → scope approval vertical slice", () => {
     expect(await t.store.listRunsForPerson("zack")).toHaveLength(0);
   });
 
-  it("blocks the build when a D-Tools record is missing, and keeps the run for review", async () => {
-    const catalog = { ...CATALOG };
-    delete catalog[Object.keys(CATALOG)[0]!];
-    const t = await setup([completeExtraction()], [], { catalog });
+  it("blocks the build when no D-Tools record can be read, and keeps the run for review", async () => {
+    // One missing record lists its device to price (below); with none readable there is no budget to make.
+    const t = await setup([completeExtraction()], [], { catalog: {} });
     await t.send(chatMessage("Smith security upgrade"));
     const [receipt] = t.receipts();
     await t.send(click(receipt!.receiptId, receipt!.approve!.scopeHash));
@@ -458,6 +457,22 @@ describe("Google Chat → scope approval vertical slice", () => {
     expect(t.chat.files).toHaveLength(0);
     expect(t.texts().at(-1)).toContain("TestCo PANEL-1 changed in D-Tools");
     expect(await t.store.readBinaryArtifact(run!.id, "render", "pdf")).toBeNull();
+  });
+
+  it("a standard record D-Tools can't read lists that device to price and still posts the budget (Zack's Standon job, 2026-10-27)", async () => {
+    // One record used to stop the whole run at catalog admission, even for a device the job didn't use.
+    const glass = "44444444-4444-4444-8444-444444444444";
+    const { [glass]: _missing, ...rest } = CATALOG as Record<string, unknown>;
+    const t = await setup([completeExtraction()], [], { dtools: recordedDToolsReader(rest) });
+    await t.send(chatMessage("Smith security upgrade"));
+    const [receipt] = t.receipts();
+    await t.send(click(receipt!.receiptId, receipt!.approve!.scopeHash));
+    const [run] = await t.store.listRunsForPerson("zack");
+    expect(run!.state).toBe("READY_HELD");
+    expect(t.chat.files).toHaveLength(1);
+    const customer = (await t.store.readArtifact<CustomerProposal>(run!.id, "validate", "customer_view"))!;
+    expect(customer.sections.flatMap((s) => s.items).some((i) => i.model === "GLASS-1")).toBe(false);
+    expect(customer.remaining_verification.some((v) => /can't be read; priced in the final proposal/.test(v))).toBe(true);
   });
 
   it("handles Workspace add-on events end to end and wraps replies for them", async () => {
