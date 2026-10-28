@@ -2057,7 +2057,7 @@ describe("Henry's decisions (2026-10-27): D-Tools quote history for cabling, cam
 
   it("patterns carry the new version", async () => {
     const versions = Object.fromEntries((await loadPatterns()).map((p) => [p.pattern, p.version]));
-    expect(versions).toMatchObject({ prewire: "2026-10-27.2", tv_media: "2026-10-27.1", whole_home_audio: "2026-10-27.1" });
+    expect(versions).toMatchObject({ prewire: "2026-10-27.2", tv_media: "2026-10-27.1", whole_home_audio: "2026-10-28.1" });
   });
 
   it("Q1: a retrofit drop is two keystone jacks and 2 hours; a new-construction drop one jack and 1 hour", async () => {
@@ -2306,14 +2306,17 @@ describe("Henry's 10/28 asks: one record never stops the build; Dunham's separat
     expect(together.selection.labor_allowances).toEqual([]);
   });
 
-  it("Paulenich: a CD player is asked about on the verify list, not ignored", async () => {
+  it("Paulenich: a CD player gets a Sonos Port, mentioned or kept (Henry, 2026-10-28)", async () => {
     const audio = { functional_systems: ["whole home audio"], requested_changes: ["Install 2 pairs of in-ceiling speakers", "Connect the existing CD player"] };
+    const port = (sel: ReturnType<typeof materialize>) => sel.lines.filter((l) => l.role === "streaming_port").map((l) => l.quantity);
     const { selection, compiled } = await build(audio);
-    expect(compiled.ok).toBe(true);
-    expect(selection.to_verify).toContain("CD player: confirm how it connects to the music system (the amplifier's line-in, or a Sonos Port)");
+    expect(compiled.ok ? [] : compiled.errors).toEqual([]);
+    expect(port(selection)).toEqual([1]);
+    expect(selection.to_verify.some((v) => /CD player/.test(v))).toBe(false);
+    // A CD player only in the equipment the customer keeps asks for the Port too.
     const kept = await build({ ...audio, requested_changes: ["Install 2 pairs of in-ceiling speakers"], existing_equipment: { status: "described", retained: ["CD player"], removed_or_replaced: [] } });
-    expect(kept.selection.to_verify).toContain("CD player: confirm how it connects to the music system (the amplifier's line-in, or a Sonos Port)");
+    expect(port(kept.selection)).toEqual([1]);
     const plain = await build({ ...audio, requested_changes: ["Install 2 pairs of in-ceiling speakers"] });
-    expect(plain.selection.to_verify.some((v) => /CD player/.test(v))).toBe(false);
+    expect(port(plain.selection)).toEqual([]);
   });
 });

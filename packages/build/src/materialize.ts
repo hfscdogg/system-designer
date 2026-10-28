@@ -639,6 +639,7 @@ export function materialize(stated: ScopeDraftV1, pattern: PatternSpec, namedPro
     const asked =
       (role.mentions && mentioned(scope, role.mentions, role.mentions_require, siblings)) ||
       (role.asked_by && mentioned(scope, role.asked_by, undefined, siblings)) ||
+      !!role.mentions_kept?.some((t) => scope.retained_equipment.some((e) => hasWord(fold(e), fold(t)))) ||
       statedQuantity(scope, role, pattern.roles) !== null ||
       // A sized device the request sells without a count ("Install 55'' outdoor rated TV with cover").
       (!!role.variants?.length && wantsNew(scope, role, pattern.roles)) ||

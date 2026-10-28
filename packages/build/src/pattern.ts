@@ -28,6 +28,8 @@ export const RoleSpecSchema = z
      * "internet"). Unlike mentions they don't name the device, so "add Wi-Fi" is not an add-on of one eero.
      */
     asked_by: z.array(z.string()).min(1).optional(),
+    /** Equipment the customer keeps that asks for this role too (a kept CD player needs a Sonos Port to stream). */
+    mentions_kept: z.array(z.string().min(1)).min(1).optional(),
     /** When priced without any of these roles, `verify` is listed to check (an eero access point with no eero router priced). */
     verify_without: z.object({ roles: z.array(z.string()).min(1), verify: z.string().min(1) }).strict().optional(),
     /** Include the role only when one of these roles is included (a switch and power protection for the eero network). */
