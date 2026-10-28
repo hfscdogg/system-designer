@@ -151,7 +151,7 @@ One item never stops the budget (Zack's Standon job, 2026-10-27; Henry, 2026-10-
 - A device listed to price (another brand's cameras, an outdoor TV size or soundbar mount with no standard) is accounted for: the rest of the job builds.
 - A standard D-Tools record that can't be read or admitted (a retired SKU, no price) no longer stops the run. A device on it is listed to price ("its D-Tools record can't be read"), a service on it is a TBD allowance, and a missing parts record leaves the parts line out. A build with nothing priceable still stops. A D-Tools outage or rate limit is still retried.
 - A cable run the request wants "priced separately" is its own cable-run allowance line, even on a structured-wiring job. With a drop count stated, the verify list asks whether the count leaves it out.
-- A CD player, CD changer or tape deck the request mentions (or the customer keeps) on an audio job is asked about on the verify list: the amplifier's line-in, or a Sonos Port.
+- A CD player, CD changer or tape deck the request mentions or the customer keeps gets a Sonos Port, like a turntable (Henry, 2026-10-28; `mentions_kept`). Whole-home audio 2026-10-28.1.
 
 Design & Delivery (the parts line) is `design_delivery.base_pct` of product + labor + services, costed at the parts margin. When a budget would fall under the margin floor, it rises in half-point steps up to `design_delivery.max_pct` until the budget clears the floor; past that, the budget waits for an admin's approval. Without `design_delivery`, parts are sized to the parts share of the subtotal. `tax` can also be `{ "mode": "rate", "rate_pct": <n>, "applies_to": "taxable_equipment" }`.
 
