@@ -232,9 +232,10 @@ export class SmokeFailure extends Error {
   override name = "SmokeFailure";
 }
 
-const THROTTLED = /quota|rate|429|resource.?exhausted/i;
+/** Throttling, and Chat's own transient server errors (it failed #82's staging smoke twice on 2026-10-28 with "Internal error encountered"). */
+const THROTTLED = /quota|rate|429|resource.?exhausted|internal error|backend error|unavailable|deadline|\b50[023]\b/i;
 
-/** Chat throttles bursts of posts into one space; the job's own posts wait and retry instead of failing the run. */
+/** Chat throttles bursts of posts into one space and sometimes fails one with a server error; the job's own posts wait and retry (each post carries an idempotency key, so a retry never doubles a message). */
 function patientChat(chat: ChannelAdapter, delays: number[], log: (m: string) => void): ChannelAdapter["post"] {
   return async (thread, view, key) => {
     for (let attempt = 0; ; attempt++) {

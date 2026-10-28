@@ -1182,7 +1182,7 @@ describe("editing a scope and revising a finished budget", () => {
 });
 
 describe("post-deploy smoke test", () => {
-  const smoke = async (scenarios: SmokeScenario[], extractions = [completeExtraction()], throttleOnce = false) => {
+  const smoke = async (scenarios: SmokeScenario[], extractions = [completeExtraction()], throttleOnce: boolean | string = false) => {
     const t = await setup(extractions, [{ ...noPatch, requested_quantities: [{ item: "Glass-break sensor", quantity: 4 }] }]);
     await prepareSmoke(t.db, "spaces/S");
     let throttled = !throttleOnce;
@@ -1190,7 +1190,7 @@ describe("post-deploy smoke test", () => {
       post: (...args: Parameters<typeof t.chat.post>) => {
         if (!throttled) {
           throttled = true;
-          return Promise.reject(new Error("Quota limit exceeded."));
+          return Promise.reject(new Error(typeof throttleOnce === "string" ? throttleOnce : "Quota limit exceeded."));
         }
         return t.chat.post(...args);
       },
@@ -1246,6 +1246,12 @@ describe("post-deploy smoke test", () => {
 
   it("waits out Chat throttling on its own posts instead of failing", async () => {
     const { t, run } = await smoke([security(4)], [completeExtraction()], true);
+    expect((await run).failures).toEqual([]);
+    expect(t.texts().at(-1)).toBe("✅ Smoke passed: 1 jobs, 2 budgets.");
+  });
+
+  it("retries a post Chat fails with a transient server error (staging, 2026-10-28)", async () => {
+    const { t, run } = await smoke([security(4)], [completeExtraction()], "Internal error encountered.");
     expect((await run).failures).toEqual([]);
     expect(t.texts().at(-1)).toBe("✅ Smoke passed: 1 jobs, 2 budgets.");
   });
