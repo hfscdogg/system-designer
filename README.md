@@ -163,6 +163,10 @@ Zack's round 8 (2026-10-30) and Henry's 10/30 decisions:
 - Retrofit wording in the open questions (a plumbing-chase route) counts; a length the request states per drop ("50 feet for each data drop") sizes the Cat6 (`stated_length_per`). Prewire 2026-10-30.1.
 - Amplifiers the request names itself, with no new speakers asked for, drive the client's own speakers: none are added. A CD player the client needs to buy is listed to price (no Livewire standard); its Sonos Port is priced. Whole-home audio 2026-10-30.1.
 
+Zack's 10/30 re-runs:
+- Wall plates go one per room: a room the request gives several ports ("a 2-port keystone plate", "library (2 ports)") takes one plate, the rest one apiece. A patch panel's ports are not a room.
+- A change that counts a device in words ("Two Sonos Ports …") outranks a smaller count the interpreter read off a product line. A longer product's name ("Sonos Amp Multi") doesn't count the shorter one (the Sonos Amp).
+
 Design & Delivery (the parts line) is `design_delivery.base_pct` of product + labor + services, costed at the parts margin. When a budget would fall under the margin floor, it rises in half-point steps up to `design_delivery.max_pct` until the budget clears the floor; past that, the budget waits for an admin's approval. Without `design_delivery`, parts are sized to the parts share of the subtotal. `tax` can also be `{ "mode": "rate", "rate_pct": <n>, "applies_to": "taxable_equipment" }`.
 
 The file ships in the image. Publish it with the admin job (see `docs/deploy.md`):

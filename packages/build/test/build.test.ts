@@ -1955,7 +1955,8 @@ describe("Zack's round 7 (2026-10-26)", () => {
     for (const requested_quantities of [[], [{ item: "patch panel ports", quantity: 8 }], [{ item: "8-port keystone patch panel", quantity: 1 }]]) {
       const { pattern, selection } = await job({ ...giessel, functional_systems: ["structured cabling"], requested_quantities });
       expect(pattern.pattern).toBe("prewire");
-      expect(quantities(selection), JSON.stringify(requested_quantities)).toEqual({ patch_panel: 1, data_drop: 12, wall_plate: 3, cat6_cable: 450 });
+      // Plates one per room since 10/30: the great room's and library's 2 ports share a plate, the other 2 drops one each.
+      expect(quantities(selection), JSON.stringify(requested_quantities)).toEqual({ patch_panel: 1, data_drop: 12, wall_plate: 4, cat6_cable: 450 });
       expect(selection.lines.find((l) => l.role === "patch_panel")!.record_id).toBe("1d118218-96f0-421e-a29e-b686b6b2f069");
       expect(selection.lines.find((l) => l.role === "wall_plate")!.record_id).toBe("90b2d65c-6d4f-4dc0-bc7e-752688f5197b");
       expect(selection.to_verify).toEqual([]);
@@ -2454,5 +2455,53 @@ describe("Zack's round 8 (2026-10-30) and Henry's 10/30 decisions", () => {
     const speakers = await build({ functional_systems: ["whole home audio"], requested_changes: ["Install a Sonos Amp and 2 pairs of in-ceiling speakers in the den", "Connect the existing CD player"] });
     expect(selection.lines.length && speakers.selection.lines.map((l) => l.role)).toEqual(expect.arrayContaining(["zone_amplifier", "in_ceiling_speakers", "streaming_port"]));
     expect(speakers.selection.to_verify.some((v) => /CD player \(no Livewire standard/.test(v))).toBe(false);
+  });
+});
+
+describe("Zack's 10/30 re-runs (run_41804c72 Giessel, run_b2781fb0 Paulenich)", () => {
+  const none = { existing_detectors: "not_provided" as const, project_type: null, existing_equipment: { status: "none" as const, retained: [], removed_or_replaced: [] } };
+  async function job(o: object) {
+    const patterns = await loadPatterns();
+    const { scope } = approvedScope({ ...none, ...o });
+    return materialize(scope, selectPattern(scope.functional_systems, patterns)!);
+  }
+  const quantities = (sel: ReturnType<typeof materialize>) => Object.fromEntries(sel.lines.map((l) => [l.role, l.quantity]));
+
+  it("Giessel: wall plates go one per room, a room with several ports on one plate; a patch panel's ports aren't a room", async () => {
+    // 7 ports in 5 rooms: the great room's 2-port plate, the library (2 ports), living room, mud room and master.
+    const giessel = {
+      functional_systems: ["structured cabling"],
+      requested_quantities: [{ item: "Cat6 data ports", quantity: 7 }],
+      requested_changes: [
+        "Replace a loose Ethernet plate in the great room with a proper 2-port Cat6 keystone plate",
+        "Cat6 home runs from the unfinished basement to the library (2 ports), living room and mud room",
+        "Terminate all runs on a small 8-port keystone patch panel in the basement mech room",
+        "Two-story Cat6 run up to the master bedroom",
+      ],
+      unresolved_questions: ["Assumed 50 feet per data drop", "Route for master bedroom run is likely via bath/laundry plumbing chase; to be confirmed"],
+    };
+    const sel = await job(giessel);
+    expect(sel.retrofit).toBe(true);
+    expect(quantities(sel)).toMatchObject({ patch_panel: 1, data_drop: 14, wall_plate: 5, cat6_cable: 350 });
+    // "2-port plates throughout" names no single room: plates stay one per two ports.
+    const throughout = await job({ functional_systems: ["structured cabling"], requested_quantities: [{ item: "Cat6 data ports", quantity: 8 }], requested_changes: ["Cat6 drops with 2-port keystone plates throughout"] });
+    expect(quantities(throughout)).toMatchObject({ wall_plate: 4 });
+  });
+
+  it("Paulenich: 'Two Sonos Ports' in a change outranks the 1 read off the product line, named or not", async () => {
+    const paulenich = {
+      functional_systems: ["whole home audio", "TV"],
+      requested_changes: ["Two Sonos Amp Multi units with rack mount", "Additional Sonos Amp for the downstairs bedroom", "Two Sonos Ports for the upstairs and downstairs TV systems", "Replace 2 TVs"],
+      requested_quantities: [{ item: "Sonos Amp Multi", quantity: 2 }, { item: "Sonos Port Streaming Pre-Amp", quantity: 1 }, { item: "Upstairs TV", quantity: 1 }, { item: "Downstairs TV", quantity: 1 }],
+    };
+    expect(quantities(await job(paulenich))).toMatchObject({ streaming_port: 2 });
+    const patterns = await loadPatterns();
+    const { scope } = approvedScope({ ...none, ...paulenich });
+    const pattern = selectPattern(scope.functional_systems, patterns)!;
+    const port = pattern.roles.find((r) => r.role === "streaming_port")!;
+    const named = materialize(scope, pattern, [{ record_id: port.product_id!, model: "PORT", label: "Sonos Port", category: "Distributed Audio/Video > Streamers", text: "Sonos Port Streaming Pre-Amp" }]);
+    expect(quantities(named)).toMatchObject({ streaming_port: 2 });
+    // A smaller count in words doesn't lower a larger stated one.
+    expect(quantities(await job({ ...paulenich, requested_quantities: [{ item: "Sonos Port", quantity: 3 }] }))).toMatchObject({ streaming_port: 3 });
   });
 });

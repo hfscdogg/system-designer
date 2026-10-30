@@ -752,7 +752,13 @@ export function materialize(stated: ScopeDraftV1, pattern: PatternSpec, namedPro
       continue;
     }
     // A count the requester stated is used as written (speakers as pairs, for a role sold in pairs); otherwise the pattern's quantity (a minimum is verified on site).
-    const statedUnits = product ? (statedForProduct(original, product) ?? statedQuantity(scope, role, pattern.roles)) : statedItems(scope, role, pattern.roles);
+    const counted = product ? (statedForProduct(original, product) ?? statedQuantity(scope, role, pattern.roles)) : statedItems(scope, role, pattern.roles);
+    // A change that counts the device in words ("Two Sonos Ports for the upstairs and downstairs TV systems") outranks
+    // a smaller count the interpreter read off a product line (Zack's Paulenich job, 2026-10-30: one Port priced).
+    // A longer product's name that starts with this one's ("Sonos Amp Multi" for the Sonos Amp) counts that product, not this.
+    const longer = pattern.roles.map((r) => fold(r.label)).filter((l) => l.startsWith(`${fold(role.label)} `));
+    const said = counted === null ? null : countedInChanges(original, [role.label, ...(product ? [product.model, product.label] : [])], longer);
+    const statedUnits = counted !== null && said !== null ? Math.max(counted, said) : counted;
     // A record sold as a pair takes a count of speakers as pairs: 2 restroom speakers are one PIC-650-T pair (Zack's Biscuit Belly job, 2026-10-19).
     const pairs = product?.units_per_item && statedUnits !== null && !pairCounted(scope, role, pattern.roles);
     const stated = pairs ? Math.ceil(statedUnits! / product!.units_per_item!) : statedUnits;
@@ -884,7 +890,11 @@ export function materialize(stated: ScopeDraftV1, pattern: PatternSpec, namedPro
     // With no new TV, the moved ones are all the mounts: one moved TV is one mount (Zack's Young job, 2026-10-26: 2).
     const moved = role.per_moved ? movedNeedingMount(scope, role.per_moved) : 0;
     if (units > 0 || moved > 0) {
-      line.quantity = Math.ceil(Math.round((units / per) * 1000) / 1000) + moved;
+      // Plates go one per location: rooms the request gives several ports ("a 2-port plate", "library (2 ports)") take one
+      // plate each, the rest one apiece (Zack's Giessel job, 2026-10-30: 7 ports in 5 rooms priced as 4 two-port plates).
+      const multi = role.port_variants ? multiPortLocations(scope) : [];
+      const byLocation = multi.length ? units - multi.reduce((n, p) => n + p - 1, 0) : 0;
+      line.quantity = Math.max(Math.ceil(Math.round((units / per) * 1000) / 1000), byLocation) + moved;
       // Plates go one per outlet location, which the drops don't say: always a minimum to verify.
       const toCheck = !!role.port_variants && role.quantity.kind === "minimum";
       line.quantity_basis = toCheck ? "minimum_to_verify" : "fixed";
@@ -1176,7 +1186,34 @@ function feetPerDrop(scope: ScopeDraftV1): number | null {
   return null;
 }
 
-const COUNT_WORDS: Record<string, number> = { one: 1, two: 2, three: 3, four: 4, a: 1 };
+/** Port counts of single locations the request gives several ports: "a 2-port keystone plate", "library (2 ports)". */
+function multiPortLocations(scope: ScopeDraftV1): number[] {
+  const out: number[] = [];
+  const n = (w: string) => COUNT_WORDS[w] ?? Number(w);
+  for (const t of requestTexts(scope)) {
+    for (const m of t.matchAll(/\b(\d|two|three|four)[- ]port\s+(?:[\w-]+\s+){0,3}?(?:wall ?plate|faceplate|face plate|plate)\b(?!s)/g)) out.push(n(m[1]!));
+    for (const m of t.matchAll(/\((\d|two|three|four) ports\)/g)) out.push(n(m[1]!));
+  }
+  return out.filter((p) => p >= 2);
+}
+
+/** The largest count a change gives the device by name ("two Sonos Ports", "3 G6 Bullets"), or null. */
+function countedInChanges(scope: ScopeDraftV1, names: string[], longer: string[] = []): number | null {
+  let most: number | null = null;
+  for (const name of names.map(fold).filter((n) => n.length >= 4)) {
+    const pattern = new RegExp(`\\b(\\d+|two|three|four|five|six)\\s+${escape(name)}(s|es)?\\b`, "g");
+    for (const c of scope.requested_changes.map(fold)) {
+      for (const m of c.matchAll(pattern)) {
+        if (longer.some((l) => c.startsWith(l, m.index! + m[1]!.length + 1))) continue;
+        const n = COUNT_WORDS[m[1]!] ?? Number(m[1]);
+        if (n > 0 && (most === null || n > most)) most = n;
+      }
+    }
+  }
+  return most;
+}
+
+const COUNT_WORDS: Record<string, number> = { one: 1, two: 2, three: 3, four: 4, five: 5, six: 6, a: 1 };
 const CREW = /\b(\d+|one|two|three|four)[- ](?:man|men|person|people|tech|techs|technicians?|installers?)\b/;
 const DAYS = /\b(?:(\d+(?:\.\d+)?|one|two|three|four)[- ](?:full[- ]|whole[- ])?days?|(?:a |one )?(?:full|whole)[- ]day|(half)[- ]a?[- ]?day)\b/;
 /**
