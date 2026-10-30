@@ -97,7 +97,7 @@ describe("patterns", () => {
         1;
       expect(patternRecordIds(p), p.pattern).toHaveLength(records);
       // The allowance templates ride along with every pattern.
-      expect(p.allowances?.map((a) => a.key), p.pattern).toEqual(["outdoor_outlet", "electrical_outlet", "conduit", "trenching", "wiring_run", "camera_troubleshooting"]);
+      expect(p.allowances?.map((a) => a.key), p.pattern).toEqual(["outdoor_outlet", "electrical_outlet", "conduit", "trenching", "wiring_run", "camera_troubleshooting", "remote_programming"]);
     }
     const network = patterns.find((p) => p.pattern === "home_network")!;
     expect(network.applies_when_any).toEqual(["networking"]);
@@ -2057,7 +2057,7 @@ describe("Henry's decisions (2026-10-27): D-Tools quote history for cabling, cam
 
   it("patterns carry the new version", async () => {
     const versions = Object.fromEntries((await loadPatterns()).map((p) => [p.pattern, p.version]));
-    expect(versions).toMatchObject({ prewire: "2026-10-27.2", tv_media: "2026-10-27.1", whole_home_audio: "2026-10-28.1" });
+    expect(versions).toMatchObject({ prewire: "2026-10-30.1", tv_media: "2026-10-27.1", whole_home_audio: "2026-10-30.1" });
   });
 
   it("Q1: a retrofit drop is two keystone jacks and 2 hours; a new-construction drop one jack and 1 hour", async () => {
@@ -2188,10 +2188,12 @@ describe("Zack's Standon job (2026-10-27): another brand's cameras are listed to
   }
   const UNIFI = "Requested product: UniFi outdoor turret camera (not Livewire's standard brand for this; priced in the final proposal)";
 
-  it("UniFi cameras with a network, UPS and audio: the cameras are listed to price, everything else prices, and the build compiles", async () => {
+  it("cameras another brand's NVR the customer keeps records to are listed to price; everything else prices, and the build compiles", async () => {
     // Both runs failed: "critical role Alarm.com outdoor turret camera … is neither priced nor unresolved".
+    // Since Henry's 10/30 decision, only a kept system of that brand (a UniFi NVR here) keeps the cameras listed to price.
     const { selection, compiled } = await build({
       functional_systems: ["video surveillance", "home network", "whole home audio"],
+      existing_equipment: { status: "described", retained: ["UniFi Protect NVR"], removed_or_replaced: [] },
       requested_changes: ["Install 4 UniFi cameras", "Install a network rack with a UPS", "Install 2 pairs of in-ceiling speakers"],
       requested_quantities: [{ item: "UniFi cameras", quantity: 4 }],
       unresolved_questions: ["Requested product: UniFi cameras"],
@@ -2206,16 +2208,7 @@ describe("Zack's Standon job (2026-10-27): another brand's cameras are listed to
     expect(roles).toEqual(expect.arrayContaining(["power_protection", "zone_amplifier", "in_ceiling_speakers"]));
   });
 
-  it("a cameras-only job in another brand compiles with the cameras listed to price (Jinny's Luma cameras too)", async () => {
-    const unifi = await build({
-      functional_systems: ["video surveillance"],
-      requested_changes: ["Install 4 UniFi outdoor cameras"],
-      requested_quantities: [{ item: "UniFi cameras", quantity: 4 }],
-      unresolved_questions: ["Requested product: UniFi cameras"],
-    });
-    expect(unifi.compiled.ok ? [] : unifi.compiled.errors).toEqual([]);
-    expect(unifi.selection.lines).toEqual([]);
-    expect(unifi.selection.requirements).toEqual([expect.objectContaining({ system: "video_surveillance", classification: "allowance" })]);
+  it("a cameras-only job in another brand compiles: Jinny's Luma cameras on the Luma NVR they keep are listed to price", async () => {
     const luma = await build({
       market: "commercial",
       functional_systems: ["video surveillance"],
@@ -2225,6 +2218,7 @@ describe("Zack's Standon job (2026-10-27): another brand's cameras are listed to
       unresolved_questions: ["Requested product: Luma cameras"],
     });
     expect(luma.compiled.ok ? [] : luma.compiled.errors).toEqual([]);
+    expect(luma.selection.lines.map((l) => l.role)).not.toContain("outdoor_camera");
   });
 
   it("Alarm.com cameras still price with their cards, and named cards stay with another brand's cameras", async () => {
@@ -2318,5 +2312,147 @@ describe("Henry's 10/28 asks: one record never stops the build; Dunham's separat
     expect(port(kept.selection)).toEqual([1]);
     const plain = await build({ ...audio, requested_changes: ["Install 2 pairs of in-ceiling speakers"] });
     expect(port(plain.selection)).toEqual([]);
+  });
+});
+
+describe("Zack's round 8 (2026-10-30) and Henry's 10/30 decisions", () => {
+  const none = { existing_detectors: "not_provided" as const, project_type: null, existing_equipment: { status: "none" as const, retained: [], removed_or_replaced: [] } };
+  async function build(o: object) {
+    const patterns = await loadPatterns();
+    const { scope } = approvedScope({ ...none, ...o });
+    const pattern = selectPattern(scope.functional_systems, patterns)!;
+    const selection = materialize(scope, pattern);
+    const catalog = Object.fromEntries(
+      patternRecordIds(pattern).map((id, i) => [id, id === pattern.parts?.product_id ? product(id, "Livewire", "PARTS", 1, 0.01, { laborItems: [] }) : product(id, "TestCo", `DEV-${i}`, 300, 150, { laborItems: [] })]),
+    );
+    const { admitted } = await admitAll(pattern, catalog);
+    return { scope, pattern, selection, compiled: compile(selection, admitted, pattern) };
+  }
+  const quantities = (sel: ReturnType<typeof materialize>) => Object.fromEntries(sel.lines.map((l) => [l.role, l.quantity]));
+
+  // Nick Standon (run_f6844652): an all-UniFi intake, "Assume all pre-wire work is complete".
+  const standon = {
+    functional_systems: ["home network", "video surveillance", "video doorbell", "security system", "access control", "structured cabling"],
+    requested_changes: [
+      "Assume all pre-wire work is complete",
+      "Install and configure a Ubiquiti UniFi Dream Machine Special Edition (UDM-SE)",
+      "Install and configure two UniFi U6+ wireless access points",
+      "Install and configure four UniFi security cameras",
+      "Install and configure a UniFi video doorbell",
+      "Install UniFi Protect Alarm Hub Kit with 6 door contacts, 2 motion sensors and a siren",
+      "Install a UniFi G6 Pro Entry Reader",
+    ],
+    requested_quantities: [{ item: "G6 Bullet camera", quantity: 4 }, { item: "Door Contacts", quantity: 6 }, { item: "motion sensors", quantity: 2 }],
+    unresolved_questions: [
+      "Requested product: Ubiquiti UniFi Dream Machine Special Edition (UDM-SE)",
+      "Requested product: UniFi U6+ access points",
+      "Requested product: UniFi G6 Bullet camera",
+      "Requested product: UniFi video doorbell",
+      "Requested product: UniFi Protect Alarm Hub Kit",
+      "Requested product: UniFi G6 Pro Entry Reader",
+    ],
+  };
+
+  it("Standon: another brand named for a system prices Livewire's standard, each line labeled as the stand-in (Henry: our gear, labeled)", async () => {
+    const { selection, compiled } = await build(standon);
+    expect(compiled.ok ? [] : compiled.errors).toEqual([]);
+    const label = Object.fromEntries(selection.lines.map((l) => [l.role, l.equivalent_of]));
+    expect(label).toMatchObject({ mesh_wifi: "UniFi", outdoor_camera: "UniFi", doorbell_camera: "UniFi", security_panel: "UniFi", door_reader: "UniFi" });
+    const notes = compiled.ok ? compiled.draft.lines.filter((l) => l.role === "mesh_wifi").map((l) => l.note) : [];
+    expect(notes).toEqual(["Livewire equivalent of the requested UniFi equipment; the final proposal can price UniFi instead."]);
+    // The cameras keep their own note after the stand-in one.
+    const camera = compiled.ok ? compiled.draft.lines.find((l) => l.role === "outdoor_camera")!.note : "";
+    expect(camera).toMatch(/^Livewire equivalent of the requested UniFi equipment; .* Includes its Cat6 run to the PoE switch/);
+    // A request naming no other brand labels nothing.
+    const plain = await build({ functional_systems: ["home network"], requested_changes: ["Install whole-home Wi-Fi"] });
+    expect(plain.selection.lines.every((l) => !l.equivalent_of)).toBe(true);
+  });
+
+  it("Standon: pre-wire the request says is complete prices no structured wiring, cable or prewire service", async () => {
+    const { scope, pattern, selection } = await build({ ...standon, service_categories: ["Installation", "Prewire"] });
+    expect(scope.functional_systems).not.toContain("structured_wiring");
+    expect(scope.service_categories).not.toContain("prewire");
+    expect(pattern.pattern).not.toMatch(/prewire/);
+    expect(selection.lines.map((l) => l.role)).not.toEqual(expect.arrayContaining(["cat6_cable"]));
+    for (const said of ["The home is already prewired", "Existing prewire in place", "Prewire has been completed"]) {
+      const { scope: s } = approvedScope({ ...none, functional_systems: ["structured cabling", "home network"], requested_changes: [said, "Install Wi-Fi"] });
+      expect(s.functional_systems, said).not.toContain("structured_wiring");
+    }
+    const { scope: wiring } = approvedScope({ ...none, functional_systems: ["structured cabling"], requested_changes: ["Prewire the new construction home for data"] });
+    expect(wiring.functional_systems).toContain("structured_wiring");
+  });
+
+  it("Dunham Surveillance: a stated crew and day sets the labor hours; a 4-channel NVR asked for says what's priced", async () => {
+    const { selection, compiled } = await build({
+      functional_systems: ["video surveillance"],
+      existing_equipment: { status: "described", retained: [], removed_or_replaced: ["Luma LUM-500-NVR-4CH NVR", "4 old cameras"] },
+      requested_changes: ["Upgrade to a newer model 4 channel NVR", "Install 3 new turret style cameras to replace the 2 dome cameras and the old camera"],
+      requested_quantities: [{ item: "turret cameras", quantity: 3 }],
+      unresolved_questions: ["Assume a 2 man job for a full day of labor"],
+    });
+    expect(compiled.ok ? [] : compiled.errors).toEqual([]);
+    expect(selection.labor).toMatchObject({ hours: 16, set_by_rep: true });
+    expect(selection.to_verify).toContain("Recorder: the request asks for 4 channels; priced as Livewire's standard 8-channel Alarm.com SVR, which records them");
+    // Two techs for two days, and a half day for one; no crew stated keeps the estimate.
+    const two = await build({ functional_systems: ["video surveillance"], requested_changes: ["Install 2 turret cameras", "2 techs for 2 days"] });
+    expect(two.selection.labor?.hours).toBe(32);
+    const half = await build({ functional_systems: ["video surveillance"], requested_changes: ["Install 2 turret cameras", "one tech, half day"] });
+    expect(half.selection.labor?.hours).toBe(4);
+    const est = await build({ functional_systems: ["video surveillance"], requested_changes: ["Install 2 turret cameras"] });
+    expect(est.selection.labor?.set_by_rep).toBeUndefined();
+  });
+
+  it("Jinny's: camera audio trouble written as a question gets the troubleshooting allowance, so the build has something to price", async () => {
+    const { selection, compiled } = await build({
+      market: "commercial",
+      functional_systems: ["video surveillance"],
+      existing_equipment: { status: "described", retained: ["Luma NVR", "2 existing cameras"], removed_or_replaced: ["2 indoor dome cameras"] },
+      requested_changes: ["Replace the front desk indoor dome camera with a Luma camera", "Replace the back room indoor dome camera with a Luma camera"],
+      requested_quantities: [{ item: "Luma cameras", quantity: 2 }],
+      unresolved_questions: ["Requested product: Luma cameras", "Cause of difficulty hearing camera audio is unknown"],
+    });
+    expect(compiled.ok ? [] : compiled.errors).toEqual([]);
+    expect(selection.labor_allowances).toEqual([expect.objectContaining({ key: "camera_troubleshooting", hours: 2 })]);
+  });
+
+  it("Giessel: a plumbing-chase route in the questions is a retrofit; a stated length per drop sizes the cable", async () => {
+    const { selection } = await build({
+      functional_systems: ["structured cabling"],
+      requested_changes: [
+        "Cat6 home runs from the unfinished basement to the library (2 ports), living room and mud room",
+        "Terminate all runs on a small 8-port keystone patch panel in the basement mech room, tested and labeled",
+        "Two-story Cat6 run up to the master bedroom",
+      ],
+      unresolved_questions: ["Assumed 50 feet per data drop", "Cable route to the master bedroom is likely via the bath/laundry plumbing chase, not confirmed"],
+    });
+    expect(selection.retrofit).toBe(true);
+    // 6 drops (the minimum to verify) × 2 jacks, and 6 × 50 ft of cable.
+    expect(quantities(selection)).toMatchObject({ data_drop: 12, cat6_cable: 300 });
+    expect(selection.lines.find((l) => l.role === "cat6_cable")).toMatchObject({ quantity_basis: "minimum_to_verify", verify: "50 ft per drop, as the request states" });
+  });
+
+  it("Paulenich: named amps drive the client's speakers (none added), two Ports, ProRemote programming at 2 h, and a CD player to price", async () => {
+    const { selection, compiled } = await build({
+      functional_systems: ["whole home audio", "TV"],
+      requested_changes: [
+        "Two Sonos Amp Multi units with rack mount for the independently controlled music zones",
+        "Additional Sonos Amp dedicated to the downstairs bedroom",
+        "Two Sonos Ports for the upstairs and downstairs TV systems",
+        "Upstairs and downstairs living-room speakers working off a Sonos Port connected to the AV receiver",
+        "Replace 2 TVs",
+        "Program the ProRemote to turn on the TV zones",
+        "Need CD player",
+      ],
+      requested_quantities: [{ item: "Sonos Amp Multi", quantity: 2 }, { item: "Sonos Amp", quantity: 1 }, { item: "Sonos Port", quantity: 2 }, { item: "TV", quantity: 2 }],
+    });
+    expect(compiled.ok ? [] : compiled.errors).toEqual([]);
+    expect(selection.lines.map((l) => l.role)).not.toContain("in_ceiling_speakers");
+    expect(quantities(selection)).toMatchObject({ streaming_port: 2, multi_zone_amplifier: 2, zone_amplifier: 1, television: 2, tv_mount: 2 });
+    expect(selection.labor_allowances).toEqual([expect.objectContaining({ key: "remote_programming", hours: 2 })]);
+    expect(selection.to_verify).toContain("Requested product: CD player (no Livewire standard; priced in the final proposal)");
+    // Speakers the request asks to install still price with the amp, and a kept CD player isn't one to buy.
+    const speakers = await build({ functional_systems: ["whole home audio"], requested_changes: ["Install a Sonos Amp and 2 pairs of in-ceiling speakers in the den", "Connect the existing CD player"] });
+    expect(selection.lines.length && speakers.selection.lines.map((l) => l.role)).toEqual(expect.arrayContaining(["zone_amplifier", "in_ceiling_speakers", "streaming_port"]));
+    expect(speakers.selection.to_verify.some((v) => /CD player \(no Livewire standard/.test(v))).toBe(false);
   });
 });

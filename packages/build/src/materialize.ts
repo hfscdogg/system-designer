@@ -19,6 +19,8 @@ export interface SelectionLine {
   precedent: RoleSpec["precedent"];
   /** The model the request named, when the line prices that catalog product instead of the role's standard. */
   requested_model?: string;
+  /** Another brand the request names for this system (UniFi): the line is Livewire's standard as a stand-in for it. */
+  equivalent_of?: string;
 }
 
 export interface Selection {
@@ -63,7 +65,8 @@ function hasWord(text: string, term: string): boolean {
 const RETROFIT = /\b(retro-?fit|retro|fish(ed|ing)?|drill(ed|ing)?(-| )?up|drill(ed|ing)? (up|down|through)|finished (walls?|ceilings?|rooms?|spaces?)|existing (walls?|home|house)|plumbing chase|chase)\b/;
 const NEW_CONSTRUCTION = /\b(new construction|new build|new home build|open walls|open studs|before drywall|rough[- ]?in)\b/;
 function retrofit(scope: ScopeDraftV1): boolean {
-  const texts = [scope.project_type ?? "", ...scope.requested_changes].map(fold);
+  // The open questions count: the interpreter put Giessel's "via the bath/laundry plumbing chase" there (Zack, 2026-10-30).
+  const texts = [scope.project_type ?? "", ...scope.requested_changes, ...scope.unresolved_questions].map(fold);
   return texts.some((t) => RETROFIT.test(t)) && !texts.some((t) => NEW_CONSTRUCTION.test(t));
 }
 
@@ -396,6 +399,38 @@ function wantsNew(scope: ScopeDraftV1, role: RoleSpec, roles: RoleSpec[]): boole
   return outdoorAsked(scope, role) && sizeAsked(scope, role) !== undefined && !customerOwned(scope, role) && !deviceChanges(scope, role).some((c) => EXISTING_ITEM.test(c));
 }
 
+/** Brands Livewire doesn't carry as its standard, named for a system the budget prices. */
+const OTHER_BRANDS = ["UniFi", "Ubiquiti", "Luma", "Ring", "Nest", "Arlo", "Hikvision", "Dahua", "Lorex", "Reolink", "Verkada", "Axis", "Uniview", "Wyze", "SimpliSafe", "Vivint", "ADT", "Netgear", "Orbi", "TP-Link", "Linksys", "Brivo"];
+/** Which system a requested product belongs to, by its device words; first match wins. */
+const BRAND_SYSTEMS: Array<[string, RegExp]> = [
+  ["video_doorbell", /\bdoorbells?\b/],
+  ["access_control", /\b(entry reader|card reader|readers?|access control|entry)\b/],
+  ["intrusion_security", /\b(alarm|sensors?|contacts?|sirens?|motion|keypads?|superlink)\b/],
+  ["video_surveillance", /\b(cameras?|bullet|turret|dome|nvr|recorder|surveillance)\b/],
+  ["networking", /\b(router|gateway|dream machine|udm|switch|access points?|wi-?fi|wireless|network|poe)\b/],
+];
+
+/** The brand the customer keeps a system of ("Luma NVR"): their new devices of that brand are listed to price, not replaced. */
+function keepsBrand(scope: ScopeDraftV1, brand: string): boolean {
+  return scope.retained_equipment.some((e) => hasWord(fold(e), fold(brand)));
+}
+
+/** Other brands the request names, by the system each requested product belongs to (not ones the customer keeps). */
+function brandsBySystem(scope: ScopeDraftV1): Map<string, string[]> {
+  const out = new Map<string, string[]>();
+  for (const q of scope.unresolved_questions.map(fold)) {
+    const m = /^requested product:\s*(.+)$/.exec(q);
+    if (!m) continue;
+    const brand = OTHER_BRANDS.find((b) => hasWord(m[1]!, fold(b)));
+    if (!brand || keepsBrand(scope, brand)) continue;
+    const system = BRAND_SYSTEMS.find(([, p]) => p.test(m[1]!))?.[0];
+    if (!system) continue;
+    const name = brand === "Ubiquiti" ? "UniFi" : brand;
+    if (!(out.get(system) ?? []).includes(name)) out.set(system, [...(out.get(system) ?? []), name]);
+  }
+  return out;
+}
+
 /** The other brand the request asks for this device in: a "Requested product" it lists that names the brand and the device. */
 function otherBrandAsked(scope: ScopeDraftV1, role: RoleSpec): string | undefined {
   if (!role.other_brands) return undefined;
@@ -681,8 +716,10 @@ export function materialize(stated: ScopeDraftV1, pattern: PatternSpec, namedPro
       keptRoles.add(role.role);
       continue;
     }
+    // Another brand's device is listed to price only when the customer keeps that brand's system (Jinny's Luma NVR:
+    // our cameras wouldn't record to it). Otherwise our standard prices as a labeled stand-in (Henry, 2026-10-30).
     const brand = product ? undefined : otherBrandAsked(scope, role);
-    if (brand) {
+    if (brand && keepsBrand(scope, brand)) {
       toVerify.push(`Requested product: ${brand} ${role.label.replace(/^\S+\s+/, "")} (not Livewire's standard brand for this; priced in the final proposal)`);
       verifyOnly.add(role.role);
       continue;
@@ -805,6 +842,19 @@ export function materialize(stated: ScopeDraftV1, pattern: PatternSpec, namedPro
     if (!role.quantity_follows || requested.has(role.role) || namedExplicitly(scope, role, pattern.roles)) continue;
     if (role.quantity_follows.some((r) => verifyOnly.has(r)) && !lines.some((l) => role.quantity_follows!.includes(l.role))) notAsked.add(role.role);
   }
+  // Amplifiers the request names itself, with no new speakers asked for, drive speakers the customer has: none are
+  // added (Zack's Paulenich job, 2026-10-30: two Amp Multis, a Sonos Amp and two Ports priced 2 pairs of in-ceiling speakers).
+  const ampsNamed = included.some((r) => r.alternative_group === "amplifier" && (requested.has(r.role) || namedExplicitly(scope, r, pattern.roles)));
+  for (const amp of ampsNamed ? included : []) {
+    for (const s of amp.drives?.roles ?? []) {
+      const speakers = included.find((r) => r.role === s);
+      if (!speakers || requested.has(s) || statedQuantity(scope, speakers, pattern.roles) !== null) continue;
+      const asksNew = requestTexts(scope).some(
+        (t) => /\bspeakers?\b/.test(t) && /\b(install|installing|add|adding|new|replace|replacing|upgrade|put in|mount|wire)\b/.test(t) && !/\b(existing|current|old|their)\b[^.]*\bspeakers?\b/.test(t),
+      );
+      if (!asksNew) notAsked.add(s);
+    }
+  }
   // Gear that serves another role (a switch for the eero network) is priced only with it, unless the request names it itself.
   for (let changed = true; changed; ) {
     changed = false;
@@ -868,6 +918,18 @@ export function materialize(stated: ScopeDraftV1, pattern: PatternSpec, namedPro
     line.verify = toCheck ? `one amplifier per ${per} speakers${rooms > 1 ? ` and at least one per room (${rooms} rooms)` : ""}; ${speakers} speakers so far` : null;
   }
 
+  // A length the request states per drop ("assume 50 feet for each data drop") sizes the cable at that length a drop
+  // (Zack's Giessel job, 2026-10-30: priced at 75 ft a drop against his stated 50).
+  const perDrop = feetPerDrop(scope);
+  for (const line of perDrop ? lines : []) {
+    const role = pattern.roles.find((r) => r.role === line.role);
+    if (!role?.stated_length_per || statedQuantity(scope, role, pattern.roles) !== null) continue;
+    const units = lines
+      .filter((l) => role.stated_length_per!.includes(l.role))
+      .reduce((n, l) => n + l.quantity / (retro ? (pattern.roles.find((r) => r.role === l.role)?.retrofit_units?.units ?? 1) : 1), 0);
+    if (units > 0) Object.assign(line, { quantity: Math.ceil(units * perDrop!), quantity_basis: "minimum_to_verify", verify: `${perDrop} ft per drop, as the request states` });
+  }
+
   // One product priced by two combined patterns (the network's PoE switch and the cameras') is one line, at
   // the larger count, or the rep's own count (Zack's Britt and Bowen-Rees jobs, 2026-10-13).
   const merged = new Set<string>();
@@ -903,11 +965,13 @@ export function materialize(stated: ScopeDraftV1, pattern: PatternSpec, namedPro
   const devices = lines.reduce((n, l) => n + l.quantity, 0);
   // Labor-only allowances the request mentions (framing a niche), priced as hours at the pattern's labor rate.
   const extras = (pattern.labor_extras ?? []).filter((x) => mentioned(scope, x.mentions)).map((x) => x.id);
-  // Hours the rep set in a revision replace the estimate.
-  const hours = !pattern.labor ? 0 : (scope.labor_hours ?? (devices > 0 ? laborHoursFor(pattern, lines, addOn, extras) : 0));
+  // Hours the rep set in a revision, or the crew and days the request states, replace the estimate.
+  const crew = devices > 0 && !scope.labor_hours ? statedCrewHours(scope) : null;
+  const repHours = scope.labor_hours ?? crew;
+  const hours = !pattern.labor ? 0 : (repHours ?? (devices > 0 ? laborHoursFor(pattern, lines, addOn, extras) : 0));
   const labor: Selection["labor"] =
     pattern.labor && hours > 0
-      ? { labor_type: pattern.labor.labor_type, hours, devices, covers: pattern.labor.covers, extras, ...(scope.labor_hours ? { set_by_rep: true } : {}) }
+      ? { labor_type: pattern.labor.labor_type, hours, devices, covers: pattern.labor.covers, extras, ...(repHours ? { set_by_rep: true } : {}) }
       : null;
 
   const services: Selection["services"] = [];
@@ -983,6 +1047,24 @@ export function materialize(stated: ScopeDraftV1, pattern: PatternSpec, namedPro
     }
     return { system, classification: priced.length ? "supported" : "unresolved", roles: roles.map((r) => r.role), note: priced.map((r) => r.capability).join("; ") };
   });
+
+  // A recorder the request sizes by channels ("a newer model 4 channel NVR") is Livewire's standard 8-channel SVR, which
+  // records as many: said on the verify list rather than silently swapped (Zack's Dunham job, 2026-10-30).
+  const nvr = lines.find((l) => l.role === "nvr" && !l.requested_model);
+  const channels = nvr && requestTexts(scope).map((t) => /\b(\d+)[- ]?(?:ch|channel)\b/.exec(t)).find((m) => m && /\b(nvr|dvr|svr|recorder)\b/.test(m.input))?.[1];
+  if (nvr && channels && Number(channels) !== 8 && Number(channels) <= 8) {
+    toVerify.push(`Recorder: the request asks for ${channels} channels; priced as Livewire's standard 8-channel Alarm.com SVR, which records them`);
+  }
+
+  // Another brand the request names for a system (Standon's UniFi network, alarm and entry reader) is priced as
+  // Livewire's standard, each line labeled as the stand-in, so the number is honest about its gear (Henry, 2026-10-30).
+  const standIns = brandsBySystem(scope);
+  for (const line of lines) {
+    if (line.requested_model) continue;
+    const role = pattern.roles.find((r) => r.role === line.role);
+    const brands = [...new Set((role?.systems ?? []).flatMap((s) => standIns.get(s) ?? []))];
+    if (brands.length) line.equivalent_of = brands.join(" / ");
+  }
 
   return {
     schema: "selection_v1",
@@ -1084,6 +1166,35 @@ const STICK_ITEM = /^\s*\d{1,3}\s*(?:-\s*)?(?:ft\b\.?|feet\b|foot\b|')\s*(?:long
 /** Music sources the audio patterns have no role for, as the request words them and as the budget names them. */
 const AUDIO_PLAYERS: Record<string, string> = { "cd player": "CD player", "cd changer": "CD changer", "tape deck": "Tape deck", "cassette deck": "Cassette deck", "cassette player": "Cassette player" };
 
+const PER_DROP = /\b(\d+)\s*(?:feet|foot|ft|')\s*(?:of cable\s*)?(?:for|per|a|on)?\s*(?:each|every|per|a)?\s*(?:data |cat6 |cat 6 |ethernet |network )?(?:drop|run|outlet|port|jack)s?\b/;
+/** The cable length the request states per drop, in feet. */
+function feetPerDrop(scope: ScopeDraftV1): number | null {
+  for (const t of [...requestTexts(scope), ...scope.unresolved_questions.map(fold)]) {
+    const m = PER_DROP.exec(t);
+    if (m && Number(m[1]) > 0 && Number(m[1]) <= 500) return Number(m[1]);
+  }
+  return null;
+}
+
+const COUNT_WORDS: Record<string, number> = { one: 1, two: 2, three: 3, four: 4, a: 1 };
+const CREW = /\b(\d+|one|two|three|four)[- ](?:man|men|person|people|tech|techs|technicians?|installers?)\b/;
+const DAYS = /\b(?:(\d+(?:\.\d+)?|one|two|three|four)[- ](?:full[- ]|whole[- ])?days?|(?:a |one )?(?:full|whole)[- ]day|(half)[- ]a?[- ]?day)\b/;
+/**
+ * The crew and days the request states for the job ("a 2 man job for a full day", "2 techs for 2 days"),
+ * as labor hours at 8 hours a day (Zack's Dunham job, 2026-10-30: 2 techs for a full day priced as 9 hours).
+ */
+function statedCrewHours(scope: ScopeDraftV1): number | null {
+  for (const t of [...requestTexts(scope), ...scope.unresolved_questions.map(fold)]) {
+    const c = CREW.exec(t);
+    const d = c && DAYS.exec(t);
+    if (!c || !d) continue;
+    const crew = COUNT_WORDS[c[1]!] ?? Number(c[1]);
+    const days = d[2] ? 0.5 : d[1] ? (COUNT_WORDS[d[1]] ?? Number(d[1])) : 1;
+    if (crew > 0 && days > 0) return crew * days * 8;
+  }
+  return null;
+}
+
 /** A change the request wants priced on its own line ("priced separately", "as a separate price", "broken out"). */
 const SEPARATELY = /\b(?:priced|price|quoted?|listed|shown)\s+(?:out\s+)?separately\b|\bseparate(?:ly)?\s+(?:line|price|priced|quote)\b|\bbroken\s+out\b/;
 
@@ -1103,7 +1214,7 @@ function allowancesFor(
       return a.key === "wiring_run" && separateRuns.length ? [{ ...a, texts: separateRuns, asked: true, run: undefined, quantity: separateRuns.length }] : [];
     }
     const asks = (t: string) => any(t, a.mentions) && (!a.require || any(t, a.require)) && !any(t, a.exclude);
-    const fromRequest = allowanceTexts(scope).filter(asks);
+    const fromRequest = [...allowanceTexts(scope), ...(a.from_questions ? scope.unresolved_questions.map(fold) : [])].filter(asks);
     const asking = [...fromRequest, ...uncovered].filter(asks);
     if (!asking.length) return [];
     const stated = scope.requested_quantities.filter((q) => asks(fold(q.item))).reduce((n, q) => n + q.quantity, 0);

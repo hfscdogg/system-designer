@@ -156,6 +156,9 @@ const REQUESTED_SYSTEMS: Array<[systems: string[], pattern: RegExp]> = [
   [["intrusion_security"], /\b(?<!(existing|current|old|keep the|keep) )(security|alarm|intrusion) (panel|system)s?\b/],
 ];
 
+const PREWIRE_DONE =
+  /\b(pre-?wir(e|ing)( work)? (is |was |are |has been )?(already )?(complete|completed|done|finished|in place)|(already|fully|been) pre-?wired|(home|house) is pre-?wired|existing pre-?wir(e|ing)|pre-?wir(e|ing) (already )?exists)\b/;
+
 function requestedSystems(requests: string[]): string[] {
   const texts = requests.map(fold);
   return REQUESTED_SYSTEMS.filter(([, p]) => texts.some((t) => p.test(t))).flatMap(([systems]) => systems);
@@ -224,7 +227,15 @@ export function normalizeExtraction(input: ScopeExtraction): NormalizedExtractio
   if (proposalNumber !== null && /^unassigned$/i.test(proposalNumber)) proposalNumber = "UNASSIGNED";
 
   const requests = [...input.requested_changes, ...input.requested_quantities.map((q) => q.item)];
-  const systems = uniqSorted([...tvSoundOnly(normalizeFunctionalSystems(input.functional_systems), requests), ...requestedSystems(requests)]);
+  // Pre-wire the request says is already done is not priced again: no structured wiring and no prewire service
+  // (Zack's Standon job, 2026-10-30: "Assume all pre-wire work is complete" priced 450 ft of Cat6 and a "Prewire" title).
+  const prewired = [input.project_type ?? "", ...requests, ...input.unresolved_questions, ...input.excluded_scope, ...input.existing_equipment.retained]
+    .map(fold)
+    .some((t) => PREWIRE_DONE.test(t));
+  if (prewired) notes.push("Pre-wire is already complete: structured wiring is not priced");
+  const systems = uniqSorted([...tvSoundOnly(normalizeFunctionalSystems(input.functional_systems), requests), ...requestedSystems(requests)]).filter(
+    (s) => !(prewired && s === "structured_wiring"),
+  );
   const scope: ScopeExtraction = {
     client: nullableClean(input.client),
     property: {
@@ -247,7 +258,7 @@ export function normalizeExtraction(input: ScopeExtraction): NormalizedExtractio
     },
     existing_detectors: input.existing_detectors,
     excluded_scope: list(input.excluded_scope),
-    service_categories: services.categories,
+    service_categories: prewired ? services.categories.filter((c) => c !== "prewire") : services.categories,
     size: input.size,
     budget: input.budget,
     target_installation_date: date,
