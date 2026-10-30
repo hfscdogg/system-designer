@@ -26,6 +26,7 @@ const SelectionSchema = z
           location: z.string().min(1),
           precedent: z.enum(["livewire_standard", "accepted_comparable", "new_to_livewire"]),
           requested_model: z.string().min(1).optional(),
+          equivalent_of: z.string().min(1).optional(),
         })
         .strict(),
     ),
@@ -247,7 +248,16 @@ export function compile(raw: unknown, catalog: Map<string, AdmittedProduct>, pat
       is_taxable: product.is_taxable,
       labor: product.labor,
       evidence_sha256: product.evidence.sha256,
-      ...(role.customer_note ? { note: role.customer_note } : {}),
+      ...(line.equivalent_of || role.customer_note
+        ? {
+            note: [
+              line.equivalent_of ? `Livewire equivalent of the requested ${line.equivalent_of} equipment; the final proposal can price ${line.equivalent_of} instead.` : null,
+              role.customer_note ?? null,
+            ]
+              .filter(Boolean)
+              .join(" "),
+          }
+        : {}),
     });
   }
 

@@ -30,6 +30,8 @@ export const RoleSpecSchema = z
     asked_by: z.array(z.string()).min(1).optional(),
     /** Equipment the customer keeps that asks for this role too (a kept CD player needs a Sonos Port to stream). */
     mentions_kept: z.array(z.string().min(1)).min(1).optional(),
+    /** A length role (cable by the foot) sized at the length the request states per unit of these roles ("50 feet for each data drop"). */
+    stated_length_per: z.array(z.string().min(1)).min(1).optional(),
     /** When priced without any of these roles, `verify` is listed to check (an eero access point with no eero router priced). */
     verify_without: z.object({ roles: z.array(z.string()).min(1), verify: z.string().min(1) }).strict().optional(),
     /** Include the role only when one of these roles is included (a switch and power protection for the eero network). */
@@ -232,6 +234,11 @@ export const AllowanceSpecSchema = z
     exclude: z.array(z.string().min(1)).min(1).optional(),
     /** Systems whose pattern prices this work itself (cable runs in a prewire). */
     covered_by_systems: z.array(z.string().min(1)).optional(),
+    /**
+     * The request's open questions can ask for it too: the interpreter often writes a problem the rep
+     * describes as a question ("Cause of difficulty hearing camera audio is unknown", Zack's Jinny's job, 2026-10-30).
+     */
+    from_questions: z.literal(true).optional(),
     hours: z.number().positive(),
     /**
      * Priced once per thing asked for, not once per job: "Ethernet port in the dining room" and

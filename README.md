@@ -153,6 +153,16 @@ One item never stops the budget (Zack's Standon job, 2026-10-27; Henry, 2026-10-
 - A cable run the request wants "priced separately" is its own cable-run allowance line, even on a structured-wiring job. With a drop count stated, the verify list asks whether the count leaves it out.
 - A CD player, CD changer or tape deck the request mentions or the customer keeps gets a Sonos Port, like a turntable (Henry, 2026-10-28; `mentions_kept`). Whole-home audio 2026-10-28.1.
 
+Zack's round 8 (2026-10-30) and Henry's 10/30 decisions:
+- Another brand the request names for a system (Standon's UniFi network, cameras, doorbell, alarm and entry reader) prices Livewire's standard as a stand-in, each line noted "Livewire equivalent of the requested UniFi equipment; the final proposal can price UniFi instead." Only when the customer keeps that brand's system (Jinny's Luma NVR) are the new devices listed to price instead.
+- Pre-wire the request says is already complete ("Assume all pre-wire work is complete", "already prewired") prices no structured wiring, cable or prewire service.
+- A crew and duration the request states ("a 2 man job for a full day", "2 techs for 2 days", "one tech, half day") sets the labor hours at 8 hours a day.
+- A recorder asked for by channel count is Livewire's 8-channel Alarm.com SVR, said on the verify list.
+- Camera trouble the interpreter writes as an open question ("difficulty hearing camera audio") gets the 2-hour troubleshooting allowance (`from_questions`).
+- A universal remote (ProRemote, Pro Control, URC) gets a 2-hour programming allowance (Henry). Allowances 2026-10-30.1.
+- Retrofit wording in the open questions (a plumbing-chase route) counts; a length the request states per drop ("50 feet for each data drop") sizes the Cat6 (`stated_length_per`). Prewire 2026-10-30.1.
+- Amplifiers the request names itself, with no new speakers asked for, drive the client's own speakers: none are added. A CD player the client needs to buy is listed to price (no Livewire standard); its Sonos Port is priced. Whole-home audio 2026-10-30.1.
+
 Design & Delivery (the parts line) is `design_delivery.base_pct` of product + labor + services, costed at the parts margin. When a budget would fall under the margin floor, it rises in half-point steps up to `design_delivery.max_pct` until the budget clears the floor; past that, the budget waits for an admin's approval. Without `design_delivery`, parts are sized to the parts share of the subtotal. `tax` can also be `{ "mode": "rate", "rate_pct": <n>, "applies_to": "taxable_equipment" }`.
 
 The file ships in the image. Publish it with the admin job (see `docs/deploy.md`):
