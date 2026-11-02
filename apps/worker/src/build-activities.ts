@@ -280,7 +280,7 @@ export function createBuildStage(deps: BuildDeps) {
       }
       if (!result.ok) {
         const blocking = result.findings.filter((f) => f.severity === "block").map((f) => f.message);
-        return { ok: false, reason: `validation failed (${blocking.join("; ")})` };
+        return { ok: false, reason: blocking.join("; ") };
       }
       await store.publishArtifact(runId, "validate", "customer_view", customerView(proposal));
       // Confidential financial report: stored for audit, never posted (PRD §14.5).

@@ -50,7 +50,11 @@ export function validateProposal(
   const lines = p.sections.flatMap((s) => s.lines);
   // Cable runs alone (an Ethernet drop) are a budget: labor allowances price it (Zack's Giessel job, 2026-10-26).
   if (lines.length === 0 && !p.labor_allowances?.length) {
-    block("empty_bom", "no products could be priced; Livewire standard products must be configured for this pattern's roles");
+    // Said so a rep can act on it: "no reason given" was all Zack could read in the old wording (Jinny's job, 2026-10-30).
+    block(
+      "empty_bom",
+      "nothing in the request is a product Livewire prices as standard (gear the client keeps or supplies, or another brand's, is listed to price instead). Say which new devices to price, for example \"price 2 indoor cameras\"",
+    );
   }
   for (const l of lines) {
     const product = catalog.get(l.record_id);
