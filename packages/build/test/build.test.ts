@@ -742,6 +742,8 @@ describe("empty proposals", () => {
     const v = validateProposal(proposal, scope, scopeHash, new Map(), POLICY);
     expect(v.ok).toBe(false);
     expect(v.findings.map((f) => f.code)).toContain("empty_bom");
+    // In words a rep can act on (Jinny's job, run_5229bcc8, 10/30: "failed validation with no reason given").
+    expect(v.findings.find((f) => f.code === "empty_bom")!.message).toMatch(/^nothing in the request is a product Livewire prices as standard.*Say which new devices to price/);
   });
 });
 
@@ -2367,6 +2369,15 @@ describe("Zack's round 8 (2026-10-30) and Henry's 10/30 decisions", () => {
     // A request naming no other brand labels nothing.
     const plain = await build({ functional_systems: ["home network"], requested_changes: ["Install whole-home Wi-Fi"] });
     expect(plain.selection.lines.every((l) => !l.equivalent_of)).toBe(true);
+  });
+
+  it("Standon revision \"Ubiquiti, not Eero\" (run_0d5787a3, 10/28): the brand swap the interpreter writes labels the network as the UniFi stand-in", async () => {
+    const { selection } = await build({
+      functional_systems: ["home network"],
+      requested_changes: ["Install whole-home Wi-Fi"],
+      unresolved_questions: ["Requested product: Ubiquiti network equipment in place of eero"],
+    });
+    expect(selection.lines.find((l) => l.role === "mesh_wifi")?.equivalent_of).toBe("UniFi");
   });
 
   it("Standon: pre-wire the request says is complete prices no structured wiring, cable or prewire service", async () => {
