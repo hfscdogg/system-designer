@@ -261,6 +261,8 @@ function statedItem(scope: ScopeDraftV1, role: RoleSpec, roles: RoleSpec[]): { i
   for (const q of scope.requested_quantities) {
     // Nor is a count of what the customer supplies ("1 customer's 65-inch Sony TV").
     if (EXISTING_ITEM.test(fold(q.item)) || OWNED_ITEM.test(q.item)) continue;
+    // A length per drop ("feet of Cat6 per drop" × 50) is not a count of anything.
+    if (PER_DROP_ITEM.test(fold(q.item))) continue;
     // A count for devices sold as one thing elsewhere ("4 smoke/CO detectors") counts for each of them.
     if (role.shared_count_terms?.some((t) => hasWord(joined(q.item), joined(t)))) {
       mine.push(q);
@@ -1125,6 +1127,8 @@ export function materialize(stated: ScopeDraftV1, pattern: PatternSpec, namedPro
     // Henry, 2026-11-03: the line is named for the product the request asks for, a placeholder at our equivalent's price.
     const asked = kept ?? (role && line.equivalent_of ? requestedProductFor(scope, role, line.equivalent_of) : undefined);
     if (asked) line.placeholder_for = asked;
+    // A placeholder for indoor cameras isn't listed under our outdoor camera's "Exterior" (Zack's Jinny's job, 2026-11-03).
+    if (asked && /\b(indoor|interior)\b/i.test(asked) && /^exterior$/i.test(line.location)) line.location = "Interior";
   }
 
   return {
@@ -1229,12 +1233,25 @@ const AUDIO_PLAYERS: Record<string, string> = { "cd player": "CD player", "cd ch
 
 const PER_DROP = /\b(\d+)\s*(?:feet|foot|ft|')\s*(?:of cable\s*)?(?:for|per|a|on)?\s*(?:each|every|per|a)?\s*(?:data |cat6 |cat 6 |ethernet |network )?(?:drop|run|outlet|port|jack)s?\b/;
 /** The cable length the request states per drop, in feet. */
+/** The same said the other way round: "each drop is 50 feet", "drops of 50 ft", "50-foot drops". */
+const DROP_FEET = [
+  /\b(?:each|every|per)\s+(?:data |cat ?6 |ethernet |network )?(?:drop|run|outlet|port|jack)\b[^.;\d]{0,20}?(\d+)\s*(?:-\s*)?(?:feet|foot|ft|')/,
+  /\b(?:drop|run)s?\s+(?:of|at)\s+(\d+)\s*(?:-\s*)?(?:feet|foot|ft|')/,
+  /\b(\d+)\s*-?\s*(?:foot|ft)\s+(?:data |cat ?6 |ethernet |network )?(?:drop|run)s?\b/,
+];
+/** A stated count that is the length per drop ("feet of Cat6 per drop" × 50). */
+const PER_DROP_ITEM = /\b(feet|foot|ft|length)\b.*\b(per|each|every|a)\s+(?:data |cat ?6 |ethernet |network )?(drop|run|outlet|port|jack)\b/;
 function feetPerDrop(scope: ScopeDraftV1): number | null {
-  for (const t of [...requestTexts(scope), ...scope.unresolved_questions.map(fold)]) {
-    const m = PER_DROP.exec(t);
-    if (m && Number(m[1]) > 0 && Number(m[1]) <= 500) return Number(m[1]);
+  const ok = (n: number) => n > 0 && n <= 500;
+  // Every place the model may put the rep's length: changes, counts, questions, exclusions, the project type
+  // (Zack's Giessel job, 2026-11-03: "Assume 50 feet for each data drop" went back to 75 ft per drop).
+  const texts = [...requestTexts(scope), ...scope.unresolved_questions, ...scope.excluded_scope, scope.project_type ?? ""].map(fold);
+  for (const t of texts) {
+    const m = PER_DROP.exec(t) ?? DROP_FEET.map((p) => p.exec(t)).find(Boolean);
+    if (m && ok(Number(m[1]))) return Number(m[1]);
   }
-  return null;
+  const item = scope.requested_quantities.find((q) => PER_DROP_ITEM.test(fold(q.item)) && ok(q.quantity));
+  return item ? item.quantity : null;
 }
 
 /** Port counts of single locations the request gives several ports: "a 2-port keystone plate", "library (2 ports)". */

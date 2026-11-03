@@ -2042,6 +2042,9 @@ describe("Zack's round 7 (2026-10-26)", () => {
     // Henry, 2026-11-03: placeholders at our equivalent's price, named as the request describes them (Zack: not "outdoor turrets").
     expect(quantities(selection)).toEqual({ outdoor_camera: 2 });
     expect(selection.lines[0]).toMatchObject({ equivalent_of: "Luma", placeholder_for: "Luma indoor dome camera" });
+    // Indoor domes aren't listed under our outdoor camera's "Exterior" (Zack, 2026-11-03).
+    const noRoom = await job({ ...jinny, room_types: ["front desk", "back room"] });
+    expect(noRoom.selection.lines[0]!.location).toBe("Interior");
     expect(selection.to_verify).toContain("PoE source: no PoE switch is priced; confirm the existing Luma NVR powers the new cameras");
     // Alarm.com cameras the rep asks for still price, with their switch.
     const adc = await job({ ...jinny, existing_equipment: none.existing_equipment, requested_changes: ["Install 2 turret cameras"], requested_quantities: [], unresolved_questions: [] });
@@ -2547,6 +2550,25 @@ describe("Zack's round 9 (2026-11-02/03): plates per room, PoE source, camera mo
     // A larger stated count of plates still stands.
     const more = await job({ ...giessel, requested_quantities: [{ item: "wall plates", quantity: 8 }, { item: "Cat6 data ports", quantity: 7 }] });
     expect(quantities(more.selection)).toMatchObject({ wall_plate: 8 });
+  });
+
+  it("Giessel (11/3 re-run): the rep's 50 ft per drop holds wherever and however the scope says it", async () => {
+    const base = {
+      functional_systems: ["structured cabling"],
+      requested_quantities: [{ item: "Cat6 data ports", quantity: 7 }],
+      requested_changes: ["Cat6 home runs from the unfinished basement to the library (2 ports), living room and mud room", "Two-story Cat6 run up to the master bedroom"],
+      unresolved_questions: ["Cat6 run to master bedroom likely via bath/laundry plumbing chase - route to be confirmed"],
+    };
+    const said = [
+      { unresolved_questions: [...base.unresolved_questions, "Each data drop is 50 feet"] },
+      { unresolved_questions: [...base.unresolved_questions, "Drops of 50 ft each"] },
+      { requested_changes: [...base.requested_changes, "50-foot Cat6 drops"] },
+      { excluded_scope: ["Assume 50 feet for each data drop"] },
+      { requested_quantities: [...base.requested_quantities, { item: "feet of Cat6 per data drop", quantity: 50 }] },
+    ];
+    for (const s of said) expect(quantities((await job({ ...base, ...s })).selection).cat6_cable, JSON.stringify(s)).toBe(350);
+    // Nothing said: our 75 ft per drop.
+    expect(quantities((await job(base)).selection).cat6_cable).toBeGreaterThan(350);
   });
 
   it("Dunham Surveillance (run_f08e1662): a new recorder beside a kept old camera still gets the PoE switch the SVR doesn't have", async () => {
