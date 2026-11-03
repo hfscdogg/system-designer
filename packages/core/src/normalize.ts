@@ -158,6 +158,8 @@ const REQUESTED_SYSTEMS: Array<[systems: string[], pattern: RegExp]> = [
 
 const PREWIRE_DONE =
   /\b(pre-?wir(e|ing)( work)? (is |was |are |has been )?(already )?(complete|completed|done|finished|in place)|(already|fully|been) pre-?wired|(home|house) is pre-?wired|existing pre-?wir(e|ing)|pre-?wir(e|ing) (already )?exists)\b/;
+/** Pre-wire said done in other words ("pre-wire work (assumed complete)", "all pre-wire assumed done"), not still to do. */
+const PREWIRE_DONE_LOOSE = /\bpre-?wir(e|ing)\b(?![^.;]*\b(to be|needs?|will|should|must|remaining|left)\b)[^.;]{0,30}?\b(complete|completed|done|finished|in place)\b/;
 
 function requestedSystems(requests: string[]): string[] {
   const texts = requests.map(fold);
@@ -231,7 +233,7 @@ export function normalizeExtraction(input: ScopeExtraction): NormalizedExtractio
   // (Zack's Standon job, 2026-10-30: "Assume all pre-wire work is complete" priced 450 ft of Cat6 and a "Prewire" title).
   const prewired = [input.project_type ?? "", ...requests, ...input.unresolved_questions, ...input.excluded_scope, ...input.existing_equipment.retained]
     .map(fold)
-    .some((t) => PREWIRE_DONE.test(t));
+    .some((t) => PREWIRE_DONE.test(t) || PREWIRE_DONE_LOOSE.test(t));
   if (prewired) notes.push("Pre-wire is already complete: structured wiring is not priced");
   const systems = uniqSorted([...tvSoundOnly(normalizeFunctionalSystems(input.functional_systems), requests), ...requestedSystems(requests)]).filter(
     (s) => !(prewired && s === "structured_wiring"),

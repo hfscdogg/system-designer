@@ -2040,7 +2040,8 @@ describe("Zack's round 7 (2026-10-26)", () => {
     };
     const { selection } = await job(jinny);
     expect(selection.lines.map((l) => l.role)).toEqual([]);
-    expect(selection.to_verify).toContain("Requested product: Luma outdoor turret camera (not Livewire's standard brand for this; priced in the final proposal)");
+    // Named as the request describes them, not as our outdoor turret (Zack, 2026-11-03).
+    expect(selection.to_verify).toContain("Requested product: Luma indoor dome camera (not Livewire's standard brand for this; priced in the final proposal)");
     // Alarm.com cameras the rep asks for still price, with their switch.
     const adc = await job({ ...jinny, existing_equipment: none.existing_equipment, requested_changes: ["Install 2 turret cameras"], requested_quantities: [], unresolved_questions: [] });
     expect(quantities(adc.selection)).toMatchObject({ outdoor_camera: 2, camera_poe_switch: 1 });
@@ -2514,5 +2515,70 @@ describe("Zack's 10/30 re-runs (run_41804c72 Giessel, run_b2781fb0 Paulenich)", 
     expect(quantities(named)).toMatchObject({ streaming_port: 2 });
     // A smaller count in words doesn't lower a larger stated one.
     expect(quantities(await job({ ...paulenich, requested_quantities: [{ item: "Sonos Port", quantity: 3 }] }))).toMatchObject({ streaming_port: 3 });
+  });
+});
+
+describe("Zack's round 9 (2026-11-02/03): plates per room, PoE source, camera models, recorder, pre-wire done", () => {
+  const none = { existing_detectors: "not_provided" as const, project_type: null, existing_equipment: { status: "none" as const, retained: [], removed_or_replaced: [] } };
+  async function job(o: object) {
+    const patterns = await loadPatterns();
+    const { scope } = approvedScope({ ...none, ...o });
+    return { scope, selection: materialize(scope, selectPattern(scope.functional_systems, patterns)!) };
+  }
+  const quantities = (sel: ReturnType<typeof materialize>) => Object.fromEntries(sel.lines.map((l) => [l.role, l.quantity]));
+
+  it("Giessel (run_0d6bbc0e): a stated count of the great room's 2-port plate doesn't lower the plates to 1", async () => {
+    const giessel = {
+      functional_systems: ["structured cabling"],
+      requested_quantities: [{ item: "2-port Cat6 keystone plate", quantity: 1 }, { item: "Cat6 data ports", quantity: 7 }],
+      requested_changes: [
+        "Replace a loose Ethernet plate in the great room with a proper 2-port Cat6 keystone plate",
+        "Cat6 home runs from the unfinished basement to the library (2 ports), living room and mud room",
+        "Terminate all runs on a small 8-port keystone patch panel in the basement mech room",
+        "Two-story Cat6 run up to the master bedroom",
+      ],
+      unresolved_questions: ["Assume 50 feet for each data drop", "Cat6 run to master bedroom likely via bath/laundry plumbing chase - route to be confirmed"],
+    };
+    expect(quantities((await job(giessel)).selection)).toMatchObject({ data_drop: 14, wall_plate: 5, cat6_cable: 350 });
+    // A larger stated count of plates still stands.
+    const more = await job({ ...giessel, requested_quantities: [{ item: "wall plates", quantity: 8 }, { item: "Cat6 data ports", quantity: 7 }] });
+    expect(quantities(more.selection)).toMatchObject({ wall_plate: 8 });
+  });
+
+  it("Dunham Surveillance (run_f08e1662): a new recorder beside a kept old camera still gets the PoE switch the SVR doesn't have", async () => {
+    const dunham = {
+      functional_systems: ["video surveillance"],
+      existing_equipment: { status: "described", retained: ["1 older Luma camera"], removed_or_replaced: ["Luma LUM-500-NVR-4CH NVR", "2 dome cameras", "old Wirepath camera"] },
+      requested_changes: ["Upgrade to a newer model 4 channel NVR", "Install 3 new turret style cameras to replace the 2 dome cameras and the old camera"],
+      requested_quantities: [{ item: "turret cameras", quantity: 3 }],
+    };
+    const { selection } = await job(dunham);
+    expect(quantities(selection)).toMatchObject({ outdoor_camera: 3, nvr: 1, camera_poe_switch: 1 });
+    // With the client's recorder kept and no new one, it is the source, and the budget says to confirm it.
+    const kept = await job({ ...dunham, existing_equipment: { status: "described", retained: ["Luma PoE NVR"], removed_or_replaced: [] }, requested_changes: ["Install 3 new turret style cameras"] });
+    expect(kept.selection.lines.map((l) => l.role)).not.toContain("camera_poe_switch");
+    expect(kept.selection.to_verify).toContain("PoE source: no PoE switch is priced; confirm the existing Luma PoE NVR powers the new cameras");
+  });
+
+  it("Standon (run_ccfb99fd): 3 G6 Bullets and 1 G6 Pro Bullet are 4 cameras; a surveillance hard drive is the recorder, not microSD cards", async () => {
+    const { selection } = await job({
+      functional_systems: ["video surveillance"],
+      requested_changes: ["Install and configure four security cameras at the home's designated locations"],
+      requested_quantities: [{ item: "G6 Bullet cameras", quantity: 3 }, { item: "G6 Pro Bullet camera", quantity: 1 }, { item: "surveillance hard drive", quantity: 1 }],
+    });
+    expect(quantities(selection)).toMatchObject({ outdoor_camera: 4, nvr: 1 });
+    expect(selection.lines.map((l) => l.role)).not.toContain("camera_storage");
+    // A total and its breakdown don't double up.
+    const total = await job({ functional_systems: ["video surveillance"], requested_quantities: [{ item: "exterior cameras", quantity: 4 }, { item: "G6 Bullet cameras", quantity: 3 }] });
+    expect(quantities(total.selection).outdoor_camera).toBeLessThan(7);
+  });
+
+  it("Standon: pre-wire said done in other words prices no structured wiring; pre-wire still to do does", async () => {
+    for (const said of ["Pre-wire work (assumed complete)", "All pre-wire assumed done"]) {
+      const { scope } = await job({ functional_systems: ["structured cabling", "home network"], requested_changes: ["Install Wi-Fi"], unresolved_questions: [said] });
+      expect(scope.functional_systems, said).not.toContain("structured_wiring");
+    }
+    const { scope } = await job({ functional_systems: ["structured cabling"], requested_changes: ["Prewire still needs to be completed in the basement"] });
+    expect(scope.functional_systems).toContain("structured_wiring");
   });
 });

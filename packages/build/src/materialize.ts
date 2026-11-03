@@ -271,7 +271,12 @@ function statedItem(scope: ScopeDraftV1, role: RoleSpec, roles: RoleSpec[]): { i
   if (!mine.length) return null;
   // The same device counted room by room ("2 upstairs", "2 downstairs") adds up; a count of something else stays apart.
   const same = mine.filter((q) => deviceOf(q.item) === deviceOf(mine[0]!.item));
-  return same.length > 1 ? { item: mine[0]!.item, quantity: same.reduce((n, q) => n + q.quantity, 0) } : mine[0]!;
+  if (same.length > 1) return { item: mine[0]!.item, quantity: same.reduce((n, q) => n + q.quantity, 0) };
+  // Different models of the device, each named by its model ("3 G6 Bullet cameras", "1 G6 Pro Bullet camera"), add up:
+  // a model count is never a total of the others (Zack's Standon job, 2026-11-03: 4 cameras priced as 3).
+  const modelled = (q: { item: string }) => /\d/.test(q.item.replace(/^\s*\d+\s*/, "")) || !!role.other_brands?.some((b) => hasWord(fold(q.item), fold(b)));
+  if (mine.length > 1 && mine.every(modelled)) return { item: mine[0]!.item, quantity: mine.reduce((n, q) => n + q.quantity, 0) };
+  return mine[0]!;
 }
 
 /**
@@ -429,6 +434,15 @@ function brandsBySystem(scope: ScopeDraftV1): Map<string, string[]> {
     if (!(out.get(system) ?? []).includes(name)) out.set(system, [...(out.get(system) ?? []), name]);
   }
   return out;
+}
+
+/** The camera the request describes ("indoor dome cameras" → "indoor dome camera"), so the budget doesn't call it our outdoor turret. */
+function cameraStyleAsked(scope: ScopeDraftV1): string | undefined {
+  for (const t of requestTexts(scope)) {
+    const m = /\b((?:indoor|outdoor|interior|exterior)\s+)?(dome|turret|bullet|ptz|fisheye|box)\s+cam(?:era)?s?\b/.exec(t);
+    if (m) return `${m[1] ?? ""}${m[2]} camera`;
+  }
+  return undefined;
 }
 
 /** The other brand the request asks for this device in: a "Requested product" it lists that names the brand and the device. */
@@ -720,7 +734,7 @@ export function materialize(stated: ScopeDraftV1, pattern: PatternSpec, namedPro
     // our cameras wouldn't record to it). Otherwise our standard prices as a labeled stand-in (Henry, 2026-10-30).
     const brand = product ? undefined : otherBrandAsked(scope, role);
     if (brand && keepsBrand(scope, brand)) {
-      toVerify.push(`Requested product: ${brand} ${role.label.replace(/^\S+\s+/, "")} (not Livewire's standard brand for this; priced in the final proposal)`);
+      toVerify.push(`Requested product: ${brand} ${cameraStyleAsked(scope) ?? role.label.replace(/^\S+\s+/, "")} (not Livewire's standard brand for this; priced in the final proposal)`);
       verifyOnly.add(role.role);
       continue;
     }
@@ -838,9 +852,18 @@ export function materialize(stated: ScopeDraftV1, pattern: PatternSpec, namedPro
   // it would power are another brand's, listed to price (Zack's Jinny's job, 2026-10-26: a PoE switch beside the Luma NVR they keep).
   for (const role of included) {
     if (!role.powers || requested.has(role.role) || namesItself(scope, role, pattern.roles)) continue;
-    const kept = scope.retained_equipment.some((e) => role.powers!.unless_kept.some((t) => hasWord(fold(e), fold(t))));
+    // A kept switch powers new cameras; a kept recorder or camera does only while the budget doesn't replace the recorder
+    // (Zack's Dunham job, 2026-11-02: a new SVR, which has no PoE, beside an old Luma camera dropped the switch).
+    const recorderPriced = lines.some((l) => l.role === "nvr");
+    const keptSource = scope.retained_equipment.find((e) =>
+      role.powers!.unless_kept.some((t) => hasWord(fold(e), fold(t)) && (!recorderPriced || /^(switch|poe)/.test(fold(t)))),
+    );
     const otherBrand = role.powers.roles.some((r) => verifyOnly.has(r)) && !lines.some((l) => role.powers!.roles.includes(l.role));
-    if (kept || otherBrand) notAsked.add(role.role);
+    if (keptSource || otherBrand) notAsked.add(role.role);
+    // Whenever new PoE cameras are priced without a switch, the budget says what powers them.
+    if (keptSource && lines.some((l) => role.powers!.roles.includes(l.role))) {
+      toVerify.push(`PoE source: no PoE switch is priced; confirm the existing ${keptSource} powers the new cameras`);
+    }
   }
   // Likewise a role counted from devices that are all another brand's, listed to price: no microSD cards for UniFi
   // cameras (Zack's Standon job, 2026-10-27).
@@ -880,7 +903,11 @@ export function materialize(stated: ScopeDraftV1, pattern: PatternSpec, namedPro
   // Roles counted from others (a card per camera) take those roles' priced units, unless the request stated their own count.
   for (const line of lines) {
     const role = pattern.roles.find((r) => r.role === line.role);
-    if (!role?.quantity_follows || statedQuantity(scope, role, pattern.roles) !== null || line.requested_model) continue;
+    if (!role?.quantity_follows || line.requested_model) continue;
+    // A stated count of plates names one location's plate ("a 2-port Cat6 keystone plate" × 1), never all of them:
+    // it can raise the count by location but not lower it (Zack's Giessel job, 2026-11-02: 5 rooms priced 1 plate).
+    const stated = statedQuantity(scope, role, pattern.roles);
+    if (stated !== null && !role.port_variants) continue;
     const followed = lines.filter((l) => role.quantity_follows!.includes(l.role));
     // Units of what it follows, not items: a retrofit drop's two jacks are one drop.
     const units = followed.reduce((n, l) => n + l.quantity / (retro ? (pattern.roles.find((r) => r.role === l.role)?.retrofit_units?.units ?? 1) : 1), 0);
@@ -894,7 +921,7 @@ export function materialize(stated: ScopeDraftV1, pattern: PatternSpec, namedPro
       // plate each, the rest one apiece (Zack's Giessel job, 2026-10-30: 7 ports in 5 rooms priced as 4 two-port plates).
       const multi = role.port_variants ? multiPortLocations(scope) : [];
       const byLocation = multi.length ? units - multi.reduce((n, p) => n + p - 1, 0) : 0;
-      line.quantity = Math.max(Math.ceil(Math.round((units / per) * 1000) / 1000), byLocation) + moved;
+      line.quantity = Math.max(Math.ceil(Math.round((units / per) * 1000) / 1000), byLocation, stated ?? 0) + moved;
       // Plates go one per outlet location, which the drops don't say: always a minimum to verify.
       const toCheck = !!role.port_variants && role.quantity.kind === "minimum";
       line.quantity_basis = toCheck ? "minimum_to_verify" : "fixed";
@@ -1188,13 +1215,15 @@ function feetPerDrop(scope: ScopeDraftV1): number | null {
 
 /** Port counts of single locations the request gives several ports: "a 2-port keystone plate", "library (2 ports)". */
 function multiPortLocations(scope: ScopeDraftV1): number[] {
-  const out: number[] = [];
+  // The same plate in a change and in a stated count ("2-port Cat6 keystone plate" × 1) is one location.
   const n = (w: string) => COUNT_WORDS[w] ?? Number(w);
-  for (const t of requestTexts(scope)) {
-    for (const m of t.matchAll(/\b(\d|two|three|four)[- ]port\s+(?:[\w-]+\s+){0,3}?(?:wall ?plate|faceplate|face plate|plate)\b(?!s)/g)) out.push(n(m[1]!));
-    for (const m of t.matchAll(/\((\d|two|three|four) ports\)/g)) out.push(n(m[1]!));
-  }
-  return out.filter((p) => p >= 2);
+  const plates = (t: string) => [
+    ...[...t.matchAll(/\b(\d|two|three|four)[- ]port\s+(?:[\w-]+\s+){0,3}?(?:wall ?plate|faceplate|face plate|plate)\b(?!s)/g)].map((m) => ({ text: m[0], ports: n(m[1]!) })),
+    ...[...t.matchAll(/\((\d|two|three|four) ports\)/g)].map((m) => ({ text: m[0], ports: n(m[1]!) })),
+  ];
+  const inChanges = scope.requested_changes.map(fold).flatMap(plates);
+  const inCounts = scope.requested_quantities.map((q) => fold(q.item)).flatMap(plates).filter((p) => !inChanges.some((c) => c.text === p.text));
+  return [...inChanges, ...inCounts].map((p) => p.ports).filter((p) => p >= 2);
 }
 
 /** The largest count a change gives the device by name ("two Sonos Ports", "3 G6 Bullets"), or null. */
