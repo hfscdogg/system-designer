@@ -2027,7 +2027,7 @@ describe("Zack's round 7 (2026-10-26)", () => {
     expect(proposal.remaining_verification).not.toContain("Requested product: Sonos Amp");
   });
 
-  it("Jinny's: Luma cameras on the Luma NVR they keep are listed to price as Luma, with no Alarm.com cameras and no PoE switch", async () => {
+  it("Jinny's: Luma cameras on the Luma NVR they keep price as Luma placeholders, with no cards and no PoE switch", async () => {
     // run_95c25155: Alarm.com ADC-VC838PF × 2 and an Araknis PoE switch beside the client's Luma NVR.
     const jinny = {
       client: "Mark Dunham & Jinny",
@@ -2039,9 +2039,10 @@ describe("Zack's round 7 (2026-10-26)", () => {
       unresolved_questions: ["Requested product: Luma cameras"],
     };
     const { selection } = await job(jinny);
-    expect(selection.lines.map((l) => l.role)).toEqual([]);
-    // Named as the request describes them, not as our outdoor turret (Zack, 2026-11-03).
-    expect(selection.to_verify).toContain("Requested product: Luma indoor dome camera (not Livewire's standard brand for this; priced in the final proposal)");
+    // Henry, 2026-11-03: placeholders at our equivalent's price, named as the request describes them (Zack: not "outdoor turrets").
+    expect(quantities(selection)).toEqual({ outdoor_camera: 2 });
+    expect(selection.lines[0]).toMatchObject({ equivalent_of: "Luma", placeholder_for: "Luma indoor dome camera" });
+    expect(selection.to_verify).toContain("PoE source: no PoE switch is priced; confirm the existing Luma NVR powers the new cameras");
     // Alarm.com cameras the rep asks for still price, with their switch.
     const adc = await job({ ...jinny, existing_equipment: none.existing_equipment, requested_changes: ["Install 2 turret cameras"], requested_quantities: [], unresolved_questions: [] });
     expect(quantities(adc.selection)).toMatchObject({ outdoor_camera: 2, camera_poe_switch: 1 });
@@ -2190,9 +2191,8 @@ describe("Zack's Standon job (2026-10-27): another brand's cameras are listed to
     const { admitted } = await admitAll(pattern, catalog);
     return { selection, compiled: compile(selection, admitted, pattern) };
   }
-  const UNIFI = "Requested product: UniFi outdoor turret camera (not Livewire's standard brand for this; priced in the final proposal)";
 
-  it("cameras another brand's NVR the customer keeps records to are listed to price; everything else prices, and the build compiles", async () => {
+  it("cameras another brand's NVR the customer keeps records to price as named placeholders; everything else prices, and the build compiles", async () => {
     // Both runs failed: "critical role Alarm.com outdoor turret camera … is neither priced nor unresolved".
     // Since Henry's 10/30 decision, only a kept system of that brand (a UniFi NVR here) keeps the cameras listed to price.
     const { selection, compiled } = await build({
@@ -2203,16 +2203,17 @@ describe("Zack's Standon job (2026-10-27): another brand's cameras are listed to
       unresolved_questions: ["Requested product: UniFi cameras"],
     });
     expect(compiled.ok ? [] : compiled.errors).toEqual([]);
-    expect(selection.to_verify).toContain(UNIFI);
+    // Henry, 2026-11-03: placeholders, priced at our equivalent, named for what the request asks for.
+    const camera = selection.lines.find((l) => l.role === "outdoor_camera")!;
+    expect(camera).toMatchObject({ quantity: 4, equivalent_of: "UniFi", placeholder_for: "UniFi outdoor turret camera" });
     const roles = selection.lines.map((l) => l.role);
-    expect(roles).not.toContain("outdoor_camera");
-    // No microSD cards or PoE switch for cameras that aren't ours to price.
+    // No microSD cards for cameras that record to the UniFi NVR, and no PoE switch beside it (the budget asks to confirm it).
     expect(roles).not.toContain("camera_storage");
     expect(roles).not.toContain("camera_poe_switch");
     expect(roles).toEqual(expect.arrayContaining(["power_protection", "zone_amplifier", "in_ceiling_speakers"]));
   });
 
-  it("a cameras-only job in another brand compiles: Jinny's Luma cameras on the Luma NVR they keep are listed to price", async () => {
+  it("a cameras-only job in another brand compiles: Jinny's Luma cameras on the Luma NVR they keep price as placeholders", async () => {
     const luma = await build({
       market: "commercial",
       functional_systems: ["video surveillance"],
@@ -2222,7 +2223,9 @@ describe("Zack's Standon job (2026-10-27): another brand's cameras are listed to
       unresolved_questions: ["Requested product: Luma cameras"],
     });
     expect(luma.compiled.ok ? [] : luma.compiled.errors).toEqual([]);
-    expect(luma.selection.lines.map((l) => l.role)).not.toContain("outdoor_camera");
+    const line = luma.compiled.ok ? luma.compiled.draft.lines.find((l) => l.role === "outdoor_camera")! : null;
+    expect(line).toMatchObject({ quantity: 2, label: "Placeholder: Luma indoor dome camera" });
+    expect(line!.note).toMatch(/^Placeholder priced at Livewire's equivalent \(TestCo DEV-\d+\); the final proposal prices the Luma equipment\./);
   });
 
   it("Alarm.com cameras still price with their cards, and named cards stay with another brand's cameras", async () => {
@@ -2366,7 +2369,8 @@ describe("Zack's round 8 (2026-10-30) and Henry's 10/30 decisions", () => {
     expect(notes).toEqual(["Livewire equivalent of the requested UniFi equipment; the final proposal can price UniFi instead."]);
     // The cameras keep their own note after the stand-in one.
     const camera = compiled.ok ? compiled.draft.lines.find((l) => l.role === "outdoor_camera")!.note : "";
-    expect(camera).toMatch(/^Livewire equivalent of the requested UniFi equipment; .* Includes its Cat6 run to the PoE switch/);
+    // Henry, 2026-11-03: a placeholder named for the requested camera, priced at ours.
+    expect(camera).toMatch(/^Placeholder priced at Livewire's equivalent \(.*\); the final proposal prices the UniFi equipment\. Includes its Cat6 run to the PoE switch/);
     // A request naming no other brand labels nothing.
     const plain = await build({ functional_systems: ["home network"], requested_changes: ["Install whole-home Wi-Fi"] });
     expect(plain.selection.lines.every((l) => !l.equivalent_of)).toBe(true);

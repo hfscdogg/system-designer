@@ -27,6 +27,7 @@ const SelectionSchema = z
           precedent: z.enum(["livewire_standard", "accepted_comparable", "new_to_livewire"]),
           requested_model: z.string().min(1).optional(),
           equivalent_of: z.string().min(1).optional(),
+          placeholder_for: z.string().min(1).optional(),
         })
         .strict(),
     ),
@@ -232,7 +233,12 @@ export function compile(raw: unknown, catalog: Map<string, AdmittedProduct>, pat
     }
     lines.push({
       role: line.role,
-      label: requested && role.product_id !== line.record_id ? `${product.brand} ${product.model}` : (variant?.label ?? role.label),
+      // A placeholder is named for the product the request asks for, priced at our equivalent (Henry, 2026-11-03).
+      label: line.placeholder_for
+        ? `Placeholder: ${line.placeholder_for}`
+        : requested && role.product_id !== line.record_id
+          ? `${product.brand} ${product.model}`
+          : (variant?.label ?? role.label),
       record_id: product.record_id,
       brand: product.brand,
       model: product.model,
@@ -251,7 +257,11 @@ export function compile(raw: unknown, catalog: Map<string, AdmittedProduct>, pat
       ...(line.equivalent_of || role.customer_note
         ? {
             note: [
-              line.equivalent_of ? `Livewire equivalent of the requested ${line.equivalent_of} equipment; the final proposal can price ${line.equivalent_of} instead.` : null,
+              line.placeholder_for
+                ? `Placeholder priced at Livewire's equivalent (${product.brand} ${product.model}); the final proposal prices the ${line.equivalent_of ?? "requested"} equipment.`
+                : line.equivalent_of
+                  ? `Livewire equivalent of the requested ${line.equivalent_of} equipment; the final proposal can price ${line.equivalent_of} instead.`
+                  : null,
               role.customer_note ?? null,
             ]
               .filter(Boolean)
