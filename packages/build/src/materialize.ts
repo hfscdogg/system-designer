@@ -21,6 +21,8 @@ export interface SelectionLine {
   requested_model?: string;
   /** Another brand the request names for this system (UniFi): the line is Livewire's standard as a stand-in for it. */
   equivalent_of?: string;
+  /** The requested product the line holds the place of ("UniFi G6 Bullet camera"), priced at Livewire's equivalent (Henry, 2026-11-03). */
+  placeholder_for?: string;
 }
 
 export interface Selection {
@@ -445,6 +447,17 @@ function cameraStyleAsked(scope: ScopeDraftV1): string | undefined {
   return undefined;
 }
 
+/** The requested product of this brand the line stands in for, as the request names it ("UniFi G6 Bullet camera"). */
+function requestedProductFor(scope: ScopeDraftV1, role: RoleSpec, brands: string): string | undefined {
+  const devices = deviceTerms(role).concat((role.count_terms ?? []).map(fold));
+  const names = brands.split(" / ").map(fold).concat(brands.split(" / ").some((b) => fold(b) === "unifi") ? ["ubiquiti"] : []);
+  const asked = scope.unresolved_questions
+    .map((q) => /^requested product:\s*(.+)$/i.exec(q)?.[1]?.trim())
+    .filter((q): q is string => !!q && names.some((b) => hasWord(fold(q), b)));
+  const mine = asked.filter((q) => devices.some((d) => hasWord(fold(q), d.replace(/s$/, "")) || hasWord(fold(q), d)));
+  return mine.length ? mine.join(" / ") : undefined;
+}
+
 /** The other brand the request asks for this device in: a "Requested product" it lists that names the brand and the device. */
 function otherBrandAsked(scope: ScopeDraftV1, role: RoleSpec): string | undefined {
   if (!role.other_brands) return undefined;
@@ -666,6 +679,8 @@ export function materialize(stated: ScopeDraftV1, pattern: PatternSpec, namedPro
   const notAsked = new Set<string>();
   const toVerify: string[] = [];
   const verifyOnly = new Set<string>();
+  /** Roles priced as placeholders for another brand's devices on the system of that brand the customer keeps. */
+  const keptBrandPlaceholders = new Map<string, string>();
   // Existing equipment the job keeps: nothing to price, its field test is listed to verify.
   const keptRoles = new Set<string>();
   // Roles an add-on prices only for the devices they power: dropped when none of those is priced.
@@ -733,11 +748,9 @@ export function materialize(stated: ScopeDraftV1, pattern: PatternSpec, namedPro
     // Another brand's device is listed to price only when the customer keeps that brand's system (Jinny's Luma NVR:
     // our cameras wouldn't record to it). Otherwise our standard prices as a labeled stand-in (Henry, 2026-10-30).
     const brand = product ? undefined : otherBrandAsked(scope, role);
-    if (brand && keepsBrand(scope, brand)) {
-      toVerify.push(`Requested product: ${brand} ${cameraStyleAsked(scope) ?? role.label.replace(/^\S+\s+/, "")} (not Livewire's standard brand for this; priced in the final proposal)`);
-      verifyOnly.add(role.role);
-      continue;
-    }
+    // Henry, 2026-11-03: it prices as a placeholder line at Livewire's equivalent instead, so the total covers the devices
+    // and their install (Zack's Jinny's job: a $358 budget for 2 cameras listed to price).
+    if (brand && keepsBrand(scope, brand)) keptBrandPlaceholders.set(role.role, `${brand} ${cameraStyleAsked(scope) ?? role.label.replace(/^\S+\s+/, "")}`);
     if (!product && outdoorAsked(scope, role) && !variantFor(scope, role)) {
       // An outdoor device in a size with no approved outdoor model is listed to price, never priced as the indoor one.
       const size = sizeAsked(scope, role);
@@ -855,9 +868,11 @@ export function materialize(stated: ScopeDraftV1, pattern: PatternSpec, namedPro
     // A kept switch powers new cameras; a kept recorder or camera does only while the budget doesn't replace the recorder
     // (Zack's Dunham job, 2026-11-02: a new SVR, which has no PoE, beside an old Luma camera dropped the switch).
     const recorderPriced = lines.some((l) => l.role === "nvr");
-    const keptSource = scope.retained_equipment.find((e) =>
-      role.powers!.unless_kept.some((t) => hasWord(fold(e), fold(t)) && (!recorderPriced || /^(switch|poe)/.test(fold(t)))),
-    );
+    // The likeliest power source first: a switch, then a recorder, then the cameras themselves.
+    const sourceRank = (e: string) => (/\b(switch|poe)\b/.test(fold(e)) ? 0 : /\b(nvr|svr|dvr|recorder)\b/.test(fold(e)) ? 1 : 2);
+    const keptSource = scope.retained_equipment
+      .filter((e) => role.powers!.unless_kept.some((t) => hasWord(fold(e), fold(t)) && (!recorderPriced || /^(switch|poe)/.test(fold(t)))))
+      .sort((a, b) => sourceRank(a) - sourceRank(b))[0];
     const otherBrand = role.powers.roles.some((r) => verifyOnly.has(r)) && !lines.some((l) => role.powers!.roles.includes(l.role));
     if (keptSource || otherBrand) notAsked.add(role.role);
     // Whenever new PoE cameras are priced without a switch, the budget says what powers them.
@@ -870,6 +885,10 @@ export function materialize(stated: ScopeDraftV1, pattern: PatternSpec, namedPro
   for (const role of included) {
     if (!role.quantity_follows || requested.has(role.role) || namedExplicitly(scope, role, pattern.roles)) continue;
     if (role.quantity_follows.some((r) => verifyOnly.has(r)) && !lines.some((l) => role.quantity_follows!.includes(l.role))) notAsked.add(role.role);
+    // Cards and the like for placeholder cameras that record to the customer's own system of that brand: none.
+    if (role.quantity_follows.length && lines.filter((l) => role.quantity_follows!.includes(l.role)).every((l) => keptBrandPlaceholders.has(l.role))) {
+      if (lines.some((l) => role.quantity_follows!.includes(l.role))) notAsked.add(role.role);
+    }
   }
   // Amplifiers the request names itself, with no new speakers asked for, drive speakers the customer has: none are
   // added (Zack's Paulenich job, 2026-10-30: two Amp Multis, a Sonos Amp and two Ports priced 2 pairs of in-ceiling speakers).
@@ -1101,6 +1120,11 @@ export function materialize(stated: ScopeDraftV1, pattern: PatternSpec, namedPro
     const role = pattern.roles.find((r) => r.role === line.role);
     const brands = [...new Set((role?.systems ?? []).flatMap((s) => standIns.get(s) ?? []))];
     if (brands.length) line.equivalent_of = brands.join(" / ");
+    const kept = keptBrandPlaceholders.get(line.role);
+    if (kept) line.equivalent_of = kept.split(" ")[0];
+    // Henry, 2026-11-03: the line is named for the product the request asks for, a placeholder at our equivalent's price.
+    const asked = kept ?? (role && line.equivalent_of ? requestedProductFor(scope, role, line.equivalent_of) : undefined);
+    if (asked) line.placeholder_for = asked;
   }
 
   return {
