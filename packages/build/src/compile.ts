@@ -179,6 +179,16 @@ function pricedSources(pattern: PatternSpec, sel: Selection) {
   return used.length && used.length < pattern.sources.length ? used : undefined;
 }
 
+/**
+ * The parts the title names: those the budget prices from, and wiring into a finished home is "Structured Wiring",
+ * not "Prewire" (Zack, 2026-11-05: Bennett's and Hansen's existing homes were titled Prewire).
+ */
+function titlePattern(pattern: PatternSpec, sel: Selection, used: ReturnType<typeof pricedSources>): { title_pattern?: string } {
+  const parts = used ? used.map((s) => s.pattern) : pattern.pattern.split("+");
+  const shown = parts.map((p) => (sel.retrofit && p === "prewire" ? "structured_wiring" : p)).join("+");
+  return used || shown !== pattern.pattern ? { title_pattern: shown } : {};
+}
+
 export function compile(raw: unknown, catalog: Map<string, AdmittedProduct>, pattern: PatternSpec): CompileResult {
   const authority = findAuthorityFields(raw);
   if (authority.length) return { ok: false, errors: authority.map((p) => `unauthorized field in selection: ${p}`) };
@@ -202,10 +212,12 @@ export function compile(raw: unknown, catalog: Map<string, AdmittedProduct>, pat
       errors.push(`role ${line.role} is not in the pattern`);
       continue;
     }
-    // A role's standard (or variant) appears once; separate products the request named by model add their own lines.
+    // A role's standard (or variant) appears once; separate products the request named by model add their own lines,
+    // and so do the sizes of a sized device (a 43-inch placeholder beside a 65-inch TV; Zack's Annie Lewis job, 2026-11-05).
     if (!line.requested_model) {
-      if (standardRoles.has(line.role)) errors.push(`role ${line.role} appears twice`);
-      standardRoles.add(line.role);
+      const standard = `${line.role}:${line.record_id}:${line.placeholder_for ?? ""}`;
+      if (standardRoles.has(standard)) errors.push(`role ${line.role} appears twice`);
+      standardRoles.add(standard);
     } else if (requestedRecords.has(`${line.role}:${line.record_id}`)) errors.push(`role ${line.role} names ${line.record_id} twice`);
     else requestedRecords.add(`${line.role}:${line.record_id}`);
     seenRoles.add(line.role);
@@ -364,7 +376,7 @@ export function compile(raw: unknown, catalog: Map<string, AdmittedProduct>, pat
       schema: "proposal_draft_v1",
       pattern: sel.pattern,
       pattern_version: sel.pattern_version,
-      ...(used ? { title_pattern: used.map((s) => s.pattern).join("+") } : {}),
+      ...titlePattern(pattern, sel, used),
       lines,
       services,
       labor,

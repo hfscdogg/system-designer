@@ -149,6 +149,11 @@ export const RoleSpecSchema = z
      */
     other_brands: z.array(z.string().min(1)).min(1).optional(),
     /**
+     * Words for other models of this device that Livewire has no standard for (a Control4 CoreLite): a request
+     * that names one prices this role's standard as a placeholder named for it (Zack's Bennett job, 2026-11-05).
+     */
+    other_models: z.array(z.string().min(1)).min(1).optional(),
+    /**
      * Alternative approved records chosen by the size the request names ("75-inch" → the 77" model).
      * An `outdoor` variant is chosen only for a request that says the device goes outside (and only one is):
      * an outdoor TV is never priced as an indoor one.

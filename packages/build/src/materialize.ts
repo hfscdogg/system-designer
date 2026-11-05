@@ -69,8 +69,13 @@ const NEW_CONSTRUCTION = /\b(new construction|new build|new home build|open wall
 function retrofit(scope: ScopeDraftV1): boolean {
   // The open questions count: the interpreter put Giessel's "via the bath/laundry plumbing chase" there (Zack, 2026-10-30).
   const texts = [scope.project_type ?? "", ...scope.requested_changes, ...scope.unresolved_questions].map(fold);
-  return texts.some((t) => RETROFIT.test(t)) && !texts.some((t) => NEW_CONSTRUCTION.test(t));
+  if (texts.some((t) => NEW_CONSTRUCTION.test(t))) return false;
+  // An upgrade of a lived-in home, or one with equipment already in it, is wired through finished walls
+  // (Zack, 2026-11-05: Bennett's and Hansen's single drops in existing homes were priced and titled as a prewire).
+  const existingHome = EXISTING_HOME.test(fold(scope.project_type ?? "")) || scope.existing_equipment_disposition === "described";
+  return existingHome || texts.some((t) => RETROFIT.test(t));
 }
+const EXISTING_HOME = /\b(upgrade|retro-?fit|renovat\w*|remodel\w*|existing|update|refresh|replacement)\b/;
 
 /** The request's own words, one entry per change or stated count. System names and rooms are not requests ("Patio" is not outdoor Wi-Fi). */
 const requestTexts = (scope: ScopeDraftV1) => [...scope.requested_changes, ...scope.requested_quantities.map((q) => q.item)].map(fold);
@@ -179,6 +184,22 @@ function customerOwned(scope: ScopeDraftV1, role: RoleSpec): string | undefined 
   return undefined;
 }
 
+/** Integrating a device is connecting the customer's own: "thermostat integration", "integrate the existing thermostats". */
+const INTEGRATION = /\bintegrat(e|es|ed|ing|ion)\b/;
+/**
+ * The request's words for this device when it integrates the customer's own (Zack's Annie Lewis job, 2026-11-05:
+ * "Thermostat integration, up to 2, verify Z-Wave compatibility" was priced as a new thermostat).
+ */
+function integrated(scope: ScopeDraftV1, role: RoleSpec): string | undefined {
+  for (const text of [...scope.requested_changes, ...scope.requested_quantities.map((q) => q.item)]) {
+    const t = fold(text);
+    if (!INTEGRATION.test(t) || NEW_DEVICE.test(t)) continue;
+    const term = (role.retained_match ?? []).find((m) => new RegExp(String.raw`\b${escape(fold(m))}(s|es)?\b`).test(t));
+    if (term) return text.trim();
+  }
+  return undefined;
+}
+
 /** "/", "&", "+" and "and" between words read as a space: "smoke/CO", "smoke & CO" and "smoke and CO" are all "smoke co". */
 const joined = (s: string) => fold(s).replace(/\s*[/&+]\s*|\s+and\s+/g, " ");
 
@@ -261,6 +282,8 @@ function statedItem(scope: ScopeDraftV1, role: RoleSpec, roles: RoleSpec[]): { i
   for (const q of scope.requested_quantities) {
     // Nor is a count of what the customer supplies ("1 customer's 65-inch Sony TV").
     if (EXISTING_ITEM.test(fold(q.item)) || OWNED_ITEM.test(q.item)) continue;
+    // Nor is a count of devices to integrate ("Thermostat integration: up to 2"): those are the customer's.
+    if (INTEGRATION.test(fold(q.item)) && !NEW_DEVICE.test(fold(q.item))) continue;
     // A length per drop ("feet of Cat6 per drop" × 50) is not a count of anything.
     if (PER_DROP_ITEM.test(fold(q.item))) continue;
     // A count for devices sold as one thing elsewhere ("4 smoke/CO detectors") counts for each of them.
@@ -280,7 +303,16 @@ function statedItem(scope: ScopeDraftV1, role: RoleSpec, roles: RoleSpec[]): { i
   // a model count is never a total of the others (Zack's Standon job, 2026-11-03: 4 cameras priced as 3).
   const modelled = (q: { item: string }) => /\d/.test(q.item.replace(/^\s*\d+\s*/, "")) || !!role.other_brands?.some((b) => hasWord(fold(q.item), fold(b)));
   if (mine.length > 1 && mine.every(modelled)) return { item: mine[0]!.item, quantity: mine.reduce((n, q) => n + q.quantity, 0) };
+  // Kinds of the device that each say what sets them apart ("3 door contacts", "4 window contacts"; "43-inch TV", "65-inch
+  // Sony TV") add up too: neither is a total of the other (Zack's Annie Lewis job, 2026-11-05: 4 window contacts dropped).
+  if (mine.length > 1 && distinctKinds(mine)) return { item: mine[0]!.item, quantity: mine.reduce((n, q) => n + q.quantity, 0) };
   return mine[0]!;
+}
+
+/** Each item has a word of its own, no kind word, that none of the others has: "door contacts" and "window contacts". */
+function distinctKinds(items: Array<{ item: string }>): boolean {
+  const words = items.map((q) => new Set(itemWords(q.item).filter((w) => !KIND_WORDS.has(w))));
+  return words.every((ws, i) => [...ws].some((w) => words.every((o, j) => j === i || !o.has(w))));
 }
 
 /**
@@ -449,6 +481,18 @@ function cameraStyleAsked(scope: ScopeDraftV1): string | undefined {
   return undefined;
 }
 
+/** The request's name for another model of this device ("Requested product: Control4 CoreLite", "Halo Remote + CoreLite"). */
+function otherModelAsked(scope: ScopeDraftV1, role: RoleSpec): string | undefined {
+  const words = role.other_models!.map(fold);
+  // Spaced or not ("CoreLite", "Core Lite"); a short model ("EA-1") only as written, never inside other words ("area 1").
+  const says = (t: string) => words.some((w) => hasWord(fold(t), w) || (compact(w).length >= 6 && compact(t).includes(compact(w))));
+  const question = scope.unresolved_questions.map((q) => /^requested product:\s*(.+)$/i.exec(q)?.[1]?.trim()).find((q): q is string => !!q && says(q));
+  if (question) return question;
+  const item = scope.requested_quantities.find((q) => says(q.item) && !EXISTING_ITEM.test(fold(q.item)));
+  if (item) return item.item.trim();
+  return scope.requested_changes.some((c) => says(c) && !EXISTING_ITEM.test(fold(c))) ? `${role.label.split(" ")[0]} ${role.other_models![0]}` : undefined;
+}
+
 /** The requested product of this brand the line stands in for, as the request names it ("UniFi G6 Bullet camera"). */
 function requestedProductFor(scope: ScopeDraftV1, role: RoleSpec, brands: string): string | undefined {
   const devices = deviceTerms(role).concat((role.count_terms ?? []).map(fold));
@@ -525,7 +569,11 @@ const deviceChanges = (scope: ScopeDraftV1, role: RoleSpec) =>
 
 /** The request puts this device outside (McGetrick, 2026-10-15: a 75" full-weather outdoor TV was priced as an indoor Sony). */
 function outdoorAsked(scope: ScopeDraftV1, role: RoleSpec): boolean {
-  return !!role.variants?.length && deviceChanges(scope, role).some((c) => OUTDOOR.test(c));
+  // A change that only places something by the TV ("an Ethernet port at the back of the TV location ... the front porch")
+  // doesn't put the TV outside: the changes that size it say where it goes, when any does (Bennett, 2026-11-05).
+  const all = deviceChanges(scope, role);
+  const sized = all.filter((c) => new RegExp(SIZE.source).test(c));
+  return !!role.variants?.length && (sized.length ? sized : all).some((c) => OUTDOOR.test(c));
 }
 
 /** An exclusion about the customer's existing devices ("replacement of existing smoke/CO detectors"), not the new ones. */
@@ -564,6 +612,57 @@ function portVariant(scope: ScopeDraftV1, role: RoleSpec) {
   const texts = requestTexts(scope).filter((t) => (role.mentions ?? []).some((m) => hasWord(t, fold(m))));
   const named = texts.flatMap((t) => [...t.matchAll(PORTS)].map((m) => PORT_WORDS[m[1]!] ?? Number(m[1])));
   return [...role.port_variants].sort((a, b) => b.ports - a.ports).find((v) => named.includes(v.ports));
+}
+
+const TV_WORD = /\b(tvs?|televisions?)\b/;
+/** A drop count at or under which a finished home's new drops terminate at its existing network equipment. */
+const SMALL_RETROFIT_DROPS = 2;
+
+/**
+ * The TVs the request sizes, one change at a time ("Guest room: 43-inch TV", "1 x 85\" Sony Bravia RGB TV"), each at the
+ * approved record for its size or, for a size with none, a placeholder at the closest one. Empty when an outdoor size has
+ * no approved outdoor record (that one is listed to price instead).
+ */
+function sizedTvs(scope: ScopeDraftV1, role: RoleSpec): Array<{ record_id: string; quantity: number; placeholder_for?: string }> {
+  const baseSize = Number(/(\d{2,3})\s*(?:"|”|-?inch)/.exec(role.label)?.[1] ?? 0);
+  const out = new Map<string, { record_id: string; quantity: number; placeholder_for?: string }>();
+  for (const raw of scope.requested_changes) {
+    const c = fold(raw);
+    if (MOVE.test(c) || !TV_WORD.test(c) || EXISTING_ITEM.test(c) || OWNED_ITEM.test(raw)) continue;
+    const m = [...c.matchAll(SIZE)][0];
+    if (!m) continue;
+    // The size is the TV's: the TV word follows it within a few words ("85” Sony Bravia RGB TV").
+    const tail = /^\s*(?:[\w'’+-]+\s+){0,4}?(?:tvs?|televisions?)\b/.exec(c.slice(m.index! + m[0].length));
+    if (!tail) continue;
+    const size = Number(m[1]);
+    const n = /\b(\d+|one|two|three|four|five|six)\s*(?:x\s*)?(?:new\s+)?$/.exec(c.slice(0, m.index));
+    const quantity = n ? (COUNT_WORDS[n[1]!] ?? Number(n[1])) : 1;
+    const outdoor = OUTDOOR.test(c);
+    const worded = (role.word_variants ?? []).filter((v) => v.words.some((w) => hasWord(c, fold(w))));
+    const candidates = worded.length
+      ? worded.map((v) => ({ sizes: v.sizes ?? (v.default_size ? [baseSize] : []), product_id: v.product_id, outdoor: false }))
+      : [{ sizes: [baseSize], product_id: role.product_id, outdoor: false }, ...(role.variants ?? [])].filter((v) => !!v.outdoor === outdoor);
+    const exact = candidates.find((v) => v.sizes.includes(size));
+    if (!exact && outdoor) return [];
+    const closest = (v: { sizes: number[] }) => Math.min(...v.sizes.map((x) => Math.abs(x - size) - x / 1000));
+    const pick = exact ?? [...candidates].filter((v) => v.sizes.length).sort((a, b) => closest(a) - closest(b))[0];
+    if (!pick?.product_id) return [];
+    const placeholder_for = exact ? undefined : raw.slice(m.index!, m.index! + m[0].length + tail[0].length).replace(/\s+/g, " ").trim();
+    const key = `${pick.product_id}|${placeholder_for ?? ""}`;
+    const had = out.get(key);
+    out.set(key, { record_id: pick.product_id, quantity: (had?.quantity ?? 0) + quantity, ...(placeholder_for ? { placeholder_for } : {}) });
+  }
+  return [...out.values()];
+}
+
+/** Words that stand a TV on furniture instead of the wall: "standing on top of a very long cabinet", "on the credenza". */
+const STANDING = /\b(stand(s|ing)?|sits?|sitting|placed|set|rests?|resting)\s+on\b|\bon top of\b|\bon (?:a|an|the|his|her|their|its)\s+(?:[\w-]+\s+){0,3}?(cabinet|credenza|console|dresser|tv stand|media stand|table|furniture|media unit|sideboard|buffet)\b|\btable ?top\b/;
+/** How many TVs the request stands on furniture. */
+function standingTvs(scope: ScopeDraftV1): number {
+  return scope.requested_changes
+    .map(fold)
+    .filter((c) => TV_WORD.test(c) && STANDING.test(c) && !/\b(mount(ed|ing|s)?|wall|bracket)\b/.test(c) && !MOVE.test(c))
+    .reduce((n, c) => n + Number(/^\s*(\d+)\s*x?\b/.exec(c)?.[1] ?? 1), 0);
 }
 
 /** The size the request names for this device, if any. */
@@ -679,6 +778,8 @@ export function materialize(stated: ScopeDraftV1, pattern: PatternSpec, namedPro
   const removedRoles = new Set<string>();
   // Roles left out because the request never asked for them (no mention, or the role they serve isn't priced).
   const notAsked = new Set<string>();
+  /** Mount roles that skip the TVs standing on furniture. */
+  const standingTvRoles = new Set<string>();
   const toVerify: string[] = [];
   const verifyOnly = new Set<string>();
   /** Roles priced as placeholders for another brand's devices on the system of that brand the customer keeps. */
@@ -731,7 +832,7 @@ export function materialize(stated: ScopeDraftV1, pattern: PatternSpec, namedPro
     included.push(role);
 
     const retained = role.retained_match?.length
-      ? (scope.retained_equipment.find((e) => role.retained_match!.some((t) => fold(e).includes(fold(t)))) ?? customerOwned(scope, role))
+      ? (scope.retained_equipment.find((e) => role.retained_match!.some((t) => fold(e).includes(fold(t)))) ?? customerOwned(scope, role) ?? integrated(scope, role))
       : undefined;
     if (retained && !wantsNew(scope, role, pattern.roles) && !product) {
       // Existing equipment being moved stays the customer's: its mount and labor are priced on the roles that carry it.
@@ -853,6 +954,42 @@ export function materialize(stated: ScopeDraftV1, pattern: PatternSpec, namedPro
     }
   }
 
+  // A TV in each room the request sizes ("Guest room: 43-inch TV", "Living room: 65-inch Sony TV") is a TV of its own, at
+  // the approved record for its size; a size Livewire has no standard for is a placeholder at the closest one (Zack's
+  // Annie Lewis job, 2026-11-05: 3 rooms priced 1 TV; Bennett: an 85" Bravia priced as a 65" BRAVIA 7 without saying so).
+  for (const role of included) {
+    const at = lines.findIndex((l) => l.role === role.role);
+    if (!role.variants || at < 0 || requested.has(role.role) || lines.filter((l) => l.role === role.role).length > 1) continue;
+    const plan = sizedTvs(original, role);
+    const total = plan.reduce((n, t) => n + t.quantity, 0);
+    const line = lines[at]!;
+    if (!plan.length || total < (statedQuantity(scope, role, pattern.roles) ?? 0)) continue;
+    if (plan.length === 1 && !plan[0]!.placeholder_for && plan[0]!.quantity <= line.quantity) continue;
+    lines.splice(at, 1, ...plan.map((t) => ({ ...line, record_id: t.record_id, quantity: t.quantity, quantity_basis: "fixed" as const, verify: null, ...(t.placeholder_for ? { placeholder_for: t.placeholder_for } : {}) })));
+  }
+  // A TV that stands on furniture ("standing on top of a very long cabinet") takes no wall mount (Zack's Bennett job, 2026-11-05).
+  const standing = standingTvs(original);
+  if (standing > 0) {
+    const tvs = lines.filter((l) => l.role === "television").reduce((n, l) => n + l.quantity, 0);
+    for (const role of included) {
+      if (role.alternative_group !== "tv_mount" || !role.quantity_follows || requested.has(role.role) || namesItself(scope, role, pattern.roles)) continue;
+      if (tvs <= standing && movedNeedingMount(scope, role.per_moved ?? []) === 0) notAsked.add(role.role);
+      else standingTvRoles.add(role.role);
+    }
+    toVerify.push(standing === 1 ? "The TV stands on furniture: no wall mount is priced" : `${standing} TVs stand on furniture: no wall mounts are priced for them`);
+  }
+  // A drop or two into a finished home terminates at the network equipment already there: no new structured media
+  // enclosure unless the request asks for one (Zack's Bennett and Hansen jobs, 2026-11-05: a 42" enclosure for one drop).
+  const enclosure = included.find((r) => r.role === "media_enclosure");
+  if (enclosure && retro && !requested.has(enclosure.role) && !namesItself(scope, enclosure, pattern.roles)) {
+    const dropRoles = pattern.roles.filter((r) => r.retrofit_units).map((r) => r.role);
+    const drops = lines.filter((l) => dropRoles.includes(l.role)).reduce((n, l) => n + l.quantity / (pattern.roles.find((r) => r.role === l.role)?.retrofit_units?.units ?? 1), 0);
+    if (drops > 0 && drops <= SMALL_RETROFIT_DROPS) {
+      notAsked.add(enclosure.role);
+      toVerify.push(`Termination: the new ${drops === 1 ? "drop terminates" : "drops terminate"} at the existing network equipment; no new enclosure is priced`);
+    }
+  }
+
   // A count for one device of a group ("only need 1 eero") is the group's count: the others it only mentioned in passing go.
   const counted = (r: RoleSpec) => statedQuantity(scope, r, pattern.roles) !== null || (requested.get(r.role) ?? []).some((n) => statedForProduct(original, n) !== null);
   for (const role of included) {
@@ -931,12 +1068,13 @@ export function materialize(stated: ScopeDraftV1, pattern: PatternSpec, namedPro
     if (stated !== null && !role.port_variants) continue;
     const followed = lines.filter((l) => role.quantity_follows!.includes(l.role));
     // Units of what it follows, not items: a retrofit drop's two jacks are one drop.
-    const units = followed.reduce((n, l) => n + l.quantity / (retro ? (pattern.roles.find((r) => r.role === l.role)?.retrofit_units?.units ?? 1) : 1), 0);
+    let units = followed.reduce((n, l) => n + l.quantity / (retro ? (pattern.roles.find((r) => r.role === l.role)?.retrofit_units?.units ?? 1) : 1), 0);
     // A 12-port panel per 12 drops; a 2-port plate per 2.
     const per = role.port_variants?.find((v) => v.product_id === line.record_id)?.ports ?? role.follows_per ?? 1;
     // A mount per new TV, plus one per existing TV the request moves (Zack's Paulenich job, 2026-10-26: 2 TVs, 1 mount).
     // With no new TV, the moved ones are all the mounts: one moved TV is one mount (Zack's Young job, 2026-10-26: 2).
     const moved = role.per_moved ? movedNeedingMount(scope, role.per_moved) : 0;
+    if (standingTvRoles.has(role.role)) units = Math.max(0, units - standing);
     if (units > 0 || moved > 0) {
       // Plates go one per location: rooms the request gives several ports ("a 2-port plate", "library (2 ports)") take one
       // plate each, the rest one apiece (Zack's Giessel job, 2026-10-30: 7 ports in 5 rooms priced as 4 two-port plates).
@@ -978,14 +1116,20 @@ export function materialize(stated: ScopeDraftV1, pattern: PatternSpec, namedPro
 
   // A length the request states per drop ("assume 50 feet for each data drop") sizes the cable at that length a drop
   // (Zack's Giessel job, 2026-10-30: priced at 75 ft a drop against his stated 50).
+  // Otherwise the cable is about 75 ft a drop, for the drops priced, not a fixed 450 ft (Zack, 2026-11-05: 450 ft for one
+  // drop on Bennett's and Hansen's jobs), and one drop the request gives a length ("approx 150 ft") takes that length.
   const perDrop = feetPerDrop(scope);
-  for (const line of perDrop ? lines : []) {
+  for (const line of lines) {
     const role = pattern.roles.find((r) => r.role === line.role);
     if (!role?.stated_length_per || statedQuantity(scope, role, pattern.roles) !== null) continue;
     const units = lines
       .filter((l) => role.stated_length_per!.includes(l.role))
       .reduce((n, l) => n + l.quantity / (retro ? (pattern.roles.find((r) => r.role === l.role)?.retrofit_units?.units ?? 1) : 1), 0);
-    if (units > 0) Object.assign(line, { quantity: Math.ceil(units * perDrop!), quantity_basis: "minimum_to_verify", verify: `${perDrop} ft per drop, as the request states` });
+    if (units <= 0) continue;
+    const run = perDrop === null && units === 1 ? runFeet(scope) : null;
+    if (perDrop !== null) Object.assign(line, { quantity: Math.ceil(units * perDrop), quantity_basis: "minimum_to_verify", verify: `${perDrop} ft per drop, as the request states` });
+    else if (run !== null) Object.assign(line, { quantity: run, quantity_basis: "minimum_to_verify", verify: `${run} ft for the one drop, as the request states` });
+    else if (role.quantity.kind === "minimum") Object.assign(line, { quantity: Math.ceil(units * DEFAULT_FEET_PER_DROP) });
   }
 
   // One product priced by two combined patterns (the network's PoE switch and the cameras') is one line, at
@@ -1127,6 +1271,8 @@ export function materialize(stated: ScopeDraftV1, pattern: PatternSpec, namedPro
     // Henry, 2026-11-03: the line is named for the product the request asks for, a placeholder at our equivalent's price.
     const asked = kept ?? (role && line.equivalent_of ? requestedProductFor(scope, role, line.equivalent_of) : undefined);
     if (asked) line.placeholder_for = asked;
+    const otherModel = !asked && !line.placeholder_for && role?.other_models ? otherModelAsked(scope, role) : undefined;
+    if (otherModel) line.placeholder_for = otherModel;
     // A placeholder for indoor cameras isn't listed under our outdoor camera's "Exterior" (Zack's Jinny's job, 2026-11-03).
     if (asked && /\b(indoor|interior)\b/i.test(asked) && /^exterior$/i.test(line.location)) line.location = "Interior";
   }
@@ -1252,6 +1398,18 @@ function feetPerDrop(scope: ScopeDraftV1): number | null {
   }
   const item = scope.requested_quantities.find((q) => PER_DROP_ITEM.test(fold(q.item)) && ok(q.quantity));
   return item ? item.quantity : null;
+}
+
+/** Cat6 a drop when the request gives no length: the cable role's own "about 75 ft of Cat6 per data outlet". */
+const DEFAULT_FEET_PER_DROP = 75;
+/** A cable run's length the request gives ("data cables can be run ... approx 150 ft"), for a job of one drop. */
+function runFeet(scope: ScopeDraftV1): number | null {
+  for (const t of [...requestTexts(scope), ...scope.unresolved_questions].map(fold)) {
+    if (!/\b(cable|cables|cabling|run|runs|cat ?6|ethernet|data|wire|wiring)\b/.test(t)) continue;
+    const m = /\b(\d{2,3})\s*(?:-\s*)?(?:feet|foot|ft\b|')/.exec(t);
+    if (m && Number(m[1]) >= 10 && Number(m[1]) <= 500) return Number(m[1]);
+  }
+  return null;
 }
 
 /** Port counts of single locations the request gives several ports: "a 2-port keystone plate", "library (2 ports)". */
