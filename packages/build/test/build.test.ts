@@ -2608,3 +2608,115 @@ describe("Zack's round 9 (2026-11-02/03): plates per room, PoE source, camera mo
     expect(scope.functional_systems).toContain("structured_wiring");
   });
 });
+
+describe("Zack's live session (2026-11-05)", () => {
+  const kept = { existing_equipment: { status: "described" as const, retained: [], removed_or_replaced: [] }, existing_detectors: "not_provided", project_type: "Upgrade" };
+  const priced = (sel: ReturnType<typeof materialize>) => sel.lines.map((l) => `${l.role}${l.placeholder_for ? ` [${l.placeholder_for}]` : ""} × ${l.quantity}`);
+  async function job(o: object) {
+    const patterns = await loadPatterns();
+    const { scope, scopeHash, receiptId } = approvedScope({ ...kept, ...o });
+    const pattern = selectPattern(scope.functional_systems, patterns)!;
+    return { scope, scopeHash, receiptId, pattern, selection: materialize(scope, pattern) };
+  }
+  async function built(o: object) {
+    const { scope, scopeHash, receiptId, pattern, selection } = await job(o);
+    const catalog = Object.fromEntries(
+      patternRecordIds(pattern).map((id, i) => [
+        id,
+        id === pattern.parts!.product_id ? product(id, "Livewire", "PARTS", 1, 0.01, { laborItems: [] }) : product(id, "TestCo", `DEV-${i}`, 300, 150, { laborItems: [] }),
+      ]),
+    );
+    const { admitted } = await admitAll(pattern, catalog);
+    const result = compile(selection, admitted, pattern);
+    if (!result.ok) throw new Error(result.errors.join("\n"));
+    const proposal = bind(result.draft, { runId: "run_test", receiptId, approvalId: "ap_1", scopeHash, scope, policy: POLICY, releaseId: "rel" });
+    return { selection, draft: result.draft, proposal, customer: customerView(proposal) };
+  }
+
+  // run_4a0421d7 and its revision run_42556b4a: three rooms of TVs priced one, and adding two more changed nothing.
+  const annie = {
+    client: "Annie Lewis",
+    functional_systems: ["TV"],
+    room_types: ["guest room", "living room", "downstairs"],
+    requested_changes: [
+      "Guest room: 43-inch TV with articulating wall mount; relocate power and data",
+      "Living room: 65-inch Sony TV proposed (compare with a 55-inch option) with articulating mount and Sonos Arc Ultra on a soundbar bracket",
+      "Downstairs: 43-inch TV on a single-arm articulating mount",
+    ],
+    requested_quantities: [{ item: "65-inch Sony TV", quantity: 1 }],
+  };
+  it("Annie Lewis: each room's sized TV is priced, a size with no standard as a placeholder at the closest one", async () => {
+    const { selection } = await job(annie);
+    expect(priced(selection)).toEqual(expect.arrayContaining(["television [43-inch TV] × 2", "television × 1", "tv_mount_articulating × 3"]));
+    const revised = await job({ ...annie, requested_changes: [...annie.requested_changes, "Add 1 43\" TV for office, with mount and Sonos Beam"] });
+    expect(priced(revised.selection)).toEqual(expect.arrayContaining(["television [43\" TV] × 1", "television [43-inch TV] × 2", "tv_mount_articulating × 4"]));
+    // The intro covers the TV rooms, not the rooms of the network port list the request also gives.
+    const { customer } = await built({ ...annie, room_types: [...annie.room_types, "rec room", "family room"] });
+    expect([...customer.intro.rooms].sort()).toEqual(["downstairs", "guest room", "living room"]);
+  });
+
+  // run_69c577c6: 3 door and 4 window contacts priced as 3; existing thermostats to integrate priced as new ones.
+  it("Annie Lewis security: door and window contacts add up; thermostats to integrate are the customer's", async () => {
+    const { selection } = await job({
+      client: "Annie Lewis",
+      functional_systems: ["alarm panel", "Alarm.com monitoring", "thermostats"],
+      requested_changes: ["Replace the Concord 4 panel", "Thermostat integration with up to 2 existing thermostats; verify Z-Wave compatibility"],
+      requested_quantities: [
+        { item: "Door contacts", quantity: 3 },
+        { item: "Window contacts", quantity: 4 },
+        { item: "Motion sensors", quantity: 2 },
+        { item: "Keypads", quantity: 2 },
+        { item: "Thermostat integration", quantity: 2 },
+      ],
+    });
+    expect(priced(selection)).toEqual(expect.arrayContaining(["door_window_contact × 7", "motion_detector × 2", "keypad × 2"]));
+    expect(selection.lines.some((l) => l.role === "thermostat")).toBe(false);
+  });
+
+  // run_82167164 and its revision run_245baf4b.
+  const bennett = {
+    client: "Monty Bennett",
+    functional_systems: ["TV", "home automation", "structured wiring"],
+    room_types: ["basement movie room"],
+    requested_changes: [
+      "1 x 85” Sony Bravia RGB TV, standing on top of a very long cabinet",
+      "1 x Control4 Halo Remote + CoreLite to operate the devices",
+      "1 x Ethernet port at the back of the TV location; data cables run from the headend to the front porch and down to the basement, approx 150 ft",
+    ],
+    requested_quantities: [
+      { item: "85” Sony Bravia RGB TV", quantity: 1 },
+      { item: "Control4 Halo Remote", quantity: 1 },
+      { item: "Ethernet port", quantity: 1 },
+    ],
+    unresolved_questions: ["Requested product: Sony Bravia RGB TV 85-inch", "Requested product: Control4 CoreLite"],
+  };
+  it("Bennett: an 85-inch TV on a cabinet, a CoreLite, and one 150 ft run into an existing home", async () => {
+    const { selection, proposal, customer } = await built(bennett);
+    expect(priced(selection)).toEqual(
+      expect.arrayContaining(["television [85” Sony Bravia RGB TV] × 1", "automation_controller [Control4 CoreLite] × 1", "cat6_cable × 150", "data_drop × 2"]),
+    );
+    // A placeholder at the closest size: the 75-inch BRAVIA 7, not the 65.
+    const tv = (await loadPatterns()).find((p) => p.pattern === "tv_media")!.roles.find((r) => r.role === "television")!;
+    expect(selection.lines.find((l) => l.role === "television")!.record_id).toBe(tv.variants!.find((v) => v.sizes.includes(75) && !v.outdoor)!.product_id);
+    // No wall mount for a TV on a cabinet, no enclosure for one drop, and nothing outdoor about a run past the porch.
+    expect(selection.lines.some((l) => /mount|enclosure/.test(l.role))).toBe(false);
+    expect(selection.to_verify.some((v) => /outdoor/i.test(v))).toBe(false);
+    expect(proposal.remaining_verification.filter((v) => /^Requested product/.test(v))).toEqual([]);
+    expect(customer.title).toMatch(/Structured Wiring/);
+    expect(customer.title).not.toMatch(/Prewire/);
+  });
+
+  // run_7e9003da: one new drop into an existing home took a 42" enclosure and 450 ft of Cat6.
+  it("Hansen: one drop is about 75 ft of Cat6 with no new enclosure", async () => {
+    const { selection } = await job({
+      client: "Jeff Hansen",
+      functional_systems: ["networking", "structured wiring"],
+      requested_changes: ["1 x Ethernet port on top floor, behind the TV", "3 x Eero 7 Pros, one on each floor"],
+      requested_quantities: [{ item: "Ethernet port", quantity: 1 }, { item: "Eero 7 Pro", quantity: 3 }],
+      retained_equipment: ["Firewalla router"],
+    });
+    expect(priced(selection)).toEqual(expect.arrayContaining(["cat6_cable × 75", "mesh_wifi × 3"]));
+    expect(selection.lines.some((l) => l.role === "media_enclosure")).toBe(false);
+    expect(selection.retrofit).toBe(true);
+  });
+});

@@ -1,7 +1,7 @@
 {
   "schema": "architecture_pattern_v1",
   "pattern": "home_automation",
-  "version": "2026-10-15.1",
+  "version": "2026-11-05.1",
   "title": "Control4 home automation",
   "applies_when_any": [
     "home_automation"
@@ -20,6 +20,7 @@
         "control4",
         "controller"
       ],
+      "other_models": ["CoreLite", "Core Lite", "CORE 3", "CORE 5", "CA-1", "EA-1", "EA-3", "EA-5"],
       "product_id": "4ff6a8d7-4b25-4499-88a5-8bf8f29bdac0",
       "precedent": "livewire_standard",
       "quantity": {

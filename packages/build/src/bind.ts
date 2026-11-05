@@ -264,7 +264,7 @@ export function bind(draft: ProposalDraft, ctx: BindContext): Proposal {
     property: ctx.scope.property,
     project_type: ctx.scope.project_type,
     market: ctx.scope.market,
-    rooms: ctx.scope.room_types,
+    rooms: introRooms(ctx.scope, sections),
     requested_changes: ctx.scope.requested_changes,
     pattern: { name: draft.pattern, version: draft.pattern_version, ...(draft.title_pattern ? { shown: draft.title_pattern } : {}) },
     sections,
@@ -360,9 +360,32 @@ const POE_SWITCH = /\bpoe\b.*\bswitch\b|\bswitch\b.*\bpoe\b/i;
  * An open item the budget already settles (Zack's round 3, 2026-10-13): a requested product it prices,
  * one the client supplies, or "PoE switch or injector?" once a PoE switch is priced.
  */
+/**
+ * The rooms the budget covers: those its work names (in a change, a stated count or a line's location), not every room
+ * the request mentions (Zack's Annie Lewis job, 2026-11-05: a TV budget listed the rooms of the network port list).
+ */
+function introRooms(scope: ScopeDraftV1, sections: Section[]): string[] {
+  if (scope.room_types.length <= 1) return scope.room_types;
+  const said = [...scope.requested_changes, ...scope.requested_quantities.map((q) => q.item), ...sections.map((s) => s.location)].join(" | ").toLowerCase();
+  const named = scope.room_types.filter((r) => new RegExp(`\\b${r.toLowerCase().replace(/[.*+?^${}()|[\]\\]/g, "\\$&")}`).test(said));
+  return named.length ? named : scope.room_types;
+}
+
 function settled(question: string, lines: BoundLine[]): boolean {
   if (/poe (switch|injector)/i.test(question) && lines.some((l) => POE_SWITCH.test(`${l.label} ${l.brand} ${l.model}`))) return true;
-  return pricedProduct(question, lines) || modelPicked(question, lines);
+  return pricedProduct(question, lines) || modelPicked(question, lines) || placeheld(question, lines);
+}
+
+/**
+ * "Requested product: Sony Bravia RGB TV 85-inch" once a placeholder line is named for it ("Placeholder: 85” Sony Bravia
+ * RGB TV"): every word of the request, its size aside, is in the placeholder's name (Zack's Bennett job, 2026-11-05).
+ */
+function placeheld(question: string, lines: BoundLine[]): boolean {
+  const m = /^requested product:\s*(.+)$/i.exec(question.trim());
+  if (!m) return false;
+  const words = (s: string) => s.toLowerCase().replace(/\b(\d{2,3})\s*(?:-?\s*inch(?:es)?|"|”|″)/g, "$1").split(/[^a-z0-9]+/).filter((w) => w.length > 1);
+  const asked = words(m[1]!);
+  return asked.length >= 2 && lines.some((l) => l.label.startsWith("Placeholder: ") && asked.every((w) => words(l.label).includes(w)));
 }
 
 /** The question is which model of a device to use ("Amplifier model … not specified", "Which amplifier model?"). */
