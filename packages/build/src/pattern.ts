@@ -154,6 +154,11 @@ export const RoleSpecSchema = z
      */
     other_models: z.array(z.string().min(1)).min(1).optional(),
     /**
+     * Changes about other equipment that don't ask for this one by its mentions alone: "Porch: Sonos Beam for the outdoor
+     * TV" names the porch, not outdoor speakers, unless it also says one of `unless_also` (Zack's Morales job, 2026-11-06).
+     */
+    mentions_unless: z.object({ words: z.array(z.string().min(1)).min(1), unless_also: z.array(z.string().min(1)).min(1) }).strict().optional(),
+    /**
      * Alternative approved records chosen by the size the request names ("75-inch" → the 77" model).
      * An `outdoor` variant is chosen only for a request that says the device goes outside (and only one is):
      * an outdoor TV is never priced as an indoor one.

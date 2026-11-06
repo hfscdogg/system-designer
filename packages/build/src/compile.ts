@@ -32,6 +32,8 @@ const SelectionSchema = z
         .strict(),
     ),
     services: z.array(z.object({ category: z.string(), record_id: z.string(), quantity: z.literal(1) }).strict()),
+    /** Devices the customer supplies that the job installs: their install hours are in the labor, their equipment unpriced. */
+    installed: z.array(z.object({ role: z.string(), quantity: z.number().int().positive() }).strict()).optional(),
     labor: z
       .object({ labor_type: z.string(), hours: z.number().positive(), devices: z.number().int().positive(), covers: z.array(z.string()), extras: z.array(z.string()), set_by_rep: z.literal(true).optional() })
       .strict()
@@ -307,15 +309,19 @@ export function compile(raw: unknown, catalog: Map<string, AdmittedProduct>, pat
 
   // Labor must be the pattern's own estimate for the priced devices: never a free number.
   let labor: DraftLabor | null = null;
-  if (!sel.labor && pattern.labor && lines.length && laborHoursFor(pattern, lines, sel.add_on, []) > 0) {
+  // Customer-supplied devices the job installs count toward the labor, by the pattern's own hours for their roles.
+  const installed = sel.installed ?? [];
+  for (const i of installed) if (!roles.has(i.role)) errors.push(`installed role ${i.role} is not in the pattern`);
+  const laborLines = [...lines, ...installed];
+  if (!sel.labor && pattern.labor && laborLines.length && laborHoursFor(pattern, laborLines, sel.add_on, []) > 0) {
     errors.push("the selection omits labor the pattern estimates for the priced devices");
   }
   if (sel.labor) {
     const spec = pattern.labor;
-    const devices = lines.reduce((n, l) => n + l.quantity, 0);
+    const devices = laborLines.reduce((n, l) => n + l.quantity, 0);
     if (!spec || spec.labor_type !== sel.labor.labor_type) errors.push("labor does not use the pattern's labor type");
     // Hours the rep set in a revision stand in for the estimate; the device count still has to match.
-    else if (sel.labor.devices !== devices || (!sel.labor.set_by_rep && sel.labor.hours !== laborHoursFor(pattern, lines, sel.add_on, sel.labor.extras))) errors.push("labor hours do not match the pattern estimate for the priced devices");
+    else if (sel.labor.devices !== devices || (!sel.labor.set_by_rep && sel.labor.hours !== laborHoursFor(pattern, laborLines, sel.add_on, sel.labor.extras))) errors.push("labor hours do not match the pattern estimate for the priced devices");
     else if (sel.labor.covers.join() !== spec.covers.join()) errors.push("labor covers different services than the pattern");
     else if (sel.labor.extras.some((id) => !pattern.labor_extras?.some((x) => x.id === id))) errors.push("labor includes an allowance the pattern does not define");
     else labor = { ...sel.labor, extras: sel.labor.extras.map((id) => pattern.labor_extras!.find((x) => x.id === id)!).map((x) => ({ label: x.label, hours: x.hours })), basis: spec.basis };
