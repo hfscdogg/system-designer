@@ -85,6 +85,7 @@ export function toScopeDraft(raw: ScopeExtraction): ScopeDraftV1 {
   };
   if (s.labor_hours) draft.labor_hours = s.labor_hours;
   if (s.devices?.length) draft.devices = s.devices;
+  if (s.item_quantities?.length) draft.item_quantities = s.item_quantities;
   // An UNASSIGNED or partial selector does not identify a real source quote (PRD §8.1).
   if (s.proposal.number && s.proposal.number !== "UNASSIGNED" && s.proposal.name) {
     draft.source_quote_selector = { number: s.proposal.number, name: s.proposal.name };
@@ -137,6 +138,9 @@ function scopeLines(s: ScopeExtraction, assumed: string[]): string[] {
         ]
       : []),
     ...(s.labor_hours ? [`Labor: ${s.labor_hours} hours total (set in a revision; replaces the estimate)`] : []),
+    ...(s.item_quantities?.length
+      ? [`Quantities set from your pasted list: ${s.item_quantities.map((q) => (q.quantity ? `${q.item} × ${q.quantity}` : `${q.item} removed`)).join("; ")}`]
+      : []),
     // The device list, by who supplies it, so the rep sees what will and won't be priced before approving.
     ...(s.devices?.length ? deviceLines(s.devices) : s.requested_quantities.length ? [`Stated quantities: ${s.requested_quantities.map((q) => `${q.item} × ${q.quantity}`).join("; ")}`] : []),
     ...(s.requested_discount ? [`Discount: ${s.requested_discount.pct}%${s.requested_discount.note ? ` (${s.requested_discount.note})` : ""}, needs Henry's or Zack's approval`] : []),

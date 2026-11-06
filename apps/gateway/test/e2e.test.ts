@@ -6,7 +6,7 @@ import { recordingQboClient, type QboClient } from "@sd/qbo";
 import { completeExtraction, noPatch } from "../../../packages/core/test/fixtures.ts";
 import { TEST_POLICY, testStore } from "../../../packages/store/test/helpers.ts";
 import { recordedDToolsReader, recordingDToolsWriter, type DToolsWriter } from "@sd/dtools";
-import { loadPatterns, patternRecordIds, selectPattern, type CustomerProposal, type PatternSpec, type Selection } from "@sd/build";
+import { loadPatterns, patternRecordIds, selectPattern, type CustomerProposal, type PatternSpec, type Proposal, type Selection } from "@sd/build";
 import { CATALOG, product, testPattern } from "../../../packages/build/test/fixtures.ts";
 import { htmlToPdf, preflightPdf } from "@sd/render";
 import { sha256Hex } from "@sd/core";
@@ -1024,6 +1024,47 @@ describe("editing a scope and revising a finished budget", () => {
     ]);
     expect(scored[1]!.changes).toMatch(/glass_break/);
     expect(learnReport(scored)).toContain("Quantities reps changed most");
+  });
+
+  it("revises from a pasted item list: the budget's own lines with new counts, applied without the model (Zack, 2026-11-06)", async () => {
+    // No interpretations queued: a pasted list must never reach the model.
+    const t = await setup([completeExtraction()]);
+    await t.send(chatMessage("Smith security upgrade"));
+    const [first] = t.receipts();
+    await t.send(click(first!.receiptId, first!.approve!.scopeHash));
+    const [original] = await t.store.listRunsForPerson("zack");
+    expect(original!.state).toBe("READY_HELD");
+    const before = (await t.store.readArtifact<Proposal>(original!.id, "bind", "proposal"))!.sections.flatMap((s) => s.lines);
+    const [keep, change, drop] = before;
+    expect(drop).toBeDefined();
+    const name = (l: { brand: string; model: string }) => `${l.brand} ${l.model}`;
+
+    await t.send(controlClick("revise_budget", original!.id));
+    // As copied from the budget message: bullets, "×", one line per item, a header line, one item removed with 0.
+    await t.send(chatMessage([`Proposal validated for Smith Family.`, `• ${name(change!)} × ${change!.quantity + 2}`, `• ${name(drop!)} × 0`, `• ${name(keep!)} × ${keep!.quantity}`].join("\n")));
+    const revision = (await t.store.listRunsForPerson("zack")).find((r) => r.id !== original!.id)!;
+    const second = t.receipts().at(-1)!;
+    expect(second.lines.join("\n")).toContain(`${name(change!)}: set to ${change!.quantity + 2} (pasted list)`);
+    expect(second.lines.join("\n")).toContain(`${name(drop!)}: removed (pasted list)`);
+    await t.send(click(second.receiptId, second.approve!.scopeHash));
+    expect((await t.store.getRun(revision.id)).state).toBe("READY_HELD");
+    const after = (await t.store.readArtifact<Proposal>(revision.id, "bind", "proposal"))!.sections.flatMap((s) => s.lines);
+    expect(after.find((l) => name(l) === name(change!))!.quantity).toBe(change!.quantity + 2);
+    expect(after.some((l) => name(l) === name(drop!))).toBe(false);
+    expect(after.find((l) => name(l) === name(keep!))!.quantity).toBe(keep!.quantity);
+  });
+
+  it("names a pasted item that isn't on the budget instead of guessing", async () => {
+    const t = await setup([completeExtraction()]);
+    await t.send(chatMessage("Smith security upgrade"));
+    const [first] = t.receipts();
+    await t.send(click(first!.receiptId, first!.approve!.scopeHash));
+    const [original] = await t.store.listRunsForPerson("zack");
+    const [line] = (await t.store.readArtifact<Proposal>(original!.id, "bind", "proposal"))!.sections.flatMap((s) => s.lines);
+    await t.send(controlClick("revise_budget", original!.id));
+    await t.send(chatMessage(`• ${line!.brand} ${line!.model} × 2\n• Acme Widget-9 × 1`));
+    const texts = t.chat.list().map((m) => JSON.stringify(m.view));
+    expect(texts.some((x) => x.includes('I couldn\'t match \\"Acme Widget-9\\"'))).toBe(true);
   });
 
   it("revises a build that stopped after approval: the revision builds from the approved scope and replaces it (Zack's Giessel job, 2026-10-26)", async () => {

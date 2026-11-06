@@ -8,6 +8,7 @@ import {
   systemsMentioned,
   hashCanonical,
   normalizeExtraction,
+  parsePastedItems,
   validateClarificationPatch,
   validateExtraction,
   type CurrentReceipt,
@@ -86,6 +87,26 @@ export function createActivities(deps: ActivityDeps): RunActivities {
     const parentReceipt = approval ? await store.getReceipt(approval.receipt_id) : null;
     if (!parentReceipt) throw new IntegrityError(`run ${runId} revises ${parentRunId}, which has no approved receipt`);
     const base = parentReceipt.body.extraction;
+    // A pasted item list ("Sony K65XR70 × 2", one per line) sets those items' counts as written, without the model.
+    const pasted = await pastedQuantities(parentRunId, change);
+    if (pasted) {
+      if (!pasted.ok) return { ok: false, reason: pasted.reason };
+      const merged = new Map((base.item_quantities ?? []).map((q) => [q.record_id + "|" + q.role, q]));
+      for (const q of pasted.items) merged.set(q.record_id + "|" + q.role, q);
+      const revised = { ...structuredClone(base), item_quantities: [...merged.values()] };
+      await store.appendEvent(runId, "revision_pasted_list", "system", { parentRunId, items: pasted.items });
+      const outcome = await validateScope(revised, runId, "revision_applied", { model: "pasted item list" });
+      if (!outcome.ok) return outcome;
+      const changed = describeScopeChanges(base, outcome.extraction);
+      return {
+        ...outcome,
+        notes: [
+          `Revision ${revision} of the budget approved in ${parentReceipt.id}; it replaces that budget once approved.`,
+          changed.length ? `Changed: ${changed.join("; ")}` : "Changed: nothing; every pasted quantity matches the budget.",
+          ...outcome.notes,
+        ],
+      };
+    }
     const { raw, model } = await deps.interpreter.interpret({ current: base, questions: [], answer: change });
     await recordModelReply(runId, "revision", { answer: change }, raw, model);
     const patch = validateClarificationPatch(raw);
@@ -117,6 +138,41 @@ export function createActivities(deps: ActivityDeps): RunActivities {
         ...outcome.notes,
       ],
     };
+  }
+
+  /**
+   * The counts a revision pastes for the revised budget's own items, matched to its lines by brand and model; null when
+   * the change is not an item list (it goes to the model). An item line that matches nothing in the budget is named back
+   * to the rep rather than guessed.
+   */
+  async function pastedQuantities(
+    parentRunId: string,
+    change: string,
+  ): Promise<null | { ok: true; items: Array<{ item: string; role: string; record_id: string; quantity: number }> } | { ok: false; reason: string }> {
+    const parsed = parsePastedItems(change);
+    // One counted item with other words around it ("make it 2 TVs") is an ordinary revision for the model.
+    const lines = change.split(/\r?\n/).map((l) => l.trim()).filter(Boolean);
+    if (!parsed.length || (parsed.length === 1 && lines.length === 1 && !/[×]|\bx\s*\d+\s*$/i.test(lines[0]!))) return null;
+    const proposal = await store.readArtifact<Proposal>(parentRunId, "bind", "proposal");
+    const priced = (proposal?.sections ?? []).flatMap((s) => s.lines);
+    const key = (t: string) => t.toLowerCase().replace(/[^a-z0-9]/g, "");
+    const items: Array<{ item: string; role: string; record_id: string; quantity: number }> = [];
+    const unknown: string[] = [];
+    for (const p of parsed) {
+      const k = key(p.item);
+      const line = priced.find((l) => [`${l.brand} ${l.model}`, l.model, l.label].some((t) => t && key(t) === k));
+      if (line) items.push({ item: [line.brand, line.model].filter(Boolean).join(" "), role: line.role, record_id: line.record_id, quantity: p.quantity });
+      else unknown.push(p.item);
+    }
+    // Not this budget's list at all: let the model read it as words.
+    if (!items.length) return null;
+    if (unknown.length) {
+      return {
+        ok: false,
+        reason: `I couldn't match ${unknown.map((u) => `"${u}"`).join(", ")} to the budget's items. Paste the lines as the budget lists them (for example "Sony K65XR70 × 2"), or describe the change in words`,
+      };
+    }
+    return { ok: true, items };
   }
 
   /** Read a request's scope from its text (the model, then validation), with retries. */
