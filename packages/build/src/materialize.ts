@@ -709,6 +709,28 @@ function sizedTvs(scope: ScopeDraftV1, role: RoleSpec): Array<{ record_id: strin
   return [...out.values()];
 }
 
+/**
+ * New devices (from the device list) a mount role carries that have no mount listed in their room: a mount device of
+ * the same kind (any TV mount, or a soundbar mount) in the same room, or one with no room, covers them.
+ */
+function unmountedNew(scope: ScopeDraftV1, role: RoleSpec, roles: RoleSpec[]): number {
+  const devices = scope.devices ?? [];
+  if (!devices.length || !role.quantity_follows) return 0;
+  const kin = roles.filter((r) => r === role || (role.alternative_group && r.alternative_group === role.alternative_group));
+  const mounts = devices.filter((d) => kin.includes(roleNamed(d.item, roles)!));
+  const carried = devices.filter((d) => d.supplied_by === "livewire" && !d.existing && role.quantity_follows!.includes(roleNamed(d.item, roles)?.role ?? ""));
+  const room = (d: Device) => (d.room ?? "").toLowerCase();
+  let spare = mounts.filter((m) => !m.room).reduce((n, m) => n + m.quantity, 0);
+  let gap = 0;
+  for (const d of carried) {
+    if (mounts.some((m) => m.room && room(m) === room(d))) continue;
+    const take = Math.min(spare, d.quantity);
+    spare -= take;
+    gap += d.quantity - take;
+  }
+  return gap;
+}
+
 /** Words that stand a TV on furniture instead of the wall: "standing on top of a very long cabinet", "on the credenza". */
 const STANDING = /\b(stand(s|ing)?|sits?|sitting|placed|set|rests?|resting)\s+on\b|\bon top of\b|\bon (?:a|an|the|his|her|their|its)\s+(?:[\w-]+\s+){0,3}?(cabinet|credenza|console|dresser|tv stand|media stand|table|furniture|media unit|sideboard|buffet)\b|\btable ?top\b/;
 /** How many TVs the request stands on furniture. */
@@ -1241,13 +1263,25 @@ export function materialize(given: ScopeDraftV1, pattern: PatternSpec, namedProd
   }
 
   // Roles counted from others (a card per camera) take those roles' priced units, unless the request stated their own count.
+  const gapped = new Set<string>();
   for (const line of lines) {
     const role = pattern.roles.find((r) => r.role === line.role);
     if (!role?.quantity_follows || line.requested_model) continue;
     // A stated count of plates names one location's plate ("a 2-port Cat6 keystone plate" × 1), never all of them:
     // it can raise the count by location but not lower it (Zack's Giessel job, 2026-11-02: 5 rooms priced 1 plate).
     const stated = statedQuantity(scope, role, pattern.roles);
-    if (stated !== null && !role.port_variants) continue;
+    if (stated !== null && !role.port_variants) {
+      // A device list names the mounts it names: a new TV or soundbar in a room with no mount listed still takes one
+      // (staging smoke, Green, 2026-11-06: mounts listed for the fitness room only; the family room's new TV got none).
+      // Once per kind of mount: a tilt and an articulating line share the TVs they carry.
+      const kind = role.alternative_group ?? role.role;
+      const gap = role.per_moved && !gapped.has(kind) ? unmountedNew(original, role, pattern.roles) : 0;
+      if (gap > 0) {
+        gapped.add(kind);
+        Object.assign(line, { quantity: stated + gap, quantity_basis: "fixed", verify: null });
+      }
+      continue;
+    }
     const followed = lines.filter((l) => role.quantity_follows!.includes(l.role));
     // Units of what it follows, not items: a retrofit drop's two jacks are one drop.
     let units = followed.reduce((n, l) => n + l.quantity / (retro ? (pattern.roles.find((r) => r.role === l.role)?.retrofit_units?.units ?? 1) : 1), 0);
