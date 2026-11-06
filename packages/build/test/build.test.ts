@@ -1322,7 +1322,8 @@ describe("Zack's round 3 (2026-10-13)", () => {
       expect(validation.findings.map((f) => f.code), name).not.toContain("margin_exception");
       expect(proposal.remaining_verification, name).toEqual(
         expect.arrayContaining([
-          "Sanus tilt TV wall mount: one mount per wall-mounted TV",
+          // A stated count of the Sony mount is the mount's own count (2026-11-06): nothing left to verify about it.
+          ...(name === "mount counted" ? [] : ["Sanus tilt TV wall mount: one mount per wall-mounted TV"]),
           expect.stringMatching(/^Sony BRAVIA 7 65" TV \(retained: .*65-inch Sony TV\): existing equipment must be field-tested before it can be reused$/),
           "Requested product: Leon frame",
           "Requested product: Sony ultra slim mount",
@@ -2065,7 +2066,7 @@ describe("Henry's decisions (2026-10-27): D-Tools quote history for cabling, cam
 
   it("patterns carry the new version", async () => {
     const versions = Object.fromEntries((await loadPatterns()).map((p) => [p.pattern, p.version]));
-    expect(versions).toMatchObject({ prewire: "2026-10-30.1", tv_media: "2026-11-06.3", whole_home_audio: "2026-11-06.1" });
+    expect(versions).toMatchObject({ prewire: "2026-10-30.1", tv_media: "2026-11-06.4", whole_home_audio: "2026-11-06.1" });
   });
 
   it("Q1: a retrofit drop is two keystone jacks and 2 hours; a new-construction drop one jack and 1 hour", async () => {
@@ -2908,6 +2909,17 @@ describe("Zack's live session (2026-11-05)", () => {
     });
     expect(priced(selection)).toEqual(expect.arrayContaining(["soundbar × 1", "soundbar_mount × 1", "tv_mount_articulating × 3"]));
     expect(selection.lines.filter((l) => l.role === "television").reduce((n, l) => n + l.quantity, 0)).toBe(3);
+  });
+
+  it("Baker (staging smoke): the device list's \"Sony ultra slim mount\" is a mount, and the customer's Sony TV isn't sold", async () => {
+    const { selection } = await job({
+      client: "Richard Baker",
+      functional_systems: ["TV"],
+      requested_changes: ["Mount the customer's 65-inch Sony TV on the living room wall with a Sony ultra slim mount, inside a Leon frame."],
+      devices: [livewire("Sony ultra slim mount", "living room"), livewire("Leon frame", "living room"), customer("Sony 65-inch TV", "living room")],
+    });
+    expect(selection.lines.some((l) => l.role === "television")).toBe(false);
+    expect(priced(selection)).toEqual(expect.arrayContaining(["tv_mount × 1"]));
   });
 });
 
