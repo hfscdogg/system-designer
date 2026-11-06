@@ -2776,6 +2776,30 @@ describe("Zack's live session (2026-11-05)", () => {
     expect(proposal.commercial.subtotal_cents).toBeGreaterThan(0);
   });
 
+  // Zack's three re-runs of Morales (2026-11-06) read the same intake three ways; each wording prices the same job.
+  it("Morales re-runs: a model number is no TV count, an amp in the customer's rack is ours, punching down existing runs is no new cable", async () => {
+    const variant = {
+      ...morales,
+      requested_changes: morales.requested_changes.map((c) =>
+        c.startsWith("Great Room: Sony")
+          ? "Great Room: Sony Bravia 7 or 9 65-inch TV, flat mount, streaming only"
+          : c.startsWith("Complete the media closet")
+            ? "Media closet: Biringer contract terminations (punch-down, labeling, testing)"
+            : c,
+      ),
+      unresolved_questions: [
+        "Kitchen Sonos amp goes in the customer supplied rack - confirm rack location",
+        "Existing Biringer contract terms for owed media closet terminations need to be confirmed",
+        "Requested product: Sonos amp",
+        "Requested product: SunBrite outdoor rated art arm mount",
+      ],
+      existing_equipment: { status: "described" as const, retained: ["customer-provided APs and cameras", "Customer supplied TVs", "Sonos amp and speakers wired during construction in the great room"], removed_or_replaced: [] },
+    };
+    const { selection } = await built(variant);
+    expect(priced(selection)).toEqual(expect.arrayContaining(["television × 1", "tv_mount × 2", "tv_mount_articulating × 1", "zone_amplifier × 2"]));
+    for (const r of ["cat6_cable", "patch_panel", "media_enclosure", "mesh_wifi", "network_switch"]) expect(selection.lines.map((l) => l.role)).not.toContain(r);
+  });
+
   it("speakers wired during construction take no speaker prewire; speakers to be wired during construction do", async () => {
     const prewire = (change: string) =>
       job({ functional_systems: ["structured wiring", "whole home audio"], requested_changes: [change, "Cat6 to the office"] }).then((j) => j.selection.lines.some((l) => l.role === "speaker_prewire"));
