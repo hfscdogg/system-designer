@@ -122,7 +122,8 @@ function roleTerms(role: RoleSpec): string[] {
 }
 
 /** Brand names say which system, not which device: a "Control4 remote" is a remote, not a Control4 controller. */
-const BRANDS = new Set(["control4", "c4", "lutron", "sonos", "alarm.com"]);
+// TV makers too: a "Sony ultra slim mount" is a mount, not a Sony TV (staging smoke, Baker, 2026-11-06).
+const BRANDS = new Set(["control4", "c4", "lutron", "sonos", "alarm.com", "sony", "bravia", "samsung", "lg"]);
 
 /** The role's terms that name a device, not just its brand. */
 function deviceTerms(role: RoleSpec): string[] {
