@@ -460,7 +460,14 @@ const otherChanges = (scope: ScopeDraftV1) => changes(scope).filter((c) => !MOVE
  * The request asks for a new one of this device, even if the customer also has an existing one
  * ("sell a new 75-inch TV", "add 2 more in-ceiling speakers"), or states a count of new ones.
  */
+/** A negated clause, to the next comma or stop: "no new speakers", "without a new mount", "don't add a sub". */
+const NEGATED = /\b(?:no|not|without|never|don'?t|do not|doesn'?t|does not)\b[^,.;]*/g;
+
 function wantsNew(scope: ScopeDraftV1, role: RoleSpec, roles: RoleSpec[]): boolean {
+  // The device list says it outright: a role it lists is new only for a device Livewire supplies new (staging smoke,
+  // Biscuit Belly, 2026-11-06: "No new speakers, just the amp" priced 2 speakers beside the customer's existing ones).
+  const listed = (scope.devices ?? []).filter((d) => roleNamed(d.item, roles) === role);
+  if (listed.length) return listed.some((d) => d.supplied_by === "livewire" && !d.existing);
   const q = statedItem(scope, role, roles);
   // A count asks for a new one of a kept device only when it names the device itself and the request doesn't
   // say the customer supplies it: in "1 Sony ultra slim mount", Sony is the mount's brand, not a new Sony TV.
@@ -472,7 +479,9 @@ function wantsNew(scope: ScopeDraftV1, role: RoleSpec, roles: RoleSpec[]): boole
   // ("the existing Sonos Beam"): "New soundbar mount for the existing Sonos Beam" sells a mount, not a soundbar.
   const asks = (c: string, t: string) =>
     new RegExp(`(?<!\\b(?:existing|current|old|their|customer'?s|client'?s)\\s+(?:[\\w-]+\\s+){0,2})${escape(t)}`).test(withoutModifiers(c, role, roles));
-  if (otherChanges(scope).some((c) => roleTerms(role).some((t) => asks(c, t) && (sold(c) || more(c, t))))) return true;
+  // "No new speakers, just the amp" asks for no speakers: a negated clause sells nothing.
+  const said = otherChanges(scope).map((c) => c.replace(NEGATED, " "));
+  if (said.some((c) => roleTerms(role).some((t) => asks(c, t) && (sold(c) || more(c, t))))) return true;
   // An outdoor device the request specifies by size ("55'' Outdoor rated TV with cover") is one to sell
   // unless the request says it's the customer's or existing (Zack's Britt job, 2026-10-19: the TV was dropped).
   return outdoorAsked(scope, role) && sizeAsked(scope, role) !== undefined && !customerOwned(scope, role) && !deviceChanges(scope, role).some((c) => EXISTING_ITEM.test(c));
@@ -995,7 +1004,11 @@ export function materialize(given: ScopeDraftV1, pattern: PatternSpec, namedProd
     const retained = role.retained_match?.length
       ? (scope.retained_equipment.find((e) => role.retained_match!.some((t) => fold(e).includes(fold(t)))) ?? customerOwned(scope, role) ?? integrated(scope, role))
       : undefined;
-    if (retained && !wantsNew(scope, role, pattern.roles) && !product && !newTvAsked(original, role) && !askedAsProduct(original, role, pattern.roles)) {
+    // A device list that lists the role settles it (wantsNew reads the list); otherwise a new TV or a requested product
+    // the sentences name beside the kept one is ours.
+    const listedByDevices = (original.devices ?? []).some((d) => roleNamed(d.item, pattern.roles) === role);
+    const askedBeside = !listedByDevices && (newTvAsked(original, role) || askedAsProduct(original, role, pattern.roles));
+    if (retained && !wantsNew(scope, role, pattern.roles) && !product && !askedBeside) {
       // The customer supplies it new (their UniFi cameras): installed, not field-tested as old gear; said once per system below.
       if (supplied.has(role.role)) {
         keptRoles.add(role.role);

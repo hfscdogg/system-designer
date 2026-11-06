@@ -2065,7 +2065,7 @@ describe("Henry's decisions (2026-10-27): D-Tools quote history for cabling, cam
 
   it("patterns carry the new version", async () => {
     const versions = Object.fromEntries((await loadPatterns()).map((p) => [p.pattern, p.version]));
-    expect(versions).toMatchObject({ prewire: "2026-10-30.1", tv_media: "2026-11-06.2", whole_home_audio: "2026-11-06.1" });
+    expect(versions).toMatchObject({ prewire: "2026-10-30.1", tv_media: "2026-11-06.3", whole_home_audio: "2026-11-06.1" });
   });
 
   it("Q1: a retrofit drop is two keystone jacks and 2 hours; a new-construction drop one jack and 1 hour", async () => {
@@ -2873,6 +2873,41 @@ describe("Zack's live session (2026-11-05)", () => {
     const text = JSON.stringify(receipt);
     expect(text).toContain("Livewire supplies: Sony Bravia 7 or 9 65-inch TV (great room) × 1");
     expect(text).toContain("Customer supplies (Livewire installs): TV (porch) × 1");
+  });
+
+  // Staging smoke, 2026-11-06, on the live interpreter's device lists.
+  it("Biscuit Belly: \"no new speakers, just the amp\" prices the amp and keeps the customer's speakers", async () => {
+    for (const unresolved_questions of [[], ["Requested product: ceiling speakers"]]) {
+      const { selection } = await job({
+        client: "Biscuit Belly",
+        market: "commercial",
+        project_type: "Replacement",
+        functional_systems: ["whole home audio"],
+        requested_changes: ["Replace the amplifier for the existing ceiling speakers", "No new speakers, just the amp"],
+        existing_equipment: { status: "described" as const, retained: ["ceiling speakers"], removed_or_replaced: ["amplifier"] },
+        unresolved_questions,
+        devices: [livewire("amplifier", null), customer("ceiling speakers", null, 1, true)],
+      });
+      expect(priced(selection)).toEqual(["zone_amplifier × 1"]);
+    }
+  });
+
+  it("Annie Lewis: a soundbar bracket is the soundbar's mount, not a second soundbar", async () => {
+    const { selection } = await job({
+      ...annie,
+      devices: [
+        livewire("43-inch TV", "Guest room"),
+        livewire("articulating wall mount", "Guest room"),
+        livewire("Sony 65-inch TV", "Living room"),
+        livewire("articulating mount", "Living room"),
+        livewire("Sonos Arc Ultra", "Living room"),
+        livewire("soundbar bracket", "Living room"),
+        livewire("43-inch TV", "Downstairs"),
+        livewire("single-arm articulating mount", "Downstairs"),
+      ],
+    });
+    expect(priced(selection)).toEqual(expect.arrayContaining(["soundbar × 1", "soundbar_mount × 1", "tv_mount_articulating × 3"]));
+    expect(selection.lines.filter((l) => l.role === "television").reduce((n, l) => n + l.quantity, 0)).toBe(3);
   });
 });
 
