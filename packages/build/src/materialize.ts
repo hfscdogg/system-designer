@@ -640,7 +640,9 @@ function sizedTvs(scope: ScopeDraftV1, role: RoleSpec): Array<{ record_id: strin
     const tail = /^\s*(?:[\w'’+-]+\s+){0,4}?(?:tvs?|televisions?)\b/.exec(c.slice(m.index! + m[0].length));
     if (!tail) continue;
     const size = Number(m[1]);
-    const n = /\b(\d+|one|two|three|four|five|six)\s*(?:x\s*)?(?:new\s+)?$/.exec(c.slice(0, m.index));
+    // A count leads its clause ("1 x 85” TV", "Add 2 new 43” TVs"); a model number before the size is no count:
+    // "Sony Bravia 7 or 9 65-inch TV" is one TV, not 9 (Zack's Morales re-runs, 2026-11-06: 9 TVs and 18 mounts).
+    const n = /(?:^|[:;,(]\s*|\b(?:add|install|provide|supply|mount|new|and)\s+)(\d+|one|two|three|four|five|six)\s*(?:x\s*)?(?:new\s+)?$/.exec(c.slice(0, m.index));
     const quantity = n ? (COUNT_WORDS[n[1]!] ?? Number(n[1])) : 1;
     const outdoor = OUTDOOR.test(c);
     const worded = (role.word_variants ?? []).filter((v) => v.words.some((w) => hasWord(c, fold(w))));
@@ -694,8 +696,12 @@ function suppliedRoles(scope: ScopeDraftV1, roles: RoleSpec[]): Map<string, stri
     const brand = OTHER_BRANDS.find((b) => hasWord(t, fold(b)));
     for (const [system, words] of SUPPLIED_SYSTEMS) if ((brand || WHOLE_SYSTEM.test(t)) && words.test(t) && !systems.has(system)) systems.set(system, brand === "Ubiquiti" ? "UniFi" : (brand ?? ""));
   }
-  // Lists of what the customer supplies, not a change that also names our work ("Porch: Customer supplied TV ... Sonos Beam").
-  const lists = [...scope.retained_equipment, ...scope.excluded_scope, ...scope.unresolved_questions].map(fold).filter((t) => SUPPLIED.test(t));
+  // Lists of what the customer supplies, not a change that also names our work ("Porch: Customer supplied TV ... Sonos Beam"),
+  // and only what follows the words that say so: "Sonos amp in customer supplied rack" supplies the rack, not the amp
+  // (Zack's Morales re-runs, 2026-11-06: the Sonos Amps dropped in two of three runs).
+  const lists = [...scope.retained_equipment, ...scope.excluded_scope, ...scope.unresolved_questions]
+    .map(fold)
+    .flatMap((t) => [...t.matchAll(new RegExp(SUPPLIED.source, "g"))].map((m) => t.slice(m.index! + m[0].length).split(/[.;]|\s-\s|\bwhile\b|\bbut\b/)[0]!));
   for (const role of roles) {
     const system = role.systems.find((x) => systems.has(x));
     if (system && role.systems.every((x) => systems.has(x))) {
@@ -708,13 +714,19 @@ function suppliedRoles(scope: ScopeDraftV1, roles: RoleSpec[]): Map<string, stri
     const term = named && terms.find((x) => new RegExp(String.raw`\b${escape(x)}(s|es)?\b`).test(named));
     if (term) out.set(role.role, /s$/.test(term) ? term : `${term}s`);
   }
+  // The panel the customer's runs punch down into is in the customer's rack, with the rest of their network gear, unless
+  // the request asks Livewire for one (Zack's Morales re-runs, 2026-11-06: a C2G panel priced beside their 2 panels).
+  const panel = roles.find((r) => r.role === "patch_panel");
+  const networkSupplied = [...out.values()].some((v) => v.endsWith("network equipment"));
+  const ownPanel = requestTexts(scope).some((t) => /\b(new|provide|supply|add|install|livewire)\b(?:\s+[\w-]+){0,3}\s+patch panels?\b/.test(t) && !SUPPLIED.test(t));
+  if (panel && networkSupplied && !out.has(panel.role) && !ownPanel) out.set(panel.role, "patch panels");
   return out;
 }
 
 /** Speakers wired before this job ("speakers wired during construction"): no speaker prewire to price. */
 const SPEAKERS_WIRED = /\bspeakers?\b.*\b(wired|prewired|pre-wired|installed|run)\s+(during|in|at)\s+(the\s+)?(construction|build|framing)\b|\b(existing|prewired|pre-wired)\s+speaker\s+wir(e|es|ing)\b|\bspeakers?\s+(are\s+)?already\s+(wired|prewired|pre-wired)\b/;
 /** Terminating runs already pulled ("terminations owed under the existing Biringer contract"): no new cable. */
-const TERMINATE_EXISTING = /\bterminat\w*\b.*\b(existing|owed|already|previous|prior|contract)\b|\b(existing|already pulled|previously pulled|pre-run|prewired)\b.*\bterminat\w*\b/;
+const TERMINATE_EXISTING = /\b(terminat\w*|punch(?:es|ed|ing)?[- ]?downs?|re-?terminat\w*)\b.*\b(existing|owed|already|previous|prior|contract|pre-?run|pre-?wired|in place)\b|\b(existing|already pulled|previously pulled|pre-?run|pre-?wired|owed|contract)\b.*\b(terminat\w*|punch(?:es|ed|ing)?[- ]?downs?)\b/;
 /** A request for new cable: "run Cat6", "pull new cable", "add an Ethernet port", "new drop". */
 const NEW_CABLE = /\b(run|pull|pulling|add|install|new)\s+(?:a |an |new |\d+ )?(?:[\w-]+\s+){0,2}?(cable|cables|cat ?6|drops?|runs?|ethernet|data (?:port|jack|drop|outlet)s?)\b|\bethernet (port|jack|drop|outlet)s?\b/;
 
@@ -734,6 +746,23 @@ function mountPlan(scope: ScopeDraftV1): { articulating: number; flat: number; a
     else plan.any++;
   }
   return plan;
+}
+
+/**
+ * The interpreter lists the device as a product the request asks Livewire for ("Requested product: Sonos amp"), so the
+ * same device in the kept equipment ("Sonos amp and speakers wired during construction") is the new one to install, not
+ * the customer's (Zack's Morales re-runs, 2026-11-06: the 2 Sonos Amps dropped as "retained" in two of three runs).
+ */
+function askedAsProduct(scope: ScopeDraftV1, role: RoleSpec, roles: RoleSpec[]): boolean {
+  return scope.unresolved_questions.some((q) => {
+    const asked = /^requested product:\s*(.+)$/i.exec(q.trim())?.[1];
+    if (!asked || EXISTING_ITEM.test(fold(asked)) || SUPPLIED.test(fold(asked)) || OWNED_ITEM.test(asked)) return false;
+    // By the same device word the kept equipment matched ("amp"), not a brand: a "Sony ultra slim mount" is no Sony TV.
+    if (!(role.retained_match ?? []).some((t) => hasWord(fold(asked), fold(t)))) return false;
+    const scores = roles.map((r) => matchScore(asked, r));
+    const best = Math.max(...scores);
+    return best > 1 && roles[scores.indexOf(best)] === role;
+  });
 }
 
 /** A change asks for a new TV the customer doesn't supply ("Great Room: Sony Bravia 7 or 9 (65”)"), beside TVs that are the customer's. */
@@ -918,7 +947,7 @@ export function materialize(stated: ScopeDraftV1, pattern: PatternSpec, namedPro
     const retained = role.retained_match?.length
       ? (scope.retained_equipment.find((e) => role.retained_match!.some((t) => fold(e).includes(fold(t)))) ?? customerOwned(scope, role) ?? integrated(scope, role))
       : undefined;
-    if (retained && !wantsNew(scope, role, pattern.roles) && !product && !newTvAsked(original, role)) {
+    if (retained && !wantsNew(scope, role, pattern.roles) && !product && !newTvAsked(original, role) && !askedAsProduct(original, role, pattern.roles)) {
       // The customer supplies it new (their UniFi cameras): installed, not field-tested as old gear; said once per system below.
       if (supplied.has(role.role)) {
         keptRoles.add(role.role);
@@ -1277,8 +1306,12 @@ export function materialize(stated: ScopeDraftV1, pattern: PatternSpec, namedPro
   // Already wired, not to be wired: "speakers to be installed during construction" is a prewire.
   const wiredBefore = (t: string) => SPEAKERS_WIRED.test(t) && !/\b(to be|will be|needs? to be|should be|must be)\s+(wired|prewired|pre-wired|installed|run)\b/.test(t);
   if (texts.some(wiredBefore) && !texts.some((t) => /\b(new|run|pull)\s+(?:[\w-]+\s+){0,2}?speaker wir/.test(t))) dropped.add("speaker_prewire");
-  if (texts.some((t) => TERMINATE_EXISTING.test(t)) && !texts.some((t) => NEW_CABLE.test(t))) {
+  // The interpreter may put the terminations in a question ("Biringer contract terms for owed media closet terminations").
+  if ([...texts, ...scope.unresolved_questions.map(fold)].some((t) => TERMINATE_EXISTING.test(t)) && !texts.some((t) => NEW_CABLE.test(t))) {
     for (const r of pattern.roles.filter((r) => r.stated_length_per)) dropped.add(r.role);
+    // The runs already land somewhere: no new enclosure either, unless the request asks for one.
+    const enclosure = pattern.roles.find((r) => r.role === "media_enclosure");
+    if (enclosure && !namesItself(scope, enclosure, pattern.roles)) dropped.add(enclosure.role);
     if (lines.some((l) => dropped.has(l.role))) toVerify.push("Cabling: the request terminates existing runs; no new cable is priced");
   }
   // What the customer supplies is installed, not sold: its install time stays in the labor, its equipment is not priced.
