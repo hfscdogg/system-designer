@@ -56,6 +56,21 @@ export const DeviceSchema = z
   .strict();
 export type Device = z.infer<typeof DeviceSchema>;
 
+/**
+ * A quantity the rep set for one of the budget's own items by pasting the item list back with new counts
+ * ("Sony K65XR70 × 2"): applied to that item as written, no interpretation (Zack, 2026-11-06). 0 removes it.
+ */
+export const ItemQuantitySchema = z
+  .object({
+    /** The item as the budget lists it: "Sony K65XR70". */
+    item: z.string().min(1),
+    role: z.string().min(1),
+    record_id: z.string().min(1),
+    quantity: z.number().int().min(0),
+  })
+  .strict();
+export type ItemQuantity = z.infer<typeof ItemQuantitySchema>;
+
 /** A discount off this project's price, as the requester stated it. Always needs an admin's written approval. */
 export const DiscountSchema = z.object({ pct: z.number().gt(0).max(100), note: z.string() }).strict();
 
@@ -90,6 +105,8 @@ export const ScopeExtractionSchema = z
     requested_quantities: z.array(RequestedQuantitySchema),
     /** Absent on scopes extracted before 2026-11-06, which price from the sentences alone. */
     devices: z.array(DeviceSchema).optional(),
+    /** Quantities set from a pasted item list in a revision; never extracted from a request. */
+    item_quantities: z.array(ItemQuantitySchema).optional(),
     requested_discount: DiscountSchema.nullable(),
     existing_equipment: ExistingEquipmentSchema,
     existing_detectors: z.enum(["not_provided", ...EXISTING_DETECTORS]),
@@ -107,7 +124,7 @@ export const ScopeExtractionSchema = z
   .strict();
 
 /** What the model fills in from a request: everything but the rep-set labor hours. */
-export const ScopeExtractionModelSchema = ScopeExtractionSchema.omit({ labor_hours: true, devices: true }).extend({ devices: z.array(DeviceSchema) });
+export const ScopeExtractionModelSchema = ScopeExtractionSchema.omit({ labor_hours: true, devices: true, item_quantities: true }).extend({ devices: z.array(DeviceSchema) });
 
 export type ScopeExtraction = z.infer<typeof ScopeExtractionSchema>;
 
@@ -160,6 +177,8 @@ export const ScopeDraftV1Schema = z
     requested_quantities: z.array(RequestedQuantitySchema),
     /** Present only when the scope lists its devices; absent keeps older scopes (and their hashes) unchanged. */
     devices: z.array(DeviceSchema).optional(),
+    /** Present only when a revision set quantities from a pasted item list. */
+    item_quantities: z.array(ItemQuantitySchema).optional(),
     requested_discount: DiscountSchema.nullable(),
     existing_equipment_disposition: z.enum(["none", "unknown", "described"]),
     retained_equipment: z.array(z.string()),
@@ -323,3 +342,22 @@ export function applyClarification(base: ScopeExtraction, patch: ClarificationPa
   }
   return next;
 }
+
+/**
+ * The item lines of a pasted budget list, "• Sony K65XR70 × 2", "Sony K65XR70 x 2" or "2 x Sony K65XR70": the item as
+ * written and its new count. Other lines (the total, "Proposal validated for …", "+3 more") are not items.
+ */
+export function parsePastedItems(text: string): Array<{ item: string; quantity: number }> {
+  const out: Array<{ item: string; quantity: number }> = [];
+  for (const raw of text.split(/\r?\n/)) {
+    const line = raw.replace(/^\s*(?:[•*·-]|\d+[.)])\s+/, "").trim();
+    if (!line || /^(revise|revision)\b[^:]*:?\s*$/i.test(line)) continue;
+    const after = /^(.+?)\s*[×x]\s*(\d+)$/i.exec(line);
+    const before = /^(\d+)\s*[×x]\s+(.+)$/i.exec(line);
+    const [item, n] = after ? [after[1]!, after[2]!] : before ? [before[2]!, before[1]!] : [null, null];
+    if (!item || /\$|\btotal\b|\bsubtotal\b|\bhours?\b/i.test(item)) continue;
+    out.push({ item: item.replace(/^(revise|revision)\s*:\s*/i, "").trim(), quantity: Number(n) });
+  }
+  return out;
+}
+

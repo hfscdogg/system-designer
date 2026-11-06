@@ -1385,6 +1385,27 @@ export function materialize(given: ScopeDraftV1, pattern: PatternSpec, namedProd
   }
   if (dropped.size) included.splice(0, included.length, ...included.filter((r) => !dropped.has(r.role)));
 
+  // Quantities the rep set by pasting the budget's item list back ("Sony K65XR70 × 2") are applied as written, last:
+  // the item's line takes that count, 0 removes it, and an item the rebuilt budget no longer has comes back (Zack,
+  // 2026-11-06: "Revisions won't accept a pasted item list"). Items the paste leaves out stay as built.
+  for (const q of stated.item_quantities ?? []) {
+    const role = pattern.roles.find((r) => r.role === q.role);
+    if (!role) continue;
+    const at = lines.filter((l) => l.record_id === q.record_id && l.role === q.role);
+    if (q.quantity === 0) {
+      for (const l of at) lines.splice(lines.indexOf(l), 1);
+      continue;
+    }
+    if (at.length) {
+      Object.assign(at[0]!, { quantity: q.quantity, quantity_basis: "fixed", verify: null });
+      for (const l of at.slice(1)) lines.splice(lines.indexOf(l), 1);
+    } else {
+      lines.push({ role: role.role, record_id: q.record_id, quantity: q.quantity, quantity_basis: "fixed", verify: null, location: role.location, precedent: role.precedent });
+    }
+    if (!included.includes(role)) included.push(role);
+    keptRoles.delete(role.role);
+  }
+
   const devices = [...lines, ...suppliedLines].reduce((n, l) => n + l.quantity, 0);
   // Labor-only allowances the request mentions (framing a niche), priced as hours at the pattern's labor rate.
   const extras = (pattern.labor_extras ?? []).filter((x) => mentioned(scope, x.mentions)).map((x) => x.id);

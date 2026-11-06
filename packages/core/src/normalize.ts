@@ -268,6 +268,7 @@ export function normalizeExtraction(input: ScopeExtraction): NormalizedExtractio
     unresolved_questions: list(input.unresolved_questions),
     // Only a revision sets it; absent stays absent so older scopes hash the same.
     ...(input.labor_hours ? { labor_hours: input.labor_hours } : {}),
+    ...(input.item_quantities?.length ? { item_quantities: input.item_quantities } : {}),
     // Likewise the device list: absent or empty stays absent.
     ...(normalizeDevices(input.devices ?? []).length ? { devices: normalizeDevices(input.devices ?? []) } : {}),
   };
