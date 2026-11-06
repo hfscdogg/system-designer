@@ -188,6 +188,34 @@ export const SMOKE_SCENARIOS: SmokeScenario[] = [
       { say: "Revise: no new speakers, just the amp", pattern: "whole_home_audio", expect: { in_ceiling_speakers: 0, zone_amplifier: 1 } },
     ],
   },
+  // Zack's Morales job (Marshall's, 2026-11-06), from his intake: three runs priced it $11K-$45K. Run twice, each must
+  // price our TV, three mounts and two amps, and none of the customer's UniFi gear, new cable or a patch panel.
+  ...[1, 2].map((n) => ({
+    name: `Morales (customer-supplied UniFi, run ${n})`,
+    steps: [
+      {
+        say: `Morales budget, ${ADDRESS}. Residential. Great Room: Sony Bravia 7 or 9 (65”) (streaming only content), flat mount, Sonos amp in box behind TV connected to speakers wired during construction. Kitchen: Sonos amp in customer supplied rack connected to speakers installed during construction. Porch: customer supplied TV (55-65”) (indoor rated), outdoor TV install with art arm mount (outdoor rated mount - SunBrite), Sonos Beam package installed. Primary Bedroom: customer supplied TV (55-65”) flat/tilt mounted, Wi-Fi only. Network: mount and connect all customer-provided APs and cameras; complete the media closet terminations owed under the existing Biringer contract (punch-down into rack-mount keystone patch panel, labeling, testing); mount and configure all customer-provided UniFi equipment in a customer-provided 24U floor cabinet. Customer supplied UniFi equipment: Dream Machine SE x1, Pro Max 48 PoE switch x1, U7 Pro x3, U7 Outdoor x1, G6 Edge Turret x3, G6 Dome x1, UNVR x1, UPS 2U x1, 24-port blank keystone patch panel x2.`,
+        expect: {
+          television: 1, tv_mount: 2, tv_mount_articulating: 1, zone_amplifier: 2, soundbar: 1,
+          mesh_wifi: 0, outdoor_access_point: 0, network_switch: 0, remote_management: 0, power_protection: 0, nvr: 0, patch_panel: 0, cat6_cable: 0, outdoor_speakers: 0, speaker_prewire: 0,
+        },
+      },
+    ],
+  })),
+  {
+    // Zack's Annie Lewis job (2026-11-05): three rooms of TVs priced as one.
+    name: "Annie Lewis (a TV in each room)",
+    steps: [
+      {
+        say:
+          `Annie Lewis, ${ADDRESS}. Residential. Guest room: 43-inch TV with articulating wall mount. ` +
+          "Living room: 65-inch Sony TV with articulating mount and Sonos Arc Ultra on a soundbar bracket. Downstairs: 43-inch TV on a single-arm articulating mount.",
+        pattern: "tv_media",
+        expect: { tv_mount_articulating: 3, soundbar: 1 },
+        atLeast: { television: 3 },
+      },
+    ],
+  },
 ];
 
 const CLARIFY_DEFAULTS = "Use your recommended defaults for anything I didn't say.";
@@ -352,7 +380,9 @@ export async function runSmoke(deps: SmokeDeps): Promise<{ runs: string[]; failu
         budgets++;
 
         const selection = await deps.store.readArtifact<Selection>(run.id, "selection", "selection");
-        const qty = new Map((selection?.lines ?? []).map((l) => [l.role, l.quantity]));
+        // A role can have several lines (a 43-inch placeholder beside a 65-inch TV): its quantity is their sum.
+        const qty = new Map<string, number>();
+        for (const l of selection?.lines ?? []) qty.set(l.role, (qty.get(l.role) ?? 0) + l.quantity);
         const got = (role: string) => qty.get(role) ?? 0;
         const lines = receipt.body.lines.map((l) => l.toLowerCase());
         const wrong = [
@@ -368,7 +398,7 @@ export async function runSmoke(deps: SmokeDeps): Promise<{ runs: string[]; failu
         ];
         if (wrong.length) {
           // What the interpreter read and what was priced, so a failure can be traced from the deploy log alone.
-          const read = receipt.body.lines.filter((l) => /^(Systems|Stated quantities|Existing equipment|Existing smoke\/CO detectors|Excluded):/.test(l));
+          const read = receipt.body.lines.filter((l) => /^(Systems|Stated quantities|Livewire supplies|Customer supplies \(Livewire installs\)|Customer's existing|Existing equipment|Existing smoke\/CO detectors|Excluded):/.test(l));
           const priced = `${selection?.pattern ?? "no pattern"}: ${[...qty].map(([r, q]) => `${r} ${q}`).join(", ") || "nothing"}`;
           throw new SmokeFailure(`${step}: ${wrong.join("; ")} [priced ${priced}] [receipt ${read.join(" | ")}]`);
         }

@@ -2065,7 +2065,7 @@ describe("Henry's decisions (2026-10-27): D-Tools quote history for cabling, cam
 
   it("patterns carry the new version", async () => {
     const versions = Object.fromEntries((await loadPatterns()).map((p) => [p.pattern, p.version]));
-    expect(versions).toMatchObject({ prewire: "2026-10-30.1", tv_media: "2026-11-06.1", whole_home_audio: "2026-11-06.1" });
+    expect(versions).toMatchObject({ prewire: "2026-10-30.1", tv_media: "2026-11-06.2", whole_home_audio: "2026-11-06.1" });
   });
 
   it("Q1: a retrofit drop is two keystone jacks and 2 hours; a new-construction drop one jack and 1 hour", async () => {
@@ -2812,4 +2812,67 @@ describe("Zack's live session (2026-11-05)", () => {
     expect(await audio(["Porch: outdoor TV install with art arm mount", "Porch: Sonos Beam package for the outdoor TV", "Kitchen: Sonos Amp for the ceiling speakers"])).toBe(false);
     expect(await audio(["Sonos music in the kitchen and on the back patio"])).toBe(true);
   });
+
+  // The device list (Henry, 2026-11-06): pricing reads who supplies each device from the list, so the misreads in the
+  // sentences of Zack's three Morales re-runs (amps kept, "7 or 9" read as a count, the customer's APs counted) don't matter.
+  const livewire = (item: string, room: string | null, quantity = 1) => ({ item, room, quantity, supplied_by: "livewire" as const, existing: false });
+  const customer = (item: string, room: string | null, quantity = 1, existing = false) => ({ item, room, quantity, supplied_by: "customer" as const, existing });
+  const moralesDevices = [
+    livewire("Sony Bravia 7 or 9 65-inch TV", "great room"),
+    livewire("flat TV mount", "great room"),
+    livewire("Sonos Amp", "great room"),
+    livewire("Sonos Amp", "kitchen"),
+    customer("TV", "porch"),
+    livewire("SunBrite outdoor art arm TV mount", "porch"),
+    livewire("Sonos Beam soundbar", "porch"),
+    customer("TV", "primary bedroom"),
+    livewire("flat/tilt TV mount", "primary bedroom"),
+    customer("in-ceiling speakers", "great room", 2, true),
+    customer("in-ceiling speakers", "kitchen", 2, true),
+    customer("UniFi Dream Machine SE gateway", "media closet"),
+    customer("UniFi Pro Max 48 PoE switch", "media closet"),
+    customer("U7 Pro access point", null, 3),
+    customer("U7 Outdoor access point", null),
+    customer("G6 Edge Turret camera", null, 3),
+    customer("G6 Dome camera", null),
+    customer("UniFi UNVR network video recorder", "media closet"),
+    customer("24-port keystone patch panel", "media closet", 2),
+  ];
+  it("Morales from its device list: the same budget however the sentences read", async () => {
+    const messy = {
+      ...morales,
+      devices: moralesDevices,
+      // The sentences as the re-runs read them: amps kept, the customer's access points counted, a model number before the size.
+      requested_changes: morales.requested_changes.map((c) => (c.startsWith("Great Room: Sony") ? "Great Room: Sony Bravia 7 or 9 65-inch TV, flat mount" : c)),
+      existing_equipment: { status: "described" as const, retained: ["Sonos amps and speakers wired during construction"], removed_or_replaced: [] },
+      unresolved_questions: [],
+      excluded_scope: [],
+    };
+    const { selection, proposal } = await built(messy);
+    expect(priced(selection)).toEqual(
+      expect.arrayContaining(["television × 1", "tv_mount × 2", "tv_mount_articulating × 1", "zone_amplifier × 2", "soundbar × 1"]),
+    );
+    for (const r of ["mesh_wifi", "outdoor_access_point", "network_switch", "remote_management", "power_protection", "patch_panel", "nvr", "outdoor_speakers", "speaker_prewire", "cat6_cable"]) {
+      expect(selection.lines.map((l) => l.role)).not.toContain(r);
+    }
+    // The customer's new gear is installed: its hours are in the labor.
+    expect(selection.installed?.length).toBeGreaterThan(0);
+    expect(proposal.commercial.subtotal_cents).toBeGreaterThan(0);
+  });
+
+  it("the receipt shows the device list by who supplies it", async () => {
+    const { buildReceipt, normalizeExtraction } = await import("@sd/core");
+    const { completeExtraction } = await import("../../core/test/fixtures.ts");
+    const receipt = buildReceipt({
+      runId: "run_test",
+      version: 1,
+      requesterPersonId: "zack",
+      route: { platform: "google_chat", space_id: "s", thread_id: "t", session_generation: 1 },
+      extraction: normalizeExtraction(completeExtraction({ devices: moralesDevices.slice(0, 5) })).scope,
+    });
+    const text = JSON.stringify(receipt);
+    expect(text).toContain("Livewire supplies: Sony Bravia 7 or 9 65-inch TV (great room) × 1");
+    expect(text).toContain("Customer supplies (Livewire installs): TV (porch) × 1");
+  });
 });
+

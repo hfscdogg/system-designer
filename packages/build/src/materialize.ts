@@ -1,4 +1,4 @@
-import { isAddOnRequest, type ScopeDraftV1 } from "@sd/core";
+import { isAddOnRequest, type Device, type ScopeDraftV1 } from "@sd/core";
 import type { NamedProduct } from "./named.ts";
 import { allowanceHours, laborHoursFor, type AllowanceSpec, type PatternSpec, type RoleSpec } from "./pattern.ts";
 
@@ -165,6 +165,37 @@ function statedQuantity(scope: ScopeDraftV1, role: RoleSpec, roles: RoleSpec[]):
   return statedItem(scope, role, roles)?.quantity ?? null;
 }
 
+/** The role a device or count names most specifically, if any. */
+function roleNamed(text: string, roles: RoleSpec[]): RoleSpec | undefined {
+  const scores = roles.map((r) => matchScore(text, r));
+  const best = Math.max(0, ...scores);
+  return best > 0 ? roles[scores.indexOf(best)] : undefined;
+}
+
+const deviceItem = (d: Device) => (d.room ? `${d.item} (${d.room})` : d.item);
+
+/**
+ * The scope with its device list as the counts and kept equipment, for the roles the list names: Livewire's new
+ * devices become the stated counts, the customer's existing ones the kept equipment. The sentences' own counts and
+ * kept items stay for roles the list doesn't name (an Ethernet port, which is no device of the list). Customer-supplied
+ * new devices are left to suppliedRoles: installed, not sold (Henry, 2026-11-06).
+ */
+function withDevices(scope: ScopeDraftV1, roles: RoleSpec[]): ScopeDraftV1 {
+  const devices = scope.devices ?? [];
+  if (!devices.length) return scope;
+  const listed = new Set(devices.map((d) => roleNamed(d.item, roles)?.role).filter((r): r is string => !!r));
+  const unlisted = (text: string) => {
+    const r = roleNamed(text, roles);
+    return !r || !listed.has(r.role);
+  };
+  const ours = devices.filter((d) => d.supplied_by === "livewire" && !d.existing);
+  return {
+    ...scope,
+    requested_quantities: [...ours.map((d) => ({ item: deviceItem(d), quantity: d.quantity })), ...scope.requested_quantities.filter((q) => unlisted(q.item))],
+    retained_equipment: [...devices.filter((d) => d.existing).map((d) => d.item), ...scope.retained_equipment.filter(unlisted)],
+  };
+}
+
 /** A count of what the customer already has ("5 existing speakers") is not a count of new devices. */
 const EXISTING_ITEM = /\b(existing|current|currently|retained|keep|kept|keeping|reuse|reused|old)\b/;
 
@@ -300,6 +331,9 @@ function statedItem(scope: ScopeDraftV1, role: RoleSpec, roles: RoleSpec[]): { i
     if (best > 0 && roles[scores.indexOf(best)] === role) mine.push(q);
   }
   if (!mine.length) return null;
+  // A device list has one entry per device per room: every entry of the role adds up ("flat TV mount (great room)",
+  // "flat/tilt TV mount (primary bedroom)" are 2 mounts).
+  if (scope.devices?.length) return { item: mine[0]!.item, quantity: mine.reduce((n, q) => n + q.quantity, 0) };
   // The same device counted room by room ("2 upstairs", "2 downstairs") adds up; a count of something else stays apart.
   const same = mine.filter((q) => deviceOf(q.item) === deviceOf(mine[0]!.item));
   if (same.length > 1) return { item: mine[0]!.item, quantity: same.reduce((n, q) => n + q.quantity, 0) };
@@ -631,7 +665,10 @@ const SMALL_RETROFIT_DROPS = 2;
 function sizedTvs(scope: ScopeDraftV1, role: RoleSpec): Array<{ record_id: string; quantity: number; placeholder_for?: string }> {
   const baseSize = Number(/(\d{2,3})\s*(?:"|”|-?inch)/.exec(role.label)?.[1] ?? 0);
   const out = new Map<string, { record_id: string; quantity: number; placeholder_for?: string }>();
-  for (const raw of scope.requested_changes) {
+  // Livewire's TVs from the device list when the scope has one (its counts are given), else from the changes.
+  const ours = (scope.devices ?? []).filter((d) => d.supplied_by === "livewire" && !d.existing);
+  const sources = scope.devices?.length ? ours.map((d) => ({ raw: d.item, given: d.quantity })) : scope.requested_changes.map((raw) => ({ raw, given: null as number | null }));
+  for (const { raw, given } of sources) {
     const c = fold(raw);
     if (MOVE.test(c) || !TV_WORD.test(c) || EXISTING_ITEM.test(c) || OWNED_ITEM.test(raw)) continue;
     const m = [...c.matchAll(SIZE)][0];
@@ -643,7 +680,7 @@ function sizedTvs(scope: ScopeDraftV1, role: RoleSpec): Array<{ record_id: strin
     // A count leads its clause ("1 x 85” TV", "Add 2 new 43” TVs"); a model number before the size is no count:
     // "Sony Bravia 7 or 9 65-inch TV" is one TV, not 9 (Zack's Morales re-runs, 2026-11-06: 9 TVs and 18 mounts).
     const n = /(?:^|[:;,(]\s*|\b(?:add|install|provide|supply|mount|new|and)\s+)(\d+|one|two|three|four|five|six)\s*(?:x\s*)?(?:new\s+)?$/.exec(c.slice(0, m.index));
-    const quantity = n ? (COUNT_WORDS[n[1]!] ?? Number(n[1])) : 1;
+    const quantity = given ?? (n ? (COUNT_WORDS[n[1]!] ?? Number(n[1])) : 1);
     const outdoor = OUTDOOR.test(c);
     const worded = (role.word_variants ?? []).filter((v) => v.words.some((w) => hasWord(c, fold(w))));
     const candidates = worded.length
@@ -713,6 +750,14 @@ function suppliedRoles(scope: ScopeDraftV1, roles: RoleSpec[]): Map<string, stri
     const named = lists.find((t) => terms.some((x) => new RegExp(String.raw`\b${escape(x)}(s|es)?\b`).test(t)));
     const term = named && terms.find((x) => new RegExp(String.raw`\b${escape(x)}(s|es)?\b`).test(named));
     if (term) out.set(role.role, /s$/.test(term) ? term : `${term}s`);
+  }
+  // The device list says outright what the customer supplies new: installed by Livewire, not sold. A role Livewire
+  // also sells a device of (one TV ours, two theirs) is priced for ours.
+  const devices = scope.devices ?? [];
+  const oursRoles = new Set(devices.filter((d) => d.supplied_by === "livewire" && !d.existing).map((d) => roleNamed(d.item, roles)?.role));
+  for (const d of devices.filter((d) => d.supplied_by === "customer" && !d.existing)) {
+    const r = roleNamed(d.item, roles);
+    if (r && !oursRoles.has(r.role) && !out.has(r.role)) out.set(r.role, fold(d.item));
   }
   // The panel the customer's runs punch down into is in the customer's rack, with the rest of their network gear, unless
   // the request asks Livewire for one (Zack's Morales re-runs, 2026-11-06: a C2G panel priced beside their 2 panels).
@@ -863,8 +908,11 @@ function statedForProduct(scope: ScopeDraftV1, n: NamedProduct | undefined): num
  * admitted: the D-Tools records admitted in this run. A device, service or parts record outside it (a retired SKU)
  * is listed to price instead of stopping the build; omitted, every record is taken as admitted.
  */
-export function materialize(stated: ScopeDraftV1, pattern: PatternSpec, namedProducts: NamedProduct[] = [], admitted?: ReadonlySet<string>): Selection {
-  const original = withoutTotals(stated);
+export function materialize(given: ScopeDraftV1, pattern: PatternSpec, namedProducts: NamedProduct[] = [], admitted?: ReadonlySet<string>): Selection {
+  // A scope that lists its devices prices from that list: Livewire's new devices are the counts, the customer's are
+  // left out. A device list is never a set of totals over its items.
+  const stated = withDevices(given, pattern.roles);
+  const original = stated.devices?.length ? stated : withoutTotals(stated);
   const retro = retrofit(stated);
   const lines: SelectionLine[] = [];
   const allowances: Selection["allowances"] = [];
