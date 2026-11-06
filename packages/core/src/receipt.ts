@@ -2,7 +2,7 @@ import { ADDRESS_TO_CONFIRM, applyAssumptions } from "./assumptions.ts";
 import { computeBlockers, needsDetectorAnswer, questionsForTurn, type Blocker } from "./blockers.ts";
 import { isAddOnRequest } from "./addon.ts";
 import { hashCanonical } from "./canonical.ts";
-import { ScopeDraftV1Schema, type ScopeDraftV1, type ScopeExtraction } from "./scope.ts";
+import { ScopeDraftV1Schema, type Device, type ScopeDraftV1, type ScopeExtraction } from "./scope.ts";
 import type { ReceiptStatus } from "./signals.ts";
 
 /**
@@ -84,11 +84,23 @@ export function toScopeDraft(raw: ScopeExtraction): ScopeDraftV1 {
     target_installation_date: s.target_installation_date!,
   };
   if (s.labor_hours) draft.labor_hours = s.labor_hours;
+  if (s.devices?.length) draft.devices = s.devices;
   // An UNASSIGNED or partial selector does not identify a real source quote (PRD §8.1).
   if (s.proposal.number && s.proposal.number !== "UNASSIGNED" && s.proposal.name) {
     draft.source_quote_selector = { number: s.proposal.number, name: s.proposal.name };
   }
   return ScopeDraftV1Schema.parse(draft);
+}
+
+const deviceText = (d: Device) => `${d.item}${d.room ? ` (${d.room})` : ""} × ${d.quantity}`;
+/** "Livewire supplies: …", "Customer supplies: …" (new, installed by Livewire) and "Customer's existing: …". */
+function deviceLines(devices: Device[]): string[] {
+  const group = (label: string, ds: Device[]) => (ds.length ? [`${label}: ${ds.map(deviceText).join("; ")}`] : []);
+  return [
+    ...group("Livewire supplies", devices.filter((d) => d.supplied_by === "livewire" && !d.existing)),
+    ...group("Customer supplies (Livewire installs)", devices.filter((d) => d.supplied_by === "customer" && !d.existing)),
+    ...group("Customer's existing", devices.filter((d) => d.existing)),
+  ];
 }
 
 const none = (xs: string[]) => (xs.length ? xs.join("; ") : "none");
@@ -125,7 +137,8 @@ function scopeLines(s: ScopeExtraction, assumed: string[]): string[] {
         ]
       : []),
     ...(s.labor_hours ? [`Labor: ${s.labor_hours} hours total (set in a revision; replaces the estimate)`] : []),
-    ...(s.requested_quantities.length ? [`Stated quantities: ${s.requested_quantities.map((q) => `${q.item} × ${q.quantity}`).join("; ")}`] : []),
+    // The device list, by who supplies it, so the rep sees what will and won't be priced before approving.
+    ...(s.devices?.length ? deviceLines(s.devices) : s.requested_quantities.length ? [`Stated quantities: ${s.requested_quantities.map((q) => `${q.item} × ${q.quantity}`).join("; ")}`] : []),
     ...(s.requested_discount ? [`Discount: ${s.requested_discount.pct}%${s.requested_discount.note ? ` (${s.requested_discount.note})` : ""}, needs Henry's or Zack's approval`] : []),
     mark("existing_equipment", `Existing equipment: ${equipment}`),
     ...(needsDetectorAnswer(s)

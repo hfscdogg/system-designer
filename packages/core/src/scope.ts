@@ -37,6 +37,25 @@ export const EXISTING_DETECTORS = ["none", "keep_and_monitor", "replace"] as con
 /** An explicit count the requester wrote ("2 keypads"). Never estimated. */
 export const RequestedQuantitySchema = z.object({ item: z.string().min(1), quantity: z.number().int().positive() }).strict();
 
+/**
+ * One device the job involves, as the request names it, with who supplies it: one entry per device per room
+ * ("Sony Bravia 7 or 9 65-inch TV", great room, 1, Livewire). Pricing counts Livewire's new devices from this
+ * list and leaves the customer's out, rather than reading counts and ownership out of sentences (Henry, 2026-11-06).
+ */
+export const DeviceSchema = z
+  .object({
+    /** The device as the request names it, brand and model words included; never a count. */
+    item: z.string().min(1),
+    room: z.string().nullable(),
+    quantity: z.number().int().positive(),
+    /** livewire: Livewire sells it. customer: the customer supplies it (new or already in the home). */
+    supplied_by: z.enum(["livewire", "customer"]),
+    /** true: already installed in the home (kept, moved or reused); false: new to this job. */
+    existing: z.boolean(),
+  })
+  .strict();
+export type Device = z.infer<typeof DeviceSchema>;
+
 /** A discount off this project's price, as the requester stated it. Always needs an admin's written approval. */
 export const DiscountSchema = z.object({ pct: z.number().gt(0).max(100), note: z.string() }).strict();
 
@@ -69,6 +88,8 @@ export const ScopeExtractionSchema = z
     functional_systems: z.array(z.string()),
     requested_changes: z.array(z.string()),
     requested_quantities: z.array(RequestedQuantitySchema),
+    /** Absent on scopes extracted before 2026-11-06, which price from the sentences alone. */
+    devices: z.array(DeviceSchema).optional(),
     requested_discount: DiscountSchema.nullable(),
     existing_equipment: ExistingEquipmentSchema,
     existing_detectors: z.enum(["not_provided", ...EXISTING_DETECTORS]),
@@ -86,7 +107,7 @@ export const ScopeExtractionSchema = z
   .strict();
 
 /** What the model fills in from a request: everything but the rep-set labor hours. */
-export const ScopeExtractionModelSchema = ScopeExtractionSchema.omit({ labor_hours: true });
+export const ScopeExtractionModelSchema = ScopeExtractionSchema.omit({ labor_hours: true, devices: true }).extend({ devices: z.array(DeviceSchema) });
 
 export type ScopeExtraction = z.infer<typeof ScopeExtractionSchema>;
 
@@ -104,6 +125,8 @@ export const ClarificationPatchSchema = z
     functional_systems: z.array(z.string()).nullable(),
     requested_changes: z.array(z.string()).nullable(),
     requested_quantities: z.array(RequestedQuantitySchema).nullable(),
+    /** The complete device list, when the answer changes a device. Absent in patches from before it existed. */
+    devices: z.array(DeviceSchema).nullable().default(null),
     requested_discount: DiscountSchema.nullable(),
     existing_equipment: ExistingEquipmentSchema.nullable(),
     existing_detectors: z.enum(EXISTING_DETECTORS).nullable(),
@@ -135,6 +158,8 @@ export const ScopeDraftV1Schema = z
     functional_systems: z.array(z.string()).min(1),
     requested_changes: z.array(z.string()).min(1),
     requested_quantities: z.array(RequestedQuantitySchema),
+    /** Present only when the scope lists its devices; absent keeps older scopes (and their hashes) unchanged. */
+    devices: z.array(DeviceSchema).optional(),
     requested_discount: DiscountSchema.nullable(),
     existing_equipment_disposition: z.enum(["none", "unknown", "described"]),
     retained_equipment: z.array(z.string()),
@@ -280,6 +305,7 @@ export function applyClarification(base: ScopeExtraction, patch: ClarificationPa
   if (patch.functional_systems !== null) next.functional_systems = patch.functional_systems;
   if (patch.requested_changes !== null) next.requested_changes = patch.requested_changes;
   if (patch.requested_quantities !== null) next.requested_quantities = patch.requested_quantities;
+  if (patch.devices !== null) next.devices = patch.devices;
   if (patch.requested_discount !== null) next.requested_discount = patch.requested_discount;
   if (patch.existing_equipment !== null) next.existing_equipment = patch.existing_equipment;
   if (patch.existing_detectors !== null) next.existing_detectors = patch.existing_detectors;

@@ -29,6 +29,8 @@ export function describeScopeChanges(before: ScopeExtraction, after: ScopeExtrac
   const [qa, qb] = [qty(before), qty(after)];
   for (const [item, n] of qb) if (qa.get(item) !== n) out.push(`${item}: ${qa.get(item) ?? "none"} → ${n}`);
   for (const [item, n] of qa) if (!qb.has(item)) out.push(`${item}: ${n} → none`);
+  const devices = (s: ScopeExtraction) => (s.devices ?? []).map((d) => `${d.item}${d.room ? ` (${d.room})` : ""} × ${d.quantity}${d.supplied_by === "customer" ? (d.existing ? ", customer's existing" : ", customer supplies") : ""}`);
+  list("Devices", devices(before), devices(after));
   value("Discount", before.requested_discount?.pct ?? null, after.requested_discount?.pct ?? null, (v: number | null) => (v === null ? "none" : `${v}%`));
   list("Kept equipment", before.existing_equipment.retained, after.existing_equipment.retained);
   value("Existing detectors", before.existing_detectors, after.existing_detectors);

@@ -268,6 +268,22 @@ export function normalizeExtraction(input: ScopeExtraction): NormalizedExtractio
     unresolved_questions: list(input.unresolved_questions),
     // Only a revision sets it; absent stays absent so older scopes hash the same.
     ...(input.labor_hours ? { labor_hours: input.labor_hours } : {}),
+    // Likewise the device list: absent or empty stays absent.
+    ...(normalizeDevices(input.devices ?? []).length ? { devices: normalizeDevices(input.devices ?? []) } : {}),
   };
   return { scope, notes };
+}
+
+/** The device list, cleaned: blank items dropped, the same device in the same room for the same supplier counted once. */
+function normalizeDevices(devices: NonNullable<ScopeExtraction["devices"]>): NonNullable<ScopeExtraction["devices"]> {
+  const out: NonNullable<ScopeExtraction["devices"]> = [];
+  for (const d of devices) {
+    const item = clean(d.item);
+    if (!item) continue;
+    const room = d.room === null ? null : clean(d.room) || null;
+    const same = out.find((o) => fold(o.item) === fold(item) && fold(o.room ?? "") === fold(room ?? "") && o.supplied_by === d.supplied_by && o.existing === d.existing);
+    if (same) same.quantity = Math.max(same.quantity, d.quantity);
+    else out.push({ item, room, quantity: d.quantity, supplied_by: d.supplied_by, existing: d.existing });
+  }
+  return out;
 }
