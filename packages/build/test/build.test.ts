@@ -2065,7 +2065,7 @@ describe("Henry's decisions (2026-10-27): D-Tools quote history for cabling, cam
 
   it("patterns carry the new version", async () => {
     const versions = Object.fromEntries((await loadPatterns()).map((p) => [p.pattern, p.version]));
-    expect(versions).toMatchObject({ prewire: "2026-10-30.1", tv_media: "2026-10-27.1", whole_home_audio: "2026-10-30.1" });
+    expect(versions).toMatchObject({ prewire: "2026-10-30.1", tv_media: "2026-11-06.1", whole_home_audio: "2026-11-06.1" });
   });
 
   it("Q1: a retrofit drop is two keystone jacks and 2 hours; a new-construction drop one jack and 1 hour", async () => {
@@ -2718,5 +2718,74 @@ describe("Zack's live session (2026-11-05)", () => {
     expect(priced(selection)).toEqual(expect.arrayContaining(["cat6_cable × 75", "mesh_wifi × 3"]));
     expect(selection.lines.some((l) => l.role === "media_enclosure")).toBe(false);
     expect(selection.retrofit).toBe(true);
+  });
+
+  // run_bd4617ad (Marshall's job, run by Zack): the customer supplies the whole UniFi system, the speakers were wired during
+  // construction and the closet terminates existing runs; we supply the great room TV and mount all three TVs.
+  const morales = {
+    client: "Michael Morales",
+    project_type: "Upgrade",
+    functional_systems: ["networking", "structured wiring", "video surveillance", "TV", "whole home audio"],
+    room_types: ["great room", "kitchen", "porch", "primary bedroom", "media closet"],
+    requested_changes: [
+      "Great Room: Sony Bravia 7 or 9 (65”) (streaming only content) with flat mount",
+      "Great Room: Sonos amp in box behind TV connected to speakers wired during construction",
+      "Kitchen: Sonos amp in customer supplied rack connected to speakers installed during construction",
+      "Porch: Customer supplied TV (55-65”) (indoor rated), outdoor TV install with art arm mount (outdoor rated mount - SunBrite)",
+      "Porch: Sonos Beam package installed (indoor spec fine) for the outdoor TV",
+      "Primary Bedroom: Customer supplied TV (55-65”) flat/tilt mounted, Wi-Fi only",
+      "Mount and connect all customer-provided APs and cameras per the attached layout",
+      "Complete the media closet terminations owed under the existing Biringer contract: punch-down into rack-mount keystone patch panel, labeling, and end-to-end testing",
+      "Mount and configure all customer-provided UniFi equipment in a customer-provided 24U floor cabinet",
+      "Install customer-provided HDD into the Dream Machine SE and configure UniFi Protect with the UNVR as the primary camera recording device",
+      "Connect and recognize the customer-provided Synology DS925+ NAS on the network",
+      "Connect customer-provided patch cables from patch panel to switch ports",
+    ],
+    requested_quantities: [
+      { item: "Sonos Amp", quantity: 2 },
+      { item: "U7 Pro access point", quantity: 3 },
+      { item: "U7 Outdoor access point", quantity: 1 },
+      { item: "G6 Edge Turret camera", quantity: 3 },
+      { item: "G6 Dome camera", quantity: 1 },
+      { item: "UniFi Network Video Recorder (NVR)", quantity: 1 },
+    ],
+    existing_equipment: { status: "described" as const, retained: ["customer-provided APs and cameras", "Customer supplied TVs", "Speakers wired during construction"], removed_or_replaced: [] },
+    existing_detectors: "not_provided",
+    excluded_scope: ["All UniFi equipment is supplied by the customer"],
+    unresolved_questions: [
+      "Attached layout for APs and cameras was not included",
+      "Customer-supplied equipment list includes 4 in-ceiling speakers, 12U rack and 2 patch panels while a 24U floor cabinet is mentioned - confirm which rack is used",
+      "Number of Cat6 terminations/patch panel ports not stated",
+      "Requested product: Sonos Beam package",
+      "Requested product: Sony Bravia 7 or 9 (65\") - model to be chosen",
+      "Requested product: SunBrite outdoor rated art arm mount",
+    ],
+  };
+  it("Morales: the customer's UniFi gear is installed, not sold; our TV and three mounts are priced", async () => {
+    const { selection, proposal } = await built(morales);
+    const roles = selection.lines.map((l) => l.role);
+    for (const r of ["mesh_wifi", "outdoor_access_point", "network_switch", "remote_management", "power_protection", "patch_panel", "nvr", "cat6_cable", "speaker_prewire", "outdoor_speakers"]) expect(roles).not.toContain(r);
+    expect(priced(selection)).toEqual(expect.arrayContaining(["television × 1", "tv_mount × 2", "tv_mount_articulating × 1", "zone_amplifier × 2", "soundbar × 1"]));
+    expect(selection.to_verify).toEqual(expect.arrayContaining([
+      "Customer-supplied UniFi network equipment: installed and configured on site; no equipment is priced",
+      "Customer-supplied UniFi camera equipment: installed and configured on site; no equipment is priced",
+      "Cabling: the request terminates existing runs; no new cable is priced",
+    ]));
+    // Installing and configuring the customer's gear is still labor.
+    expect(selection.labor!.hours).toBeGreaterThan(20);
+    expect(proposal.commercial.subtotal_cents).toBeGreaterThan(0);
+  });
+
+  it("speakers wired during construction take no speaker prewire; speakers to be wired during construction do", async () => {
+    const prewire = (change: string) =>
+      job({ functional_systems: ["structured wiring", "whole home audio"], requested_changes: [change, "Cat6 to the office"] }).then((j) => j.selection.lines.some((l) => l.role === "speaker_prewire"));
+    expect(await prewire("Sonos Amp for the kitchen speakers wired during construction")).toBe(false);
+    expect(await prewire("Kitchen speakers to be wired during construction")).toBe(true);
+  });
+
+  it("a porch TV's soundbar asks for no outdoor speakers; music on the patio still does", async () => {
+    const audio = (changes: string[]) => job({ functional_systems: ["TV", "whole home audio"], requested_changes: changes }).then((j) => j.selection.lines.some((l) => l.role === "outdoor_speakers"));
+    expect(await audio(["Porch: outdoor TV install with art arm mount", "Porch: Sonos Beam package for the outdoor TV", "Kitchen: Sonos Amp for the ceiling speakers"])).toBe(false);
+    expect(await audio(["Sonos music in the kitchen and on the back patio"])).toBe(true);
   });
 });

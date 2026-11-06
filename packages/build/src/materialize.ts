@@ -35,6 +35,8 @@ export interface Selection {
   retrofit?: boolean;
   lines: SelectionLine[];
   services: Array<{ category: string; record_id: string; quantity: 1 }>;
+  /** Devices the customer supplies that the job installs (their UniFi access points): labor, no equipment price. */
+  installed?: Array<{ role: string; quantity: number }>;
   /** Project labor estimate; null when the pattern has no labor model. */
   /** set_by_rep: the hours are the rep's ("hours to 7"), not the pattern estimate. */
   labor: { labor_type: string; hours: number; devices: number; covers: string[]; extras: string[]; set_by_rep?: boolean } | null;
@@ -85,9 +87,11 @@ const requestTexts = (scope: ScopeDraftV1) => [...scope.requested_changes, ...sc
  * With `require`, the same change must also name one of those ("outdoor" counts for
  * an eero only beside Wi-Fi words, not in "outdoor PoE cameras").
  */
-function mentioned(scope: ScopeDraftV1, terms: string[], require?: string[], without: string[] = []): boolean {
+function mentioned(scope: ScopeDraftV1, terms: string[], require?: string[], without: string[] = [], unless?: { words: string[]; unless_also: string[] }): boolean {
   const strip = (t: string) => without.reduce((x, p) => x.replace(new RegExp(`\\b${escape(p)}(s|es)?\\b`, "g"), " "), t);
+  const about = (t: string) => !unless || !unless.words.some((w) => hasWord(t, fold(w))) || unless.unless_also.some((w) => hasWord(t, fold(w)));
   return requestTexts(scope)
+    .filter(about)
     .map(strip)
     .some((t) => terms.some((term) => hasWord(t, fold(term))) && (!require || require.some((r) => hasWord(t, fold(r)))));
 }
@@ -571,7 +575,8 @@ const deviceChanges = (scope: ScopeDraftV1, role: RoleSpec) =>
 function outdoorAsked(scope: ScopeDraftV1, role: RoleSpec): boolean {
   // A change that only places something by the TV ("an Ethernet port at the back of the TV location ... the front porch")
   // doesn't put the TV outside: the changes that size it say where it goes, when any does (Bennett, 2026-11-05).
-  const all = deviceChanges(scope, role);
+  // Nor does a change about the customer's own TV ("Porch: Customer supplied TV, outdoor TV install") put ours outside (Morales, 2026-11-06).
+  const all = deviceChanges(scope, role).filter((c) => !SUPPLIED.test(c) && !OWNED_ITEM.test(c) && !EXISTING_ITEM.test(c));
   const sized = all.filter((c) => new RegExp(SIZE.source).test(c));
   return !!role.variants?.length && (sized.length ? sized : all).some((c) => OUTDOOR.test(c));
 }
@@ -663,6 +668,83 @@ function standingTvs(scope: ScopeDraftV1): number {
     .map(fold)
     .filter((c) => TV_WORD.test(c) && STANDING.test(c) && !/\b(mount(ed|ing|s)?|wall|bracket)\b/.test(c) && !MOVE.test(c))
     .reduce((n, c) => n + Number(/^\s*(\d+)\s*x?\b/.exec(c)?.[1] ?? 1), 0);
+}
+
+/** The customer supplies it: "customer-provided", "customer supplied", "supplied by the client", "the owner is providing". */
+const SUPPLIED = /\b(customer|client|owner|homeowner)(?:'s|’s)?[- ]?(supplied|provided|furnished)\b|\b(supplied|provided|furnished) by the (customer|client|owner|homeowner)\b|\b(customer|client|owner|homeowner) (supplies|provides|furnishes|is supplying|is providing|will supply|will provide)\b/;
+/** Words that make a supplied item a whole system's gear, not one device ("all customer-provided UniFi equipment", "customer-provided APs and cameras"). */
+const WHOLE_SYSTEM = /\b(all|entire|whole|equipment|gear|system|hardware|everything)\b/;
+/** A system's devices, for what the customer supplies. */
+const SUPPLIED_SYSTEMS: Array<[string, RegExp]> = [
+  ["networking", /\b(unifi|ubiquiti|network(?:ing)?|wi-?fi|access points|aps|gateway|dream machine|udm|switch(?:es)?|eeros?)\b/],
+  ["video_surveillance", /\b(cameras|camera system|nvr|unvr|protect|surveillance)\b/],
+];
+/**
+ * The roles whose equipment the customer supplies: every role of a system the request says the customer supplies the
+ * gear for ("Mount and configure all customer-provided UniFi equipment", "customer-provided APs and cameras"), and any
+ * other role a customer-supplied list names ("Customer-supplied equipment list includes ... 2 patch panels"). TVs are
+ * left to each change, which says whose each TV is (Zack's Morales job, 2026-11-06: the customer's whole UniFi system
+ * was priced as eeros, a switch, OvrC, a WattBox, a patch panel and an SVR).
+ */
+function suppliedRoles(scope: ScopeDraftV1, roles: RoleSpec[]): Map<string, string> {
+  const out = new Map<string, string>();
+  const texts = [...scope.requested_changes, ...scope.retained_equipment, ...scope.excluded_scope, ...scope.unresolved_questions].filter((t) => SUPPLIED.test(fold(t)));
+  const systems = new Map<string, string>();
+  for (const t of texts.map(fold)) {
+    const brand = OTHER_BRANDS.find((b) => hasWord(t, fold(b)));
+    for (const [system, words] of SUPPLIED_SYSTEMS) if ((brand || WHOLE_SYSTEM.test(t)) && words.test(t) && !systems.has(system)) systems.set(system, brand === "Ubiquiti" ? "UniFi" : (brand ?? ""));
+  }
+  // Lists of what the customer supplies, not a change that also names our work ("Porch: Customer supplied TV ... Sonos Beam").
+  const lists = [...scope.retained_equipment, ...scope.excluded_scope, ...scope.unresolved_questions].map(fold).filter((t) => SUPPLIED.test(t));
+  for (const role of roles) {
+    const system = role.systems.find((x) => systems.has(x));
+    if (system && role.systems.every((x) => systems.has(x))) {
+      out.set(role.role, `${systems.get(system) ? `${systems.get(system)} ` : ""}${system === "networking" ? "network" : "camera"} equipment`);
+      continue;
+    }
+    if (role.variants) continue;
+    const terms = [...(role.mentions ?? []), ...(role.retained_match ?? []), ...(role.count_terms ?? [])].map(fold).filter((x) => x.length >= 4 && !BRANDS.has(x));
+    const named = lists.find((t) => terms.some((x) => new RegExp(String.raw`\b${escape(x)}(s|es)?\b`).test(t)));
+    const term = named && terms.find((x) => new RegExp(String.raw`\b${escape(x)}(s|es)?\b`).test(named));
+    if (term) out.set(role.role, /s$/.test(term) ? term : `${term}s`);
+  }
+  return out;
+}
+
+/** Speakers wired before this job ("speakers wired during construction"): no speaker prewire to price. */
+const SPEAKERS_WIRED = /\bspeakers?\b.*\b(wired|prewired|pre-wired|installed|run)\s+(during|in|at)\s+(the\s+)?(construction|build|framing)\b|\b(existing|prewired|pre-wired)\s+speaker\s+wir(e|es|ing)\b|\bspeakers?\s+(are\s+)?already\s+(wired|prewired|pre-wired)\b/;
+/** Terminating runs already pulled ("terminations owed under the existing Biringer contract"): no new cable. */
+const TERMINATE_EXISTING = /\bterminat\w*\b.*\b(existing|owed|already|previous|prior|contract)\b|\b(existing|already pulled|previously pulled|pre-run|prewired)\b.*\bterminat\w*\b/;
+/** A request for new cable: "run Cat6", "pull new cable", "add an Ethernet port", "new drop". */
+const NEW_CABLE = /\b(run|pull|pulling|add|install|new)\s+(?:a |an |new |\d+ )?(?:[\w-]+\s+){0,2}?(cable|cables|cat ?6|drops?|runs?|ethernet|data (?:port|jack|drop|outlet)s?)\b|\bethernet (port|jack|drop|outlet)s?\b/;
+
+/** Mount words by type: an articulating arm, or a flat or tilt mount. */
+const ARTICULATING_MOUNT = /\b(articulat\w*|art arm|full[- ]motion|swivel|cantilever|extend\w* arm|swing[- ]arm)\b/;
+const FLAT_MOUNT = /\b(flat|tilt|tilting|fixed|low[- ]profile)\b(?:[\s/-]+\w+){0,2}?\s*mount/;
+/** One TV mount per change that mounts a TV, by type: "flat mount", "flat/tilt mounted", "art arm mount". */
+function mountPlan(scope: ScopeDraftV1): { articulating: number; flat: number; any: number } {
+  const plan = { articulating: 0, flat: 0, any: 0 };
+  for (const c of scope.requested_changes.map(fold)) {
+    if (MOVE.test(c) || !/\bmount(ed|s|ing)?\b|\bart arm\b/.test(c) || STANDING.test(c)) continue;
+    // A soundbar's or a camera's mount isn't a TV's.
+    const tv = TV_WORD.test(c) || /\b(bravia|sony|samsung|lg|oled|qled)\b/.test(c) || ARTICULATING_MOUNT.test(c) || FLAT_MOUNT.test(c);
+    if (!tv || (/\b(aps?|access points?|cameras?|equipment|speakers?)\b/.test(c) && !TV_WORD.test(c))) continue;
+    if (ARTICULATING_MOUNT.test(c)) plan.articulating++;
+    else if (FLAT_MOUNT.test(c)) plan.flat++;
+    else plan.any++;
+  }
+  return plan;
+}
+
+/** A change asks for a new TV the customer doesn't supply ("Great Room: Sony Bravia 7 or 9 (65”)"), beside TVs that are the customer's. */
+function newTvAsked(scope: ScopeDraftV1, role: RoleSpec): boolean {
+  if (!role.variants) return false;
+  const words = (role.mentions ?? []).map(fold);
+  return scope.requested_changes.some((raw) => {
+    const c = fold(raw);
+    if (MOVE.test(c) || EXISTING_ITEM.test(c) || OWNED_ITEM.test(raw) || SUPPLIED.test(c)) return false;
+    return words.some((w) => hasWord(c, w)) || (TV_WORD.test(c) && new RegExp(SIZE.source).test(c));
+  });
 }
 
 /** The size the request names for this device, if any. */
@@ -786,6 +868,8 @@ export function materialize(stated: ScopeDraftV1, pattern: PatternSpec, namedPro
   const keptBrandPlaceholders = new Map<string, string>();
   // Existing equipment the job keeps: nothing to price, its field test is listed to verify.
   const keptRoles = new Set<string>();
+  const supplied = suppliedRoles(original, pattern.roles);
+  const suppliedAnnounced = new Set<string>();
   // Roles an add-on prices only for the devices they power: dropped when none of those is priced.
   const poweredOnly = new Set<string>();
   for (const role of candidates) {
@@ -804,7 +888,7 @@ export function materialize(stated: ScopeDraftV1, pattern: PatternSpec, namedPro
     const keptHere = role.critical && !!role.retained_match?.length && scope.retained_equipment.some((e) => role.retained_match!.some((t) => hasWord(fold(e), fold(t))));
     const siblings = siblingPhrases(role, pattern.roles);
     const asked =
-      (role.mentions && mentioned(scope, role.mentions, role.mentions_require, siblings)) ||
+      (role.mentions && mentioned(scope, role.mentions, role.mentions_require, siblings, role.mentions_unless)) ||
       (role.asked_by && mentioned(scope, role.asked_by, undefined, siblings)) ||
       !!role.mentions_kept?.some((t) => scope.retained_equipment.some((e) => hasWord(fold(e), fold(t)))) ||
       statedQuantity(scope, role, pattern.roles) !== null ||
@@ -834,7 +918,14 @@ export function materialize(stated: ScopeDraftV1, pattern: PatternSpec, namedPro
     const retained = role.retained_match?.length
       ? (scope.retained_equipment.find((e) => role.retained_match!.some((t) => fold(e).includes(fold(t)))) ?? customerOwned(scope, role) ?? integrated(scope, role))
       : undefined;
-    if (retained && !wantsNew(scope, role, pattern.roles) && !product) {
+    if (retained && !wantsNew(scope, role, pattern.roles) && !product && !newTvAsked(original, role)) {
+      // The customer supplies it new (their UniFi cameras): installed, not field-tested as old gear; said once per system below.
+      if (supplied.has(role.role)) {
+        keptRoles.add(role.role);
+        if (!suppliedAnnounced.has(supplied.get(role.role)!)) toVerify.push(`Customer-supplied ${supplied.get(role.role)}: installed and configured on site; no equipment is priced`);
+        suppliedAnnounced.add(supplied.get(role.role)!);
+        continue;
+      }
       // Existing equipment being moved stays the customer's: its mount and labor are priced on the roles that carry it.
       // It is the customer's, like kept equipment: a critical role moved ("relocate the doorbell wiring" for the
       // client's Nest doorbell) no longer blocks the build as supported but unpriced (Ben Khandan-Barani, 2026-10-16).
@@ -1088,6 +1179,21 @@ export function materialize(stated: ScopeDraftV1, pattern: PatternSpec, namedPro
     }
   }
 
+  // A mount per TV the request mounts, of the type each change asks for: Morales's great room flat mount, bedroom flat/tilt
+  // mount and porch art arm are 3 mounts, two of them for TVs the customer supplies (Zack, 2026-11-06: 1 tilt mount priced).
+  const mounts = mountPlan(original);
+  if (mounts.articulating + mounts.flat + mounts.any > 0) {
+    const group = lines.filter((l) => pattern.roles.find((r) => r.role === l.role)?.alternative_group === "tv_mount" && l.role !== "tv_cart");
+    const articulating = group.find((l) => l.role === "tv_mount_articulating");
+    const flat = group.find((l) => l.role === "tv_mount");
+    const plain = flat ?? articulating;
+    for (const [line, n] of [[articulating, mounts.articulating], [flat, mounts.flat]] as const) {
+      if (line && n + (line === plain ? mounts.any : 0) > line.quantity) Object.assign(line, { quantity: n + (line === plain ? mounts.any : 0), quantity_basis: "fixed", verify: null });
+    }
+    if (!flat && articulating && mounts.flat > 0) articulating.quantity = Math.max(articulating.quantity, mounts.articulating + mounts.flat + mounts.any);
+    if (!articulating && flat && mounts.articulating > 0) flat.quantity = Math.max(flat.quantity, mounts.articulating + mounts.flat + mounts.any);
+  }
+
   // Amplifiers follow the speakers they drive (Henry, 2026-10-12), once the request asks for speakers or counts existing ones.
   for (const line of lines) {
     const role = pattern.roles.find((r) => r.role === line.role);
@@ -1164,13 +1270,33 @@ export function materialize(stated: ScopeDraftV1, pattern: PatternSpec, namedPro
     toVerify.push(`Cable runs priced separately (${separateRuns.length}): confirm the Cat6 keystone jack count leaves them out`);
   }
 
-  const devices = lines.reduce((n, l) => n + l.quantity, 0);
+  // Speakers wired before this job need no speaker prewire, and terminating runs already pulled needs no new cable
+  // (Zack's Morales job, 2026-11-06: 4 binding posts and 450 ft of Cat6 for terminating the Biringer runs).
+  const dropped = new Set<string>();
+  const texts = [...requestTexts(scope), ...scope.retained_equipment.map(fold)];
+  // Already wired, not to be wired: "speakers to be installed during construction" is a prewire.
+  const wiredBefore = (t: string) => SPEAKERS_WIRED.test(t) && !/\b(to be|will be|needs? to be|should be|must be)\s+(wired|prewired|pre-wired|installed|run)\b/.test(t);
+  if (texts.some(wiredBefore) && !texts.some((t) => /\b(new|run|pull)\s+(?:[\w-]+\s+){0,2}?speaker wir/.test(t))) dropped.add("speaker_prewire");
+  if (texts.some((t) => TERMINATE_EXISTING.test(t)) && !texts.some((t) => NEW_CABLE.test(t))) {
+    for (const r of pattern.roles.filter((r) => r.stated_length_per)) dropped.add(r.role);
+    if (lines.some((l) => dropped.has(l.role))) toVerify.push("Cabling: the request terminates existing runs; no new cable is priced");
+  }
+  // What the customer supplies is installed, not sold: its install time stays in the labor, its equipment is not priced.
+  const suppliedLines = lines.filter((l) => supplied.has(l.role) && !l.requested_model && !dropped.has(l.role));
+  for (const what of new Set(suppliedLines.map((l) => supplied.get(l.role)!))) if (!suppliedAnnounced.has(what)) toVerify.push(`Customer-supplied ${what}: installed and configured on site; no equipment is priced`);
+  for (const l of suppliedLines) keptRoles.add(l.role);
+  for (let i = lines.length - 1; i >= 0; i--) {
+    if (dropped.has(lines[i]!.role) || suppliedLines.includes(lines[i]!)) lines.splice(i, 1);
+  }
+  if (dropped.size) included.splice(0, included.length, ...included.filter((r) => !dropped.has(r.role)));
+
+  const devices = [...lines, ...suppliedLines].reduce((n, l) => n + l.quantity, 0);
   // Labor-only allowances the request mentions (framing a niche), priced as hours at the pattern's labor rate.
   const extras = (pattern.labor_extras ?? []).filter((x) => mentioned(scope, x.mentions)).map((x) => x.id);
   // Hours the rep set in a revision, or the crew and days the request states, replace the estimate.
   const crew = devices > 0 && !scope.labor_hours ? statedCrewHours(scope) : null;
   const repHours = scope.labor_hours ?? crew;
-  const hours = !pattern.labor ? 0 : (repHours ?? (devices > 0 ? laborHoursFor(pattern, lines, addOn, extras) : 0));
+  const hours = !pattern.labor ? 0 : (repHours ?? (devices > 0 ? laborHoursFor(pattern, [...lines, ...suppliedLines], addOn, extras) : 0));
   const labor: Selection["labor"] =
     pattern.labor && hours > 0
       ? { labor_type: pattern.labor.labor_type, hours, devices, covers: pattern.labor.covers, extras, ...(repHours ? { set_by_rep: true } : {}) }
@@ -1284,6 +1410,7 @@ export function materialize(stated: ScopeDraftV1, pattern: PatternSpec, namedPro
     add_on: addOn,
     ...(retrofit(stated) ? { retrofit: true } : {}),
     lines,
+    ...(suppliedLines.length ? { installed: suppliedLines.map((l) => ({ role: l.role, quantity: l.quantity })) } : {}),
     services,
     labor,
     parts: pattern.parts && lines.length && (!admitted || admitted.has(pattern.parts.product_id)) ? { record_id: pattern.parts.product_id } : null,
