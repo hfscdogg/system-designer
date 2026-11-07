@@ -718,6 +718,9 @@ function unmountedNew(scope: ScopeDraftV1, role: RoleSpec, roles: RoleSpec[]): n
   if (!devices.length || !role.quantity_follows) return 0;
   const kin = roles.filter((r) => r === role || (role.alternative_group && r.alternative_group === role.alternative_group));
   const mounts = devices.filter((d) => kin.includes(roleNamed(d.item, roles)!));
+  // No mount on the list: the stated count is the rep's own total ("only need 1 TV mount"), used as written
+  // (staging smoke, Green step 3, 2026-11-06: priced 2).
+  if (!mounts.length) return 0;
   const carried = devices.filter((d) => d.supplied_by === "livewire" && !d.existing && role.quantity_follows!.includes(roleNamed(d.item, roles)?.role ?? ""));
   const room = (d: Device) => (d.room ?? "").toLowerCase();
   let spare = mounts.filter((m) => !m.room).reduce((n, m) => n + m.quantity, 0);
