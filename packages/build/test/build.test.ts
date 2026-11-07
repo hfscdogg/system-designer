@@ -3026,5 +3026,26 @@ describe("Zack's live session (2026-11-05)", () => {
     // One indoor and one porch tilt mount: the line stays the standard one rather than putting both outside.
     expect(await tilt(["Living room: 65-inch Sony TV with a tilt mount", "Porch: customer's 55-inch outdoor TV with a tilt mount"])).toBe("a5e143b4-5150-4b7c-a9d7-bb039287e63d");
   });
-});
 
+  it("Green (staging smoke, 2026-11-07): a generic \"wall mount\" × 2 beside the moved TV and soundbar is one TV mount and one soundbar mount", async () => {
+    const { selection } = await job({
+      client: "Smoke Test",
+      functional_systems: ["TV", "networking"],
+      requested_changes: [
+        "Sell a new 77-inch Sony BRAVIA 8 OLED TV with a Sonos Arc Ultra soundbar for the family room",
+        "Move the existing TV and soundbar to the fitness room and wall-mount both there",
+        "Add 3 eero access points",
+      ],
+      existing_equipment: { status: "described" as const, retained: ["existing TV", "existing soundbar"], removed_or_replaced: [] },
+      devices: [
+        livewire("77-inch Sony BRAVIA 8 OLED TV", "family room"),
+        livewire("Sonos Arc Ultra soundbar", "family room"),
+        livewire("eero access point", null, 3),
+        livewire("wall mount", "fitness room", 2),
+        customer("existing TV", "fitness room", 1, true),
+        customer("existing soundbar", "fitness room", 1, true),
+      ],
+    });
+    expect(priced(selection)).toEqual(expect.arrayContaining(["television × 1", "tv_mount × 2", "soundbar_mount × 2", "mesh_wifi × 3"]));
+  });
+});

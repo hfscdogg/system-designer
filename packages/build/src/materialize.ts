@@ -191,7 +191,19 @@ function withDevices(scope: ScopeDraftV1, roles: RoleSpec[]): ScopeDraftV1 {
     const r = roleNamed(text, roles);
     return !r || !listed.has(r.role);
   };
-  const ours = devices.filter((d) => d.supplied_by === "livewire" && !d.existing);
+  // A generic "wall mount" × 2 in a room with one TV and a soundbar is the TV's mount and the soundbar's, not two TV
+  // mounts: a room's TV-mount count stops at its TVs (staging smoke, Green, 2026-11-07: "wall mount (fitness room) × 2").
+  const room = (d: Device) => (d.room ?? "").toLowerCase();
+  const tvMount = (r: RoleSpec | undefined) => !!r?.per_moved?.some((w) => /^(tv|television)$/.test(w));
+  const isTv = (d: Device) => roleNamed(d.item, roles)?.role === "television" || /\b(tv|television)s?\b/i.test(d.item) && !tvMount(roleNamed(d.item, roles));
+  const isBar = (d: Device) => /\b(soundbar|sound bar)s?\b/i.test(d.item) && !/\b(mount|bracket)s?\b/i.test(d.item);
+  const inRoom = (d: Device, test: (x: Device) => boolean) => devices.filter((x) => x.room && room(x) === room(d) && test(x)).reduce((n, x) => n + x.quantity, 0);
+  const capped = (d: Device): Device => {
+    if (!d.room || !tvMount(roleNamed(d.item, roles)) || /\b(tv|television)\b/i.test(d.item)) return d;
+    const tvs = inRoom(d, isTv);
+    return tvs > 0 && inRoom(d, isBar) > 0 && d.quantity > tvs ? { ...d, quantity: tvs } : d;
+  };
+  const ours = devices.filter((d) => d.supplied_by === "livewire" && !d.existing).map(capped);
   return {
     ...scope,
     requested_quantities: [...ours.map((d) => ({ item: deviceItem(d), quantity: d.quantity })), ...scope.requested_quantities.filter((q) => unlisted(q.item))],
