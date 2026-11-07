@@ -51,6 +51,13 @@ export interface PricedLaborAllowance extends DraftLaborAllowance {
   cost_cents: number;
 }
 
+/** Equipment priced at the rep's dollar amount ("a $1,000 placeholder for the turntable"), costed at the policy's equipment margin. */
+export interface PricedEquipmentAllowance {
+  label: string;
+  price_cents: number;
+  cost_cents: number;
+}
+
 export interface PricedParts extends DraftParts {
   quantity: number;
   price_cents: number;
@@ -92,6 +99,8 @@ export interface Proposal {
   allowances: ProposalDraft["allowances"];
   /** Priced labor allowances: they count toward the total and the margin. */
   labor_allowances: PricedLaborAllowance[];
+  /** Equipment priced at the rep's dollar amount; in the total like the labor allowances (absent before 2026-11-07). */
+  equipment_allowances?: PricedEquipmentAllowance[];
   unresolved: ProposalDraft["unresolved"];
   assumptions: string[];
   exclusions: string[];
@@ -194,7 +203,16 @@ export function bind(draft: ProposalDraft, ctx: BindContext): Proposal {
     const perHour = Math.round(rate.price_per_hour * 100);
     laborAllowances.push({ ...a, price_per_hour_cents: perHour, price_cents: Math.round(perHour * a.hours), cost_cents: Math.round(Math.round(rate.cost_per_hour * 100) * a.hours) });
   }
-  const allowanceCents = sum(laborAllowances.map((a) => a.price_cents));
+  // Equipment at the rep's amount: equipment margin for its cost; without a policy it is a TBD allowance (Henry, 2026-11-07).
+  const equipmentAllowances: PricedEquipmentAllowance[] = [];
+  for (const a of draft.equipment_allowances ?? []) {
+    if (!policy) {
+      allowances.push({ label: a.label, reason: "no commercial policy to cost it; shown as a TBD allowance outside committed totals" });
+      continue;
+    }
+    equipmentAllowances.push({ label: a.label, price_cents: a.amount_cents, cost_cents: equipmentAllowanceCost(a.amount_cents, policy) });
+  }
+  const allowanceCents = sum(laborAllowances.map((a) => a.price_cents)) + sum(equipmentAllowances.map((a) => a.price_cents));
   const services = sum(draft.services.map((s) => s.unit_price_cents));
   const floor = policy ? minimumMarginPct(policy, ctx.scope.market) : null;
   // Everything that depends on the parts line: totals, discount and margin.
@@ -206,6 +224,7 @@ export function bind(draft: ProposalDraft, ctx: BindContext): Proposal {
       ...draft.services.map((s) => ({ id: s.label, price: s.unit_price_cents, cost: s.unit_cost_cents })),
       ...(projectLabor ? [{ id: "Labor", price: projectLabor.price_cents, cost: projectLabor.cost_cents }] : []),
       ...laborAllowances.map((a) => ({ id: a.label, price: a.price_cents, cost: a.cost_cents })),
+      ...equipmentAllowances.map((a) => ({ id: a.label, price: a.price_cents, cost: a.cost_cents })),
       ...(parts ? [{ id: parts.label, price: parts.price_cents, cost: parts.cost_cents }] : []),
       // The discount comes straight off the margin.
       ...(discount ? [{ id: "Discount", price: -discount.cents, cost: 0 }] : [])];
@@ -236,7 +255,10 @@ export function bind(draft: ProposalDraft, ctx: BindContext): Proposal {
           status: "calculated",
           rate_pct: policy.tax.rate_pct,
           cents: Math.round(
-            ((sum(bound.filter((l) => l.is_taxable).map((l) => l.extended_cents)) + (parts?.is_taxable ? parts.price_cents : 0)) * keep * policy.tax.rate_pct) / 100,
+            ((sum(bound.filter((l) => l.is_taxable).map((l) => l.extended_cents)) + sum(equipmentAllowances.map((a) => a.price_cents)) + (parts?.is_taxable ? parts.price_cents : 0)) *
+              keep *
+              policy.tax.rate_pct) /
+              100,
           ),
         }
       : { status: "tbd" };
@@ -274,6 +296,7 @@ export function bind(draft: ProposalDraft, ctx: BindContext): Proposal {
     requirements: draft.requirements,
     allowances,
     labor_allowances: laborAllowances,
+    ...(equipmentAllowances.length ? { equipment_allowances: equipmentAllowances } : {}),
     unresolved: draft.unresolved,
     assumptions: draft.assumptions,
     exclusions: [...draft.exclusions, ...ctx.scope.excluded_scope],
@@ -309,7 +332,10 @@ export function bind(draft: ProposalDraft, ctx: BindContext): Proposal {
       policy_version: ctx.policy?.version ?? null,
       minimum_gross_margin_pct: floor,
       mix: {
-        equipment: categoryMix(bound.map((l) => ({ price: l.extended_cents, cost: l.unit_cost_cents === null ? null : l.unit_cost_cents * l.quantity })), subtotal),
+        equipment: categoryMix(
+          [...bound.map((l) => ({ price: l.extended_cents, cost: l.unit_cost_cents === null ? null : l.unit_cost_cents * l.quantity })), ...equipmentAllowances.map((a) => ({ price: a.price_cents, cost: a.cost_cents }))],
+          subtotal,
+        ),
         labor: categoryMix([...(projectLabor ? [projectLabor] : []), ...laborAllowances].map((x) => ({ price: x.price_cents, cost: x.cost_cents })), subtotal),
         parts: categoryMix(parts ? [{ price: parts.price_cents, cost: parts.cost_cents }] : [], subtotal),
       },
@@ -347,6 +373,7 @@ export function budgetReadyLines(p: Proposal): string[] {
     p.labor_allowances?.length
       ? `Allowances (verify on site): ${p.labor_allowances.map((x) => `${x.label}${x.quantity ? ` × ${x.quantity}` : ""} ${x.hours} h, ${formatUsd(x.price_cents)}`).join("; ")}.`
       : null,
+    p.equipment_allowances?.length ? `Equipment allowances: ${p.equipment_allowances.map((x) => `${x.label} ${formatUsd(x.price_cents)}`).join("; ")}.` : null,
     p.allowances.length ? `Allowances (TBD): ${p.allowances.map((x) => x.label).join(", ")}.` : null,
     p.remaining_verification.length ? `To verify: ${p.remaining_verification.join("; ")}.` : null,
   ].filter((x): x is string => x !== null);
@@ -441,4 +468,9 @@ function categoryMix(items: Array<{ price: number; cost: number | null }>, subto
     share_pct: pct(price, subtotal),
     margin_pct: costedPrice > 0 ? pct(costedPrice - sum(costed.map((i) => i.cost!)), costedPrice) : null,
   };
+}
+
+/** An equipment allowance's cost: its price at the policy's equipment margin target. */
+export function equipmentAllowanceCost(priceCents: number, policy: NonNullable<BindContext["policy"]>["policy"]): number {
+  return Math.round(priceCents * (1 - policy.mix_targets.equipment.margin_pct / 100));
 }

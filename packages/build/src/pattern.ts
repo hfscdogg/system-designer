@@ -37,6 +37,11 @@ export const RoleSpecSchema = z
     /** Include the role only when one of these roles is included (a switch and power protection for the eero network). */
     with_roles: z.array(z.string()).min(1).optional(),
     /**
+     * Left out when the customer keeps equipment these terms name (their own router), unless one of `except` is priced:
+     * eeros on the customer's router take no switch (Henry, 2026-11-07).
+     */
+    not_with_kept: z.object({ terms: z.array(z.string().min(1)).min(1), except: z.array(z.string()).optional() }).strict().optional(),
+    /**
      * Devices this role powers (a PoE switch for wired cameras): an add-on that prices them prices this role too,
      * unless the customer keeps one or keeps equipment of that system (Zack's Bowen-Rees job, 2026-10-23).
      */

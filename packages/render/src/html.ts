@@ -141,7 +141,7 @@ export function renderProposalHtml(c: CustomerProposal, brand: Brand, images: Im
     ? `
     <div class="quote-section">
       <h3>Allowances — verify on site</h3>
-      <p class="scope">Work outside the systems above, budgeted as installation hours and confirmed during the site visit.</p>
+      <p class="scope">${c.labor_allowances.some((a) => a.note.startsWith("Equipment allowance")) ? "Work and equipment outside the systems above, budgeted here and confirmed before the final proposal." : "Work outside the systems above, budgeted as installation hours and confirmed during the site visit."}</p>
       <table class="items">
         <thead><tr><th class="item">ITEM</th><th class="num amount">AMOUNT</th></tr></thead>
         <tbody>${c.labor_allowances

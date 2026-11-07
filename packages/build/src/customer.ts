@@ -109,11 +109,15 @@ export function customerView(p: Proposal): CustomerProposal {
       ...(p.parts ? [p.parts.label] : []),
     ],
     allowances: p.allowances.map((a) => ({ label: a.label, note: "Allowance — TBD, not included in totals" })),
-    labor_allowances: (p.labor_allowances ?? []).map((a) => ({
-      label: a.label,
-      note: a.feet ? `About ${a.hours} hours of labor for about ${a.feet} ft, confirmed on site` : a.quantity ? `${a.quantity} × about ${a.hours / a.quantity} hours of labor (${a.hours} hours), confirmed on site` : `About ${a.hours} hours of labor, confirmed on site`,
-      amount_cents: a.price_cents,
-    })),
+    labor_allowances: [
+      ...(p.labor_allowances ?? []).map((a) => ({
+        label: a.label,
+        note: a.feet ? `About ${a.hours} hours of labor for about ${a.feet} ft, confirmed on site` : a.quantity ? `${a.quantity} × about ${a.hours / a.quantity} hours of labor (${a.hours} hours), confirmed on site` : `About ${a.hours} hours of labor, confirmed on site`,
+        amount_cents: a.price_cents,
+      })),
+      // Equipment at the rep's dollar amount (Henry, 2026-11-07).
+      ...(p.equipment_allowances ?? []).map((a) => ({ label: a.label, note: "Equipment allowance; the final proposal prices the product chosen", amount_cents: a.price_cents })),
+    ],
     assumptions: p.assumptions,
     exclusions: p.exclusions,
     remaining_verification: p.remaining_verification,

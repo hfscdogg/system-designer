@@ -47,6 +47,8 @@ export interface Selection {
   /** Labor for out-of-pattern work the request asks for (a conduit run), from the pattern's allowance templates; priced at the policy rate. */
   /** quantity: how many of a counted template the hours cover (4 Ethernet ports); absent for one. */
   labor_allowances: Array<{ key: string; label: string; hours: number; labor_type: string; quantity?: number; feet?: number; trenched?: true }>;
+  /** Equipment the rep prices as a dollar allowance ("a $1,000 placeholder for the turntable"; Henry, 2026-11-07). */
+  equipment_allowances?: Array<{ label: string; amount_cents: number }>;
   /** Requested products with no Livewire standard (a TV cart), listed to verify and priced in the final proposal. */
   to_verify: string[];
   /** Roles listed to price in to_verify instead of priced (another brand's cameras): accounted for, not unresolved. */
@@ -608,6 +610,20 @@ function excluded(scope: ScopeDraftV1, role: RoleSpec): boolean {
   });
 }
 
+/**
+ * The customer keeps their own equipment these terms name, other than an eero: "existing Verizon router" kept, or a change
+ * like "keep the customer's own router" / "eeros on their existing modem".
+ */
+function keepsOwn(scope: ScopeDraftV1, terms: string[]): boolean {
+  const term = terms.map((w) => escape(fold(w))).join("|");
+  const kept = scope.retained_equipment.map(fold).filter((e) => !/\beeros?\b/.test(e));
+  if (kept.some((e) => new RegExp(String.raw`\b(?:${term})s?\b`).test(e))) return true;
+  const KEPT = new RegExp(String.raw`\b(?:keep|keeps|keeping|kept|existing|own|current|isp'?s?|provider'?s?)\b(?:\s+[\w'’-]+){0,3}?\s+(?:${term})s?\b`);
+  // Replacing it is no keeping it ("replace the existing router"); upgrading the Wi-Fi beside it is.
+  const REPLACED = new RegExp(String.raw`\b(?:replac|swap|remov|upgrad)\w*\b(?:\s+[\w'’-]+){0,4}?\s+(?:${term})s?\b`);
+  return requestTexts(scope).some((t) => KEPT.test(t) && !REPLACED.test(t));
+}
+
 /** Words that put a device outside: "75\" full weather outdoor TV", "weatherproof TV on the patio". */
 const OUTDOOR = /\b(outdoors?|outside|exterior|weather[- ]?proof|weather[- ]?rated|all[- ]weather|full[- ]weather|full[- ]sun|partial[- ]sun|full[- ]shade|patio|porch|pool ?deck|pergola|terrace|veranda)\b/;
 
@@ -1034,14 +1050,9 @@ export function materialize(given: ScopeDraftV1, pattern: PatternSpec, namedProd
     // the sentences name beside the kept one is ours.
     const listedByDevices = (original.devices ?? []).some((d) => roleNamed(d.item, pattern.roles) === role);
     const askedBeside = !listedByDevices && (newTvAsked(original, role) || askedAsProduct(original, role, pattern.roles));
-    if (retained && !wantsNew(scope, role, pattern.roles) && !product && !askedBeside) {
-      // The customer supplies it new (their UniFi cameras): installed, not field-tested as old gear; said once per system below.
-      if (supplied.has(role.role)) {
-        keptRoles.add(role.role);
-        if (!suppliedAnnounced.has(supplied.get(role.role)!)) toVerify.push(`Customer-supplied ${supplied.get(role.role)}: installed and configured on site; no equipment is priced`);
-        suppliedAnnounced.add(supplied.get(role.role)!);
-        continue;
-      }
+    // The customer supplies it new (their UniFi cameras): built like ours, then installed, not sold, with its install labor
+    // (suppliedLines below), not kept as old gear (Zack's Morales job, 2026-11-06: four customer cameras carried no labor).
+    if (retained && !supplied.has(role.role) && !wantsNew(scope, role, pattern.roles) && !product && !askedBeside) {
       // Existing equipment being moved stays the customer's: its mount and labor are priced on the roles that carry it.
       // It is the customer's, like kept equipment: a critical role moved ("relocate the doorbell wiring" for the
       // client's Nest doorbell) no longer blocks the build as supported but unpriced (Ben Khandan-Barani, 2026-10-16).
@@ -1258,6 +1269,13 @@ export function materialize(given: ScopeDraftV1, pattern: PatternSpec, namedProd
       notAsked.add(role.role);
       changed = true;
     }
+  }
+  // Gear the customer's own kept equipment makes unneeded: eeros on the customer's router take no switch (Henry, 2026-11-07).
+  for (const role of included) {
+    const rule = role.not_with_kept;
+    if (!rule || notAsked.has(role.role) || requested.has(role.role) || namesItself(scope, role, pattern.roles)) continue;
+    if (rule.except?.some((w) => included.some((r) => r.role === w && !notAsked.has(w)))) continue;
+    if (keepsOwn(original, rule.terms)) notAsked.add(role.role);
   }
   if (notAsked.size) {
     for (let i = lines.length - 1; i >= 0; i--) if (notAsked.has(lines[i]!.role)) lines.splice(i, 1);
@@ -1579,9 +1597,44 @@ export function materialize(given: ScopeDraftV1, pattern: PatternSpec, namedProd
       ...(a.feet ? { feet: a.feet } : {}),
       ...(a.trenched ? { trenched: true as const } : {}),
     })),
+    ...(equipmentAllowances(original).length ? { equipment_allowances: equipmentAllowances(original) } : {}),
     to_verify: toVerify,
     ...(verifyOnly.size ? { listed: [...verifyOnly] } : {}),
   };
+}
+
+const DOLLARS = String.raw`\$\s?(\d[\d,]*(?:\.\d{1,2})?)\s*(k\b)?`;
+const ALLOWANCE_FOR = new RegExp(String.raw`${DOLLARS}\s*(?:placeholder|allowance)\s+(?:for|on)\s+(?:a|an|the|their|his|her)?\s*([^,;.()\n]+)`, "gi");
+const ALLOWANCE_OF = new RegExp(String.raw`(?:placeholder|allowance)\s+of\s+${DOLLARS}\s+(?:for|on)\s+(?:a|an|the|their|his|her)?\s*([^,;.()\n]+)`, "gi");
+const ITEM_ALLOWANCE = new RegExp(String.raw`(?:^|[,;:]\s*|\b(?:add|include|plus|and)\s+(?:a|an|the)?\s*)([a-z][\w'’ -]{1,40}?)\s*(?:[-–—:]|\bat\b)\s*${DOLLARS}\s*(?:placeholder|allowance)\b`, "gi");
+
+const ITEM_THEN_AMOUNT = new RegExp(String.raw`(?:^|[,;:]\s*|\b(?:add|include|plus|and)\s+(?:a|an|the)?\s*)([a-z][\w'’ -]{1,40}?)\s+(?:placeholder|allowance)\s*(?:\(\s*|[-–—:]\s*|of\s+|at\s+)${DOLLARS}`, "gi");
+
+/**
+ * Equipment the rep prices as a dollar allowance: "add a $1,000 placeholder for the turntable", "an allowance of $500 for
+ * the bar TV", "turntable – $1,000 allowance". Priced at the rep's amount as an allowance line (Henry, 2026-11-07); a
+ * budget for the whole job ("$20,000 budget") is no allowance.
+ */
+function equipmentAllowances(scope: ScopeDraftV1): Array<{ label: string; amount_cents: number }> {
+  const out = new Map<string, { label: string; amount_cents: number }>();
+  const add = (amount: string, k: string | undefined, item: string) => {
+    const what = item
+      .replace(/\s+/g, " ")
+      .replace(/\b(?:placeholder|allowance|to be selected|tbd)\b.*$/i, "")
+      .trim()
+      .replace(/^(?:(?:add|include|plus|and|a|an|the)(?:\s+|$))+/i, "");
+    const cents = Math.round(Number(amount.replace(/,/g, "")) * (k ? 1000 : 1) * 100);
+    if (!what || !Number.isFinite(cents) || cents <= 0) return;
+    const label = `${what[0]!.toUpperCase()}${what.slice(1)} (allowance)`;
+    out.set(fold(label), { label, amount_cents: cents });
+  };
+  for (const c of scope.requested_changes) {
+    for (const m of c.matchAll(ALLOWANCE_FOR)) add(m[1]!, m[2], m[3]!);
+    for (const m of c.matchAll(ALLOWANCE_OF)) add(m[1]!, m[2], m[3]!);
+    for (const m of c.matchAll(ITEM_ALLOWANCE)) add(m[2]!, m[3], m[1]!);
+    for (const m of c.matchAll(ITEM_THEN_AMOUNT)) add(m[2]!, m[3], m[1]!);
+  }
+  return [...out.values()];
 }
 
 /**
