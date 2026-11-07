@@ -216,6 +216,18 @@ export const SMOKE_SCENARIOS: SmokeScenario[] = [
       },
     ],
   },
+  {
+    // Henry, 2026-11-07: eeros on the customer's own router take OvrC and a WattBox, no switch.
+    name: "Eeros on the customer's router",
+    steps: [
+      {
+        say: `New whole-home eero Wi-Fi network for the Smoke Test family, ${ADDRESS}. Residential. The customer keeps their own Verizon router.`,
+        pattern: "home_network",
+        expect: { network_switch: 0, remote_management: 1, power_protection: 1 },
+        atLeast: { mesh_wifi: 1 },
+      },
+    ],
+  },
 ];
 
 const CLARIFY_DEFAULTS = "Use your recommended defaults for anything I didn't say.";

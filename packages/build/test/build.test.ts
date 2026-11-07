@@ -2631,7 +2631,7 @@ describe("Zack's live session (2026-11-05)", () => {
     const result = compile(selection, admitted, pattern);
     if (!result.ok) throw new Error(result.errors.join("\n"));
     const proposal = bind(result.draft, { runId: "run_test", receiptId, approvalId: "ap_1", scopeHash, scope, policy: POLICY, releaseId: "rel" });
-    return { selection, draft: result.draft, proposal, customer: customerView(proposal) };
+    return { selection, draft: result.draft, proposal, customer: customerView(proposal), admitted, scope, scopeHash };
   }
 
   // run_4a0421d7 and its revision run_42556b4a: three rooms of TVs priced one, and adding two more changed nothing.
@@ -2772,8 +2772,11 @@ describe("Zack's live session (2026-11-05)", () => {
       "Customer-supplied UniFi camera equipment: installed and configured on site; no equipment is priced",
       "Cabling: the request terminates existing runs; no new cable is priced",
     ]));
-    // Installing and configuring the customer's gear is still labor.
-    expect(selection.labor!.hours).toBeGreaterThan(20);
+    // Installing and configuring the customer's gear is still labor, their four cameras included (Henry, 2026-11-07).
+    expect(selection.installed).toEqual(expect.arrayContaining([{ role: "outdoor_camera", quantity: 4 }]));
+    expect(selection.labor!.hours).toBeGreaterThan(50);
+    // The porch's art arm mount is outdoor-rated (Sanus VODLF125-B2), not the indoor Strong mount.
+    expect(selection.lines.find((l) => l.role === "tv_mount_articulating")!.record_id).toBe("5e126131-73ba-4869-a490-941cee78cd26");
     expect(proposal.commercial.subtotal_cents).toBeGreaterThan(0);
   });
 
@@ -2968,5 +2971,50 @@ describe("Zack's live session (2026-11-05)", () => {
     });
     expect(priced(selection)).toEqual(expect.arrayContaining(["tv_mount × 1"]));
   });
-});
 
+  // Henry, 2026-11-07: eeros on the customer's own router are eeros, OvrC and a WattBox, no switch.
+  describe("eeros on the customer's own router", () => {
+    const network = (o: object) => job({ functional_systems: ["networking"], ...o }).then((j) => j.selection.lines.map((l) => l.role));
+    it("takes no switch when the customer keeps their router", async () => {
+      for (const o of [
+        { requested_changes: ["New eero Wi-Fi network for the whole house; the customer keeps their own Verizon router"] },
+        { requested_changes: ["New eero Wi-Fi for the whole house, keeping the customer's own router"] },
+        { requested_changes: ["Upgrade the Wi-Fi with eeros; the customer keeps their existing router"] },
+        { requested_changes: ["Whole-home Wi-Fi upgrade with eeros"], existing_equipment: { status: "described" as const, retained: ["Xfinity modem/router"], removed_or_replaced: [] } },
+      ]) {
+        const roles = await network(o);
+        expect(roles).toEqual(expect.arrayContaining(["mesh_wifi", "remote_management", "power_protection"]));
+        expect(roles).not.toContain("network_switch");
+      }
+    });
+    it("keeps the switch when the router is replaced, a wired access point is priced, or the rep asks for one", async () => {
+      expect(await network({ requested_changes: ["Replace the existing router with 3 new eeros"] })).toContain("network_switch");
+      expect(await network({ requested_changes: ["New eero Wi-Fi for the house and a wired access point in the garage; the customer keeps their own router"] })).toContain("network_switch");
+      expect(await network({ requested_changes: ["Add 3 eeros and an 8-port switch; the customer keeps their own router"] })).toContain("network_switch");
+      expect(await network({ requested_changes: ["Add 3 eeros for whole-home Wi-Fi"] })).toContain("network_switch");
+    });
+  });
+
+  // Henry, 2026-11-07: a rep's dollar placeholder is priced at the rep's amount (Zack's Bennett job: "$1,000 placeholder for the turntable").
+  describe("equipment allowances at the rep's amount", () => {
+    it("parses the ways a rep writes one, and none from a whole-job budget", async () => {
+      const allowances = async (c: string) => (await job({ functional_systems: ["TV"], requested_changes: ["Living room: 65-inch Sony TV on the wall", c] })).selection.equipment_allowances ?? [];
+      expect(await allowances("Add a $1,000 placeholder for the turntable")).toEqual([{ label: "Turntable (allowance)", amount_cents: 100000 }]);
+      expect(await allowances("Include an allowance of $2,500 for the bar TV")).toEqual([{ label: "Bar TV (allowance)", amount_cents: 250000 }]);
+      expect(await allowances("Turntable – $1.5k allowance")).toEqual([{ label: "Turntable (allowance)", amount_cents: 150000 }]);
+      expect(await allowances("Turntable placeholder ($1,000)")).toEqual([{ label: "Turntable (allowance)", amount_cents: 100000 }]);
+      expect(await allowances("Customer has a $20,000 budget for the whole project")).toEqual([]);
+    });
+    it("prices the allowance in the total, taxed and costed at the equipment margin, and shows it to the customer", async () => {
+      const base = { client: "Bennett", functional_systems: ["TV"], requested_changes: ["Living room: 65-inch Sony TV on the wall"] };
+      const without = await built(base);
+      const { proposal, customer, admitted, scope, scopeHash } = await built({ ...base, requested_changes: [...base.requested_changes, "Add a $1,000 placeholder for the turntable"] });
+      expect(proposal.equipment_allowances).toEqual([{ label: "Turntable (allowance)", price_cents: 100000, cost_cents: expect.any(Number) }]);
+      expect(proposal.commercial.allowances_cents! - (without.proposal.commercial.allowances_cents ?? 0)).toBe(100000);
+      expect(proposal.commercial.subtotal_cents).toBeGreaterThan(without.proposal.commercial.subtotal_cents + 100000 - 1);
+      expect(customer.labor_allowances).toEqual(expect.arrayContaining([{ label: "Turntable (allowance)", note: expect.stringContaining("Equipment allowance"), amount_cents: 100000 }]));
+      const v = validateProposal(proposal, scope, scopeHash, admitted, POLICY);
+      expect(v.findings.filter((f) => f.severity === "block")).toEqual([]);
+    });
+  });
+});

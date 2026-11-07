@@ -1,5 +1,5 @@
 import { hashCanonical, type ScopeDraftV1 } from "@sd/core";
-import { PILOT_WATERMARK, type Proposal } from "./bind.ts";
+import { equipmentAllowanceCost, PILOT_WATERMARK, type Proposal } from "./bind.ts";
 import type { AdmittedProduct } from "./catalog.ts";
 import { minimumMarginPct, type PolicyRecord } from "./policy.ts";
 import { customerView, forbiddenCustomerKeys } from "./customer.ts";
@@ -49,7 +49,7 @@ export function validateProposal(
   // BOM references and product provenance.
   const lines = p.sections.flatMap((s) => s.lines);
   // Cable runs alone (an Ethernet drop) are a budget: labor allowances price it (Zack's Giessel job, 2026-10-26).
-  if (lines.length === 0 && !p.labor_allowances?.length) {
+  if (lines.length === 0 && !p.labor_allowances?.length && !p.equipment_allowances?.length) {
     // Said so a rep can act on it: "no reason given" was all Zack could read in the old wording (Jinny's job, 2026-10-30).
     block(
       "empty_bom",
@@ -94,6 +94,11 @@ export function validateProposal(
     if (a.price_cents !== Math.round(a.price_per_hour_cents * a.hours)) block("arithmetic", `${a.label} does not reconcile`);
   }
 
+  // Equipment allowances: the rep's amount, costed at the policy's equipment margin.
+  for (const a of p.equipment_allowances ?? []) {
+    if (!policy || a.cost_cents !== equipmentAllowanceCost(a.price_cents, policy.policy)) block("provenance", `${a.label} is not costed at the policy's equipment margin`);
+  }
+
   // Arithmetic reconciliation.
   for (const s of p.sections) {
     const eq = sum(s.lines.map((l) => l.unit_price_cents * l.quantity));
@@ -108,7 +113,7 @@ export function validateProposal(
     c.labor_cents !== laborTotal ||
     c.services_cents !== servicesTotal ||
     c.parts_cents !== (p.parts?.price_cents ?? 0) ||
-    (c.allowances_cents ?? 0) !== sum((p.labor_allowances ?? []).map((a) => a.price_cents))
+    (c.allowances_cents ?? 0) !== sum((p.labor_allowances ?? []).map((a) => a.price_cents)) + sum((p.equipment_allowances ?? []).map((a) => a.price_cents))
   ) {
     block("arithmetic", "commercial totals do not reconcile with sections");
   }

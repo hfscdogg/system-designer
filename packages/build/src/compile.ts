@@ -49,6 +49,8 @@ const SelectionSchema = z
       .default([]),
     to_verify: z.array(z.string()).default([]),
     listed: z.array(z.string()).optional(),
+    /** Equipment priced at the rep's dollar amount ("a $1,000 placeholder for the turntable"). */
+    equipment_allowances: z.array(z.object({ label: z.string().min(1), amount_cents: z.number().int().positive() }).strict()).optional(),
   })
   .strict();
 
@@ -132,6 +134,8 @@ export interface ProposalDraft {
   requirements: Selection["requirements"];
   allowances: Selection["allowances"];
   labor_allowances: DraftLaborAllowance[];
+  /** Equipment priced at the rep's dollar amount, an allowance line in the total. */
+  equipment_allowances?: Array<{ label: string; amount_cents: number }>;
   unresolved: Selection["unresolved"];
   /** Requested products with no Livewire standard, to verify (priced in the final proposal). */
   to_verify: string[];
@@ -390,6 +394,7 @@ export function compile(raw: unknown, catalog: Map<string, AdmittedProduct>, pat
       requirements: sel.requirements,
       allowances: sel.allowances,
       labor_allowances: laborAllowances,
+      ...(sel.equipment_allowances?.length ? { equipment_allowances: sel.equipment_allowances } : {}),
       unresolved: sel.unresolved,
       to_verify: sel.to_verify,
       assumptions: fittingAssumptions(pattern, sel, catalog, used ? uniq(used.flatMap((s) => s.assumptions)) : pattern.assumptions),
