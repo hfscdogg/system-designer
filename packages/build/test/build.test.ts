@@ -2944,5 +2944,29 @@ describe("Zack's live session (2026-11-05)", () => {
     });
     expect(priced(selection)).toEqual(expect.arrayContaining(["television × 1", "tv_mount × 2", "soundbar_mount × 2", "mesh_wifi × 3"]));
   });
+
+  it("Green (staging smoke, step 3): \"only need 1 TV mount\" with no mount on the device list prices 1", async () => {
+    const { selection } = await job({
+      client: "Smoke Test",
+      functional_systems: ["TV", "networking"],
+      requested_changes: [
+        "Sell a new 77-inch Sony BRAVIA 8 OLED TV with a Sonos Arc Ultra soundbar for the family room",
+        "Move the existing TV and soundbar to the fitness room and wall-mount both there",
+        "Add 3 eero access points",
+        "The existing soundbar keeps its own mount",
+        "Only need 1 TV mount",
+      ],
+      requested_quantities: [{ item: "TV mount", quantity: 1 }],
+      existing_equipment: { status: "described" as const, retained: ["existing TV", "existing soundbar"], removed_or_replaced: [] },
+      devices: [
+        livewire("Sony BRAVIA 8 OLED 77-inch TV", "family room"),
+        livewire("Sonos Arc Ultra soundbar", "family room"),
+        livewire("eero access point", null, 3),
+        customer("existing TV", "fitness room", 1, true),
+        customer("existing soundbar", "fitness room", 1, true),
+      ],
+    });
+    expect(priced(selection)).toEqual(expect.arrayContaining(["tv_mount × 1"]));
+  });
 });
 
