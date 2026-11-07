@@ -2066,7 +2066,7 @@ describe("Henry's decisions (2026-10-27): D-Tools quote history for cabling, cam
 
   it("patterns carry the new version", async () => {
     const versions = Object.fromEntries((await loadPatterns()).map((p) => [p.pattern, p.version]));
-    expect(versions).toMatchObject({ prewire: "2026-10-30.1", tv_media: "2026-11-06.4", whole_home_audio: "2026-11-06.1" });
+    expect(versions).toMatchObject({ prewire: "2026-10-30.1", tv_media: "2026-11-07.1", whole_home_audio: "2026-11-06.1" });
   });
 
   it("Q1: a retrofit drop is two keystone jacks and 2 hours; a new-construction drop one jack and 1 hour", async () => {
@@ -3017,4 +3017,14 @@ describe("Zack's live session (2026-11-05)", () => {
       expect(v.findings.filter((f) => f.severity === "block")).toEqual([]);
     });
   });
+
+  // Henry, 2026-11-07: a porch TV on a tilt mount takes the SunBrite outdoor tilt mount, not the indoor Sanus.
+  it("a porch TV on a tilt mount gets the SunBrite outdoor tilt mount; an indoor one keeps the Sanus", async () => {
+    const tilt = async (changes: string[]) => (await job({ functional_systems: ["TV"], requested_changes: changes })).selection.lines.find((l) => l.role === "tv_mount")?.record_id;
+    expect(await tilt(["Porch: mount the customer's 65-inch outdoor TV with a tilt mount"])).toBe("7d186711-3314-4306-8d11-0f8e8958b1df");
+    expect(await tilt(["Living room: 65-inch Sony TV with a tilt mount"])).toBe("a5e143b4-5150-4b7c-a9d7-bb039287e63d");
+    // One indoor and one porch tilt mount: the line stays the standard one rather than putting both outside.
+    expect(await tilt(["Living room: 65-inch Sony TV with a tilt mount", "Porch: customer's 55-inch outdoor TV with a tilt mount"])).toBe("a5e143b4-5150-4b7c-a9d7-bb039287e63d");
+  });
 });
+

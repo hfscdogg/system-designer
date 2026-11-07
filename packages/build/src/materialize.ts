@@ -1853,10 +1853,19 @@ function allowancesFor(
 function largerTvVariant(scope: ScopeDraftV1, role: RoleSpec, pattern: PatternSpec) {
   const tv = pattern.roles.find((r) => r.role === "television");
   const inches = tv && sizeAsked(scope, tv);
-  if (!role.fits_tv_inches || !inches) return undefined;
-  const outdoor = !!tv && outdoorAsked(scope, tv);
+  // The mount's own changes can put it outside too: the customer's porch TV on a tilt mount (Henry, 2026-11-07).
+  const outdoor = (!!tv && outdoorAsked(scope, tv)) || mountOutdoor(scope, role);
+  if (!role.fits_tv_inches) return undefined;
+  if (!inches) return outdoor ? role.larger_tv_variants?.find((v) => !!v.outdoor) : undefined;
   if (!outdoor && inches <= role.fits_tv_inches[1]) return undefined;
   return role.larger_tv_variants?.find((v) => !!v.outdoor === outdoor && inches >= v.fits_tv_inches[0] && inches <= v.fits_tv_inches[1]);
+}
+
+/** Every change that names this mount puts it outside ("Porch: customer's TV, tilt mounted"). */
+function mountOutdoor(scope: ScopeDraftV1, role: RoleSpec): boolean {
+  const terms = [...(role.count_terms ?? []), ...(role.mentions ?? [])].map(fold);
+  const named = otherChanges(scope).filter((c) => terms.some((t) => hasWord(c, t)));
+  return named.length > 0 && named.every((c) => OUTDOOR.test(c));
 }
 
 /** The role's approved record for the job's market (a 70V amplifier on a commercial job), if it has one. */
