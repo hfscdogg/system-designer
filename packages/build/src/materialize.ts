@@ -1774,7 +1774,9 @@ function multiPortLocations(scope: ScopeDraftV1): number[] {
 function countedInChanges(scope: ScopeDraftV1, names: string[], longer: string[] = []): number | null {
   let most: number | null = null;
   for (const name of names.map(fold).filter((n) => n.length >= 4)) {
-    const pattern = new RegExp(`\\b(\\d+|two|three|four|five|six)\\s+${escape(name)}(s|es)?\\b`, "g");
+    // A count is a short number on its own, never part of a code: "207363 ADC-V730" is a UPC, "V-1092" a model
+    // (past-quote scorecard, 2026-11-08: product names with UPCs priced 207,363 cameras).
+    const pattern = new RegExp(`(?<![\\w.-])(\\d{1,3}|two|three|four|five|six)\\s+${escape(name)}(s|es)?\\b`, "g");
     for (const c of scope.requested_changes.map(fold)) {
       for (const m of c.matchAll(pattern)) {
         if (longer.some((l) => c.startsWith(l, m.index! + m[1]!.length + 1))) continue;

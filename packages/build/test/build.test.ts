@@ -3048,4 +3048,14 @@ describe("Zack's live session (2026-11-05)", () => {
     });
     expect(priced(selection)).toEqual(expect.arrayContaining(["television × 1", "tv_mount × 2", "soundbar_mount × 2", "mesh_wifi × 3"]));
   });
+
+  // Past-quote scorecard, 2026-11-08: a UPC or part number before a product's name was read as its count (207,363 cameras).
+  it("a long number or a code before a device's name is no count", async () => {
+    const mounts = async (change: string) =>
+      (await job({ functional_systems: ["TV"], requested_changes: [change], requested_quantities: [{ item: "Sanus tilt TV wall mount", quantity: 2 }] })).selection.lines.find((l) => l.role === "tv_mount")?.quantity;
+    expect(await mounts("Add 163615 Sanus tilt TV wall mount")).toBe(2);
+    expect(await mounts("Add V-1092 Sanus tilt TV wall mount")).toBe(2);
+    expect(await mounts("Add 3 Sanus tilt TV wall mounts")).toBe(3);
+  });
 });
+
