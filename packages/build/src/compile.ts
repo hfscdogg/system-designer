@@ -2,6 +2,7 @@ import { z } from "zod";
 import { findAuthorityFields } from "@sd/core";
 import type { AdmittedProduct } from "./catalog.ts";
 import type { Selection } from "./materialize.ts";
+import { ACCESSORY_CATEGORY } from "./history.ts";
 import { allowanceHours, laborHoursFor, type PatternSpec } from "./pattern.ts";
 
 /**
@@ -136,6 +137,8 @@ export interface ProposalDraft {
   labor_allowances: DraftLaborAllowance[];
   /** Equipment priced at the rep's dollar amount, an allowance line in the total. */
   equipment_allowances?: Array<{ label: string; amount_cents: number }>;
+  /** Devices a customer would count (no cable by the foot, racks or brackets), for the job-history check. */
+  devices?: number;
   unresolved: Selection["unresolved"];
   /** Requested products with no Livewire standard, to verify (priced in the final proposal). */
   to_verify: string[];
@@ -395,6 +398,7 @@ export function compile(raw: unknown, catalog: Map<string, AdmittedProduct>, pat
       allowances: sel.allowances,
       labor_allowances: laborAllowances,
       ...(sel.equipment_allowances?.length ? { equipment_allowances: sel.equipment_allowances } : {}),
+      devices: lines.filter((l) => !(roles.get(l.role)?.categories ?? []).some((c) => ACCESSORY_CATEGORY.test(c))).reduce((n, l) => n + l.quantity, 0),
       unresolved: sel.unresolved,
       to_verify: sel.to_verify,
       assumptions: fittingAssumptions(pattern, sel, catalog, used ? uniq(used.flatMap((s) => s.assumptions)) : pattern.assumptions),

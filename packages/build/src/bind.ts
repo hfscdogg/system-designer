@@ -4,6 +4,7 @@ import { formatUsd, sum } from "./money.ts";
 import { minimumMarginPct, type CommercialPolicy, type PolicyRecord } from "./policy.ts";
 import { modelWords } from "./named.ts";
 import { likelyRange, type LikelyRange } from "./range.ts";
+import { historyCheck, type HistoryCheck } from "./history.ts";
 
 /**
  * Binder (PRD §13.4): injects authoritative identity, approved scope and
@@ -132,6 +133,8 @@ export interface Proposal {
     minimum_gross_margin_pct: number | null;
     /** Share of the subtotal and margin per category, against the policy mix targets. */
     mix: Record<"equipment" | "labor" | "parts", { share_pct: number | null; margin_pct: number | null }>;
+    /** Where similar accepted Livewire jobs landed (10th–90th percentile), for the rep only (absent before 2026-11-08). */
+    history?: HistoryCheck | null;
   };
 }
 
@@ -331,6 +334,7 @@ export function bind(draft: ProposalDraft, ctx: BindContext): Proposal {
       lines_without_cost: costed.filter((c) => c.cost === null).map((c) => c.id),
       policy_version: ctx.policy?.version ?? null,
       minimum_gross_margin_pct: floor,
+      history: historyCheck(draft.pattern, draft.devices ?? 0, complete && tax.status === "calculated" ? subtotal + tax.cents : subtotal),
       mix: {
         equipment: categoryMix(
           [...bound.map((l) => ({ price: l.extended_cents, cost: l.unit_cost_cents === null ? null : l.unit_cost_cents * l.quantity })), ...equipmentAllowances.map((a) => ({ price: a.price_cents, cost: a.cost_cents }))],
@@ -369,6 +373,7 @@ export function budgetReadyLines(p: Proposal): string[] {
       ? `Total ${formatUsd(c.total_cents)} incl. tax (subtotal ${formatUsd(c.subtotal_cents)}, tax ${c.tax.status === "calculated" ? formatUsd(c.tax.cents) : "TBD"}).`
       : `Priced so far ${formatUsd(c.subtotal_cents)} — total withheld: ${totalWithheld(p).join("; ") || "the scope is incomplete"}.`,
     c.likely_range ? `Likely range: ${formatUsd(c.likely_range.low_cents)} – ${formatUsd(c.likely_range.high_cents)} (middle half of ${c.likely_range.jobs} similar Livewire jobs).` : null,
+    historyLine(p.internal.history),
     items.length ? ["Items:", ...items.slice(0, READY_ITEMS), ...(items.length > READY_ITEMS ? [`+${items.length - READY_ITEMS} more`] : [])].join("\n") : null,
     p.labor_allowances?.length
       ? `Allowances (verify on site): ${p.labor_allowances.map((x) => `${x.label}${x.quantity ? ` × ${x.quantity}` : ""} ${x.hours} h, ${formatUsd(x.price_cents)}`).join("; ")}.`
@@ -473,4 +478,11 @@ function categoryMix(items: Array<{ price: number; cost: number | null }>, subto
 /** An equipment allowance's cost: its price at the policy's equipment margin target. */
 export function equipmentAllowanceCost(priceCents: number, policy: NonNullable<BindContext["policy"]>["policy"]): number {
   return Math.round(priceCents * (1 - policy.mix_targets.equipment.margin_pct / 100));
+}
+
+/** A flag for the rep when the budget sits outside what 8 in 10 similar accepted jobs came to; nothing when it's inside. */
+function historyLine(h: HistoryCheck | null | undefined): string | null {
+  if (!h || h.position === "within") return null;
+  const devices = h.devices[1] === null ? `${h.devices[0]}+ devices` : `${h.devices[0]}–${h.devices[1]} devices`;
+  return `Check this total: it's ${h.position === "above" ? "above" : "below"} 9 in 10 similar Livewire jobs (${devices}, ${h.jobs} accepted jobs: ${formatUsd(h.low_cents)} – ${formatUsd(h.high_cents)}). Make sure the scope and counts are right.`;
 }
