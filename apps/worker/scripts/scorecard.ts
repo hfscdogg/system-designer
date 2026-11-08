@@ -283,6 +283,7 @@ for (const q of quotes) {
 }
 writeFileSync(OUT, JSON.stringify(rows, null, 2));
 
+
 // ---- summary ----
 const pct = (n: number, d: number) => (d ? `${Math.round((n / d) * 100)}%` : "-");
 const money = (rs: typeof rows) => rs.reduce((n, r) => n + r.price, 0);
@@ -330,4 +331,35 @@ if (RANGE_OUT) {
   const basis = `middle half (25th-75th percentile) of ${pricedRows.length} accepted D-Tools quotes, priced from their own device lists (${MODE})`;
   writeFileSync(RANGE_OUT, JSON.stringify({ schema: "budget_range_v1", basis, bands }, null, 2) + "\n");
   console.log(`\nwrote ${Object.keys(bands).length} range bands to ${RANGE_OUT}`);
+}
+
+// ---- job history bands (packages/build/src/job-history.json) ----
+// What customers accepted for jobs of each pattern and device count, independent of our pricing; aggregates only.
+const HISTORY_OUT = process.env.SD_SCORECARD_HISTORY_OUT;
+if (HISTORY_OUT) {
+  const devicesOf = (q: Quote) =>
+    q.items
+      .filter((i) => billable(i) && i.type === "Product")
+      .filter((i) => { const b = bucketOf(categoryOf(i)); return b !== "accessory" && !b.startsWith("uncovered"); })
+      .reduce((n, i) => n + Math.max(0, Math.round(i.quantity)), 0);
+  const byNumber = new Map(quotes.map((q) => [q.number, q]));
+  const jobs = rows
+    .filter((r) => r.kind === "coverable" && r.price > 0)
+    .map((r) => ({ pattern: selectPattern(r.systems, patterns)?.pattern, devices: devicesOf(byNumber.get(r.quote)!), price: r.price }))
+    .filter((j): j is { pattern: string; devices: number; price: number } => !!j.pattern && j.devices > 0);
+  const quantile = (xs: number[], p: number) => [...xs].sort((x, y) => x - y)[Math.min(xs.length - 1, Math.floor(xs.length * p))]!;
+  const BUCKETS_N: Array<[number, number | null]> = [[1, 2], [3, 5], [6, 10], [11, 20], [21, 40], [41, null]];
+  const bandsFor = (js: typeof jobs) =>
+    BUCKETS_N.map(([min, max]) => {
+      const prices = js.filter((j) => j.devices >= min && (max === null || j.devices <= max)).map((j) => j.price);
+      return prices.length >= 8 ? { min, max, p10: Math.round(quantile(prices, 0.1)), p90: Math.round(quantile(prices, 0.9)), n: prices.length } : null;
+    }).filter((b): b is NonNullable<typeof b> => !!b);
+  const bands: Record<string, ReturnType<typeof bandsFor>> = { "*": bandsFor(jobs) };
+  for (const [k, js] of group(jobs, (j) => j.pattern)) {
+    const b = bandsFor(js);
+    if (b.length) bands[k] = b;
+  }
+  const basis = `10th-90th percentile of what customers accepted, by pattern and device count, from ${jobs.length} accepted D-Tools quotes`;
+  writeFileSync(HISTORY_OUT, JSON.stringify({ schema: "job_history_v1", basis, bands }, null, 2) + "\n");
+  console.log(`\nwrote job history bands for ${Object.keys(bands).length} patterns to ${HISTORY_OUT}`);
 }
