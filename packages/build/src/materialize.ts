@@ -1111,6 +1111,23 @@ export function materialize(given: ScopeDraftV1, pattern: PatternSpec, namedProd
       blockedRoles.add(role.role);
       continue;
     }
+    if (role.quantity.kind === "per_foot" && !product) {
+      // Sold by length: one unit per `feet_each` of the length the request gives ("10' of linear lighting in the
+      // kitchen" is one 16.4 ft roll), or the default length to verify when it gives none (Henry, 2026-11-09).
+      const q = role.quantity;
+      const asking = allowanceTexts(original).filter((t) => q.feet_mentions.some((w) => hasWord(t, fold(w))));
+      const feet = feetAsked(asking, q.feet_mentions)?.feet;
+      lines.push({
+        role: role.role,
+        record_id: role.product_id!,
+        quantity: Math.max(1, Math.ceil(Math.round(((feet ?? q.default_feet) / q.feet_each) * 1000) / 1000)),
+        quantity_basis: feet ? "fixed" : "minimum_to_verify",
+        verify: feet ? null : q.verify,
+        location: scope.room_types.length === 1 ? scope.room_types[0]! : role.location,
+        precedent: role.precedent,
+      });
+      continue;
+    }
     // A count the requester stated is used as written (speakers as pairs, for a role sold in pairs); otherwise the pattern's quantity (a minimum is verified on site).
     const counted = product ? (statedForProduct(original, product) ?? statedQuantity(scope, role, pattern.roles)) : statedItems(scope, role, pattern.roles);
     // A change that counts the device in words ("Two Sonos Ports for the upstairs and downstairs TV systems") outranks
@@ -1145,7 +1162,8 @@ export function materialize(given: ScopeDraftV1, pattern: PatternSpec, namedProd
       continue;
     }
     // "The amplifier" is the rep's own count of one, like a stated count: nothing left to verify.
-    const asOne = minimum && role.quantity.qty > 1 && namedAsOne(scope, role);
+    const baseQty = "qty" in role.quantity ? role.quantity.qty : 1;
+    const asOne = minimum && baseQty > 1 && namedAsOne(scope, role);
     // A fished drop is terminated at both ends: two jacks per drop, each with its install time (2 h a retrofit drop).
     const perUnit = retro && role.retrofit_units && !product ? role.retrofit_units.units : 1;
     const baseVerify = asOne ? null : moved && verify ? `${verify}; includes ${moved} for moved existing equipment (confirm wall and power in the new room)` : verify;
@@ -1159,7 +1177,7 @@ export function materialize(given: ScopeDraftV1, pattern: PatternSpec, namedProd
         largerTvVariant(original, role, pattern)?.product_id ??
         marketVariant(scope, role)?.product_id ??
         role.product_id!,
-      quantity: ((stated ?? (asOne ? 1 : role.quantity.qty)) + moved) * perUnit,
+      quantity: ((stated ?? (asOne ? 1 : baseQty)) + moved) * perUnit,
       quantity_basis: minimum && !asOne ? "minimum_to_verify" : "fixed",
       verify: perUnit > 1 ? [baseVerify, role.retrofit_units!.verify].filter(Boolean).join("; ") : baseVerify,
       // A single-room scope places devices in that room; otherwise use the pattern's location.
@@ -1489,6 +1507,8 @@ export function materialize(given: ScopeDraftV1, pattern: PatternSpec, namedProd
   for (const category of scope.service_categories) {
     // Services the pattern's labor estimate includes are never priced separately, even when no labor is needed.
     if ((labor ?? pattern.labor)?.covers.includes(category)) continue;
+    // A pattern with no labor of its own prices its work as an allowance (linear lighting's electrician hours), which covers these.
+    if (!pattern.labor) continue;
     const spec = pattern.services.find((s) => s.category === category);
     if (spec?.product_id && (!admitted || admitted.has(spec.product_id))) services.push({ category, record_id: spec.product_id, quantity: 1 });
     else if (spec?.product_id) allowances.push({ label: spec.label, reason: "its D-Tools record can't be read; shown as a TBD allowance outside committed totals" });

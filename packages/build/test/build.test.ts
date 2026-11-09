@@ -81,14 +81,15 @@ describe("patterns", () => {
   it("ships Livewire's standard D-Tools records for every role, and no invented service records", async () => {
     const patterns = await loadPatterns();
     expect(patterns.map((p) => p.pattern)).toEqual([
-      "access_control", "home_automation", "home_network", "lighting_control", "motorized_shades", "prewire",
+      "access_control", "home_automation", "home_network", "lighting_control", "linear_lighting", "motorized_shades", "prewire",
       "security_modernization", "smart_locks", "surveillance", "tv_media", "video_doorbell", "whole_home_audio",
     ]);
     for (const p of patterns) {
       // A role without a standard (the TV cart) is only ever listed to verify, never left unresolved.
       expect(p.roles.every((r) => r.product_id !== null || r.unpriced === "verify"), p.pattern).toBe(true);
       expect(p.services.every((s) => s.product_id === null), p.pattern).toBe(true);
-      expect(p.labor?.labor_type, p.pattern).toBe("07LABOR1MAN");
+      // Linear lighting has no labor of its own: its electrician labor is an allowance (Henry, 2026-11-09).
+      if (p.pattern !== "linear_lighting") expect(p.labor?.labor_type, p.pattern).toBe("07LABOR1MAN");
       // Each priced role, its size, market, brand, larger-TV, port and word variants (those that aren't the role's own standard) and the parts record.
       const words = (r: (typeof p.roles)[number]) => (r.word_variants ?? []).filter((v) => v.product_id && v.product_id !== r.product_id).length;
       const records =
@@ -97,7 +98,7 @@ describe("patterns", () => {
         1;
       expect(patternRecordIds(p), p.pattern).toHaveLength(records);
       // The allowance templates ride along with every pattern.
-      expect(p.allowances?.map((a) => a.key), p.pattern).toEqual(["outdoor_outlet", "electrical_outlet", "conduit", "trenching", "wiring_run", "camera_troubleshooting", "remote_programming"]);
+      expect(p.allowances?.map((a) => a.key), p.pattern).toEqual(["outdoor_outlet", "electrical_outlet", "conduit", "trenching", "wiring_run", "camera_troubleshooting", "remote_programming", "linear_lighting"]);
     }
     const network = patterns.find((p) => p.pattern === "home_network")!;
     expect(network.applies_when_any).toEqual(["networking"]);
@@ -3059,3 +3060,82 @@ describe("Zack's live session (2026-11-05)", () => {
   });
 });
 
+
+// Henry's demo (2026-11-09): "10' linear lighting in kitchen" had no product; Henry: add linear lighting under lighting,
+// at the electrician rate, 5 h for a run up to a 16 ft roll and 0.1 h a foot past it.
+describe("linear lighting (Henry, 2026-11-09)", () => {
+  const none = { existing_equipment: { status: "none" as const, retained: [], removed_or_replaced: [] } };
+  const ELECTRICIAN = { labor_type: "LW Electrical  Labor", price_per_hour: 205, cost_per_hour: 102.5 };
+  const policy = { ...POLICY, policy: { ...POLICY.policy, labor_rates: [...POLICY.policy.labor_rates, ELECTRICIAN] } };
+  const quantities = (sel: ReturnType<typeof materialize>) => Object.fromEntries(sel.lines.map((l) => [l.role, l.quantity]));
+  async function job(o: object) {
+    const patterns = await loadPatterns();
+    const { scope, scopeHash, receiptId } = approvedScope({ ...none, existing_detectors: "not_provided", project_type: null, ...o });
+    const pattern = selectPattern(scope.functional_systems, patterns)!;
+    return { scope, scopeHash, receiptId, pattern, selection: materialize(scope, pattern) };
+  }
+  async function built(o: object, withPolicy = policy) {
+    const { scope, scopeHash, receiptId, pattern, selection } = await job(o);
+    const catalog = Object.fromEntries(
+      patternRecordIds(pattern).map((id, i) => [
+        id,
+        id === pattern.parts!.product_id ? product(id, "Livewire", "PARTS", 1, 0.01, { laborItems: [] }) : product(id, "TestCo", `DEV-${i}`, 300, 150, { laborItems: [] }),
+      ]),
+    );
+    const { admitted } = await admitAll(pattern, catalog);
+    const result = compile(selection, admitted, pattern);
+    if (!result.ok) throw new Error(result.errors.join("\n"));
+    const proposal = bind(result.draft, { runId: "run_test", receiptId, approvalId: "ap_1", scopeHash, scope, policy: withPolicy, releaseId: "rel" });
+    return { scope, selection, draft: result.draft, proposal, validation: validateProposal(proposal, scope, scopeHash, admitted, withPolicy) };
+  }
+
+  it("routes linear, tape and under-cabinet lighting to linear lighting, not Lutron lighting control", () => {
+    expect(normalizeFunctionalSystems(["10' linear lighting in kitchen"])).toEqual(["linear_lighting"]);
+    expect(normalizeFunctionalSystems(["under-cabinet lighting"])).toEqual(["linear_lighting"]);
+    expect(normalizeFunctionalSystems(["LED tape lights in the cove"])).toEqual(["linear_lighting"]);
+    expect(normalizeFunctionalSystems(["lighting control"])).toEqual(["lighting_control"]);
+    expect(normalizeFunctionalSystems(["kitchen lighting"])).toEqual(["lighting_control"]);
+  });
+
+  it("prices 10 ft as one roll, two extrusions, a driver, connectors and a dimmer, with 5 h of electrician labor", async () => {
+    const { selection } = await job({ functional_systems: ["linear lighting"], requested_changes: ["Add 10' of linear lighting in the kitchen"] });
+    expect(quantities(selection)).toEqual({ linear_tape_light: 1, linear_extrusion: 2, linear_driver: 1, linear_connectors: 1, linear_dimmer: 1 });
+    expect(selection.lines.every((l) => l.quantity_basis === "fixed")).toBe(true);
+    expect(selection.labor_allowances).toEqual([expect.objectContaining({ key: "linear_lighting", hours: 5, feet: 10, labor_type: "LW Electrical  Labor" })]);
+  });
+
+  it("sizes 40 ft by the roll and adds 0.1 h a foot past 16 ft", async () => {
+    const { selection } = await job({ functional_systems: ["linear lighting"], requested_changes: ["Install 40 ft of LED tape light under the kitchen cabinets"] });
+    expect(quantities(selection)).toEqual({ linear_tape_light: 3, linear_extrusion: 7, linear_driver: 3, linear_connectors: 1, linear_dimmer: 1 });
+    expect(selection.labor_allowances).toEqual([expect.objectContaining({ key: "linear_lighting", hours: 7.5, feet: 40 })]);
+  });
+
+  it("without a length, prices one 16 ft roll to verify", async () => {
+    const { selection } = await job({ functional_systems: ["linear lighting"], requested_changes: ["Add linear lighting in the kitchen"] });
+    expect(quantities(selection)).toEqual({ linear_tape_light: 1, linear_extrusion: 3, linear_driver: 1, linear_connectors: 1, linear_dimmer: 1 });
+    expect(selection.lines.find((l) => l.role === "linear_tape_light")).toMatchObject({ quantity_basis: "minimum_to_verify", verify: "length of linear lighting, in feet" });
+    expect(selection.labor_allowances).toEqual([expect.objectContaining({ key: "linear_lighting", hours: 5 })]);
+  });
+
+  it("joins a Cat6 job: each keeps its own labor, the electrician hours at the electrician rate", async () => {
+    const o = {
+      client: "Jeff German",
+      functional_systems: ["structured wiring", "linear lighting"],
+      requested_changes: ["Retrofit Cat6 cabling in an existing home for a WiFi access point", "Add 10' of linear lighting in the kitchen"],
+    };
+    const { proposal, validation, draft } = await built(o);
+    expect(draft.labor?.labor_type).toBe("07LABOR1MAN");
+    expect(proposal.labor_allowances).toEqual([expect.objectContaining({ key: "linear_lighting", hours: 5, price_per_hour_cents: 20500, price_cents: 102500 })]);
+    expect(validation.findings.filter((f) => f.severity === "block")).toEqual([]);
+    // Before the policy carries the electrician rate, the hours are a TBD allowance rather than mispriced.
+    const old = await built(o, POLICY);
+    expect(old.proposal.labor_allowances ?? []).toEqual([]);
+    expect(old.proposal.allowances).toEqual(expect.arrayContaining([expect.objectContaining({ label: "Linear lighting installation (electrician) (5 hours)" })]));
+  });
+
+  it("alone, it builds and validates with no labor of its own", async () => {
+    const { proposal, validation } = await built({ functional_systems: ["linear lighting"], requested_changes: ["Add 10' of linear lighting in the kitchen"] });
+    expect(proposal.labor_allowances).toEqual([expect.objectContaining({ key: "linear_lighting", price_cents: 102500 })]);
+    expect(validation.findings.filter((f) => f.severity === "block")).toEqual([]);
+  });
+});

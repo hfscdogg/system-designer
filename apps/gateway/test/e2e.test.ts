@@ -329,7 +329,7 @@ describe("Google Chat → scope approval vertical slice", () => {
     const t = await setup([completeExtraction()], [{ ...noPatch, unmapped: true }]);
     await t.send(chatMessage("Smith security upgrade"));
     await t.send(chatMessage("what's for lunch"));
-    expect(t.texts().at(-1)).toContain("couldn't map");
+    expect(t.texts().at(-1)).toContain("I couldn't place \"what's for lunch\" in the scope");
     expect(t.receipts()).toHaveLength(1);
   });
 

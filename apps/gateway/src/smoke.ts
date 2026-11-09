@@ -228,6 +228,14 @@ export const SMOKE_SCENARIOS: SmokeScenario[] = [
       },
     ],
   },
+  {
+    // Henry's demo, 2026-11-09: "10' linear light" in a revision became a Cat6 change, and linear lighting had no product.
+    name: "Jeff German (Cat6 drop, then linear lighting)",
+    steps: [
+      { say: `Jeff German, ${ADDRESS}. Residential. Retrofit one Cat6 run in an existing home for a WiFi access point.`, total: true },
+      { say: "Revise: add 10' of linear lighting in the kitchen", expect: { linear_tape_light: 1, linear_extrusion: 2, linear_driver: 1, linear_dimmer: 1 } },
+    ],
+  },
 ];
 
 const CLARIFY_DEFAULTS = "Use your recommended defaults for anything I didn't say.";
