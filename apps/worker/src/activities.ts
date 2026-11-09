@@ -12,6 +12,7 @@ import {
   validateClarificationPatch,
   validateExtraction,
   type CurrentReceipt,
+  type ScopeExtraction,
 } from "@sd/core";
 import type { ChannelAdapter, View } from "@sd/channels";
 import type { ClarificationInterpreter, ScopeExtractor } from "@sd/llm";
@@ -122,9 +123,7 @@ export function createActivities(deps: ActivityDeps): RunActivities {
         ],
       };
     }
-    const { raw, model } = await deps.interpreter.interpret({ current: base, questions: [], answer: change });
-    await recordModelReply(runId, "revision", { answer: change }, raw, model);
-    const patch = validateClarificationPatch(raw);
+    const { patch, model } = await interpretAnswer(runId, "revision", base, [], change);
     if (!patch.ok || patch.value.unmapped) {
       await store.appendEvent(runId, "revision_unmapped", "system", { model, parentRunId, errors: patch.ok ? [] : patch.errors });
       return { ok: false, reason: notPlaced(change, true) };
@@ -200,6 +199,22 @@ export function createActivities(deps: ActivityDeps): RunActivities {
       }
     }
     return last;
+  }
+
+  /**
+   * Map a rep's answer or revision onto the scope, with the same retries as extraction: one model reply that
+   * fails validation or comes back unmapped shouldn't block a change the model maps on another try
+   * (staging smoke, 2026-11-09: "add 10' of linear lighting in the kitchen" placed in two runs, not in the third).
+   */
+  async function interpretAnswer(runId: string, kind: "revision" | "clarification", current: ScopeExtraction, questions: string[], answer: string) {
+    let last: { patch: ReturnType<typeof validateClarificationPatch>; model: string } | undefined;
+    for (let i = 0; i < Math.max(1, attempts); i++) {
+      const { raw, model } = await deps.interpreter.interpret({ current, questions, answer });
+      await recordModelReply(runId, kind, kind === "revision" ? { answer } : { questions, answer }, raw, model);
+      last = { patch: validateClarificationPatch(raw), model };
+      if (last.patch.ok && !last.patch.value.unmapped) break;
+    }
+    return last!;
   }
 
   /** These intakes, in order, when each is the requester's own message; anyone else's are left out. */
@@ -303,9 +318,7 @@ export function createActivities(deps: ActivityDeps): RunActivities {
       }
       // Every open question, so one typed or dictated reply can answer several.
       const questions = computeBlockers(base).map((b) => b.question);
-      const { raw, model } = await deps.interpreter.interpret({ current: base, questions, answer: answer.text });
-      await recordModelReply(runId, "clarification", { questions, answer: answer.text }, raw, model);
-      const patch = validateClarificationPatch(raw);
+      const { patch, model } = await interpretAnswer(runId, "clarification", base, questions, answer.text);
       if (!patch.ok) {
         await store.appendEvent(runId, "clarification_rejected", "system", { model, intakeId, errors: patch.errors });
         return { ok: false, reason: notPlaced(answer.text) };
