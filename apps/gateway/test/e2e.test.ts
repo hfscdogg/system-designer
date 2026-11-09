@@ -333,6 +333,16 @@ describe("Google Chat → scope approval vertical slice", () => {
     expect(t.receipts()).toHaveLength(1);
   });
 
+  it("asks the model again when its first reading of an answer comes back unmapped", async () => {
+    // Staging smoke, 2026-11-09: a revision the model placed in two runs came back unmapped in the third.
+    const partial = completeExtraction({ client: null });
+    const t = await setup([partial], [{ ...noPatch, unmapped: true }, { ...noPatch, client: "Smith Family" }]);
+    await t.send(chatMessage("Old alarm needs modernizing…"));
+    await t.send(chatMessage("it's for the Smith Family"));
+    expect(t.texts().join("\n")).not.toContain("I couldn't place");
+    expect(t.receipts().at(-1)!.lines).toContain("Client: Smith Family");
+  });
+
   it("answers help and status without starting a run", async () => {
     const t = await setup();
     expect((await t.send(chatMessage("help"))).body).toMatchObject({ text: expect.stringContaining("scope receipt") });
