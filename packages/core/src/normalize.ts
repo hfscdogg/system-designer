@@ -29,7 +29,10 @@ const FUNCTIONAL_SYSTEMS: Array<[canonical: string, patterns: RegExp[]]> = [
   ["networking", [/\b(wi-?fi|network(ing)?(?! (drops?|outlets?|wiring|cabling|home runs?))|access points?|router|wireless (network|internet|coverage))\b/]],
   // Bare "automation" is too broad (pool automation): only whole-home control platforms.
   ["home_automation", [/\b(control4|c4|halo( remotes?)?|(home|house) automation|smart home|whole[- ](home|house) control|universal remote|savant|crestron)\b/]],
-  ["lighting_control", [/\b(lighting control|lutron|dimmers?|keypads? for lighting|lighting)\b/]],
+  // Linear (tape) lighting is a fixture kit with its electrician labor, not a Lutron control system (Henry, 2026-11-09:
+  // "10' linear lighting in the kitchen" priced a RadioRA processor and six dimmers).
+  ["linear_lighting", [/\b(linear (lighting|lights?)|(led )?tape (lighting|lights?)|led tape|strip (lighting|lights?)|light ?strips?|under[- ]?cabinet (lighting|lights?)|cove (lighting|lights?)|toe[- ]?kick (lighting|lights?))\b/]],
+  ["lighting_control", [/\b(lighting control|lutron|dimmers?|keypads? for lighting|(?<!(linear|tape|strip|cabinet|cove|kick) )lighting)\b/]],
   ["motorized_shades", [/\b(shades?|blinds|motorized (window )?treatments?)\b/]],
   // Residential smart locks (a Yale or Schlage deadbolt) are their own system; card-access doors are access control.
   ["smart_locks", [/\b(smart (door )?locks?|door locks?|deadbolts?|keypad locks?|keyless (entry|locks?)|yale( assure)?|schlage|kwikset)\b/]],

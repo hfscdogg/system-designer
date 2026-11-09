@@ -6,7 +6,10 @@
     "labor": { "share_pct": 30, "margin_pct": 50 },
     "parts": { "share_pct": 10, "margin_pct": 60 }
   },
-  "labor_rates": [{ "labor_type": "07LABOR1MAN", "price_per_hour": 179, "cost_per_hour": 89.5 }],
+  "labor_rates": [
+    { "labor_type": "07LABOR1MAN", "price_per_hour": 179, "cost_per_hour": 89.5 },
+    { "labor_type": "LW Electrical  Labor", "price_per_hour": 205, "cost_per_hour": 102.5 }
+  ],
   "design_delivery": { "base_pct": 10, "max_pct": 15 },
   "retainer": { "qbo_item_id": "3649" },
   "tax": { "mode": "rate", "rate_pct": 6, "applies_to": "taxable_equipment" }

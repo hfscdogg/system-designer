@@ -45,6 +45,21 @@ export interface ActivityDeps {
 
 export { IntegrityError };
 
+/**
+ * What the rep said that couldn't be placed, named back with how to say it so it can be (Henry's demo, 2026-11-09:
+ * "I couldn't safely apply that answer" and "I couldn't map that to the scope" told the rep nothing to try).
+ */
+export function notPlaced(text: string, revision = false): string {
+  const said = text.replace(/\s+/g, " ").trim();
+  const quoted = said.length > 120 ? `${said.slice(0, 117)}...` : said;
+  return [
+    `I couldn't place "${quoted}" in the ${revision ? "earlier budget" : "scope"}.`,
+    `Say it as a change, for example "add 10 ft of linear lighting in the kitchen", "make it 1 Cat6 drop", "remove the soundbar" or "hours to 7".`,
+    `Give anything without a standard product a dollar amount ("add a $600 allowance for the turntable").`,
+    revision ? `Or tap "New request" for a different job.` : `Or tap "Start over" if the project changed.`,
+  ].join(" ");
+}
+
 export function createActivities(deps: ActivityDeps): RunActivities {
   const { store } = deps;
   const attempts = deps.extractionAttempts ?? 2;
@@ -112,11 +127,7 @@ export function createActivities(deps: ActivityDeps): RunActivities {
     const patch = validateClarificationPatch(raw);
     if (!patch.ok || patch.value.unmapped) {
       await store.appendEvent(runId, "revision_unmapped", "system", { model, parentRunId, errors: patch.ok ? [] : patch.errors });
-      return {
-        ok: false,
-        reason:
-          "I couldn't apply that change to the earlier budget. A revision can change devices and quantities, remove a device or system, set the labor hours (\"hours to 7\"), or change the client, address, budget or date. Tap \"Revise this budget\" and say it that way, or tap \"New request\" for a different job",
-      };
+      return { ok: false, reason: notPlaced(change, true) };
     }
     const revised = applyClarification(base, patch.value);
     // Open questions about something the revision removed no longer apply.
@@ -297,14 +308,11 @@ export function createActivities(deps: ActivityDeps): RunActivities {
       const patch = validateClarificationPatch(raw);
       if (!patch.ok) {
         await store.appendEvent(runId, "clarification_rejected", "system", { model, intakeId, errors: patch.errors });
-        return { ok: false, reason: "I couldn't safely apply that answer. Could you rephrase it?" };
+        return { ok: false, reason: notPlaced(answer.text) };
       }
       if (patch.value.unmapped) {
         await store.appendEvent(runId, "clarification_unmapped", "system", { model, intakeId });
-        return {
-          ok: false,
-          reason: "I couldn't map that to the scope. Answer the open questions, or start a new request if the project changed.",
-        };
+        return { ok: false, reason: notPlaced(answer.text) };
       }
       const outcome = await validateModelScope(applyClarification(base, patch.value), model, runId, "clarification_applied");
       return outcome.ok ? { ...outcome, notes: latest.body.notes } : outcome;

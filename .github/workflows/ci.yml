@@ -32,7 +32,7 @@ env:
 
 jobs:
   test:
-    runs-on: ubuntu-latest
+    runs-on: ubuntu-24.04
     steps:
       - uses: actions/checkout@v4
       - uses: pnpm/action-setup@v4
@@ -49,7 +49,7 @@ jobs:
       - run: pnpm test:temporal
 
   infra:
-    runs-on: ubuntu-latest
+    runs-on: ubuntu-24.04
     steps:
       - uses: actions/checkout@v4
       - uses: hashicorp/setup-terraform@v3
@@ -64,7 +64,7 @@ jobs:
           ./actionlint -color
 
   image:
-    runs-on: ubuntu-latest
+    runs-on: ubuntu-24.04
     steps:
       - uses: actions/checkout@v4
       - run: docker build -t system-designer:ci .
@@ -75,7 +75,7 @@ jobs:
     # Deploys only from main, after every check above passes. Skips cleanly until the repository variables exist.
     needs: [test, infra, image]
     if: vars.GCP_PROJECT_ID != '' && github.event_name != 'pull_request' && github.ref == 'refs/heads/main'
-    runs-on: ubuntu-latest
+    runs-on: ubuntu-24.04
     permissions:
       contents: read
       id-token: write
@@ -108,7 +108,7 @@ jobs:
 
   staging:
     needs: build
-    runs-on: ubuntu-latest
+    runs-on: ubuntu-24.04
     environment: staging
     concurrency:
       group: deploy-staging
@@ -143,7 +143,7 @@ jobs:
 
   production:
     needs: [build, staging]
-    runs-on: ubuntu-latest
+    runs-on: ubuntu-24.04
     environment: production
     concurrency:
       group: deploy-production

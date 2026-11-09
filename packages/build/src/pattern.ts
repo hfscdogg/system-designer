@@ -177,6 +177,20 @@ export const RoleSpecSchema = z
     quantity: z.union([
       z.object({ kind: z.literal("fixed"), qty: z.number().int().positive() }).strict(),
       z.object({ kind: z.literal("minimum"), qty: z.number().int().positive(), verify: z.string().min(1) }).strict(),
+      /**
+       * Sold by length (linear lighting by the 16.4 ft roll): one unit per `feet_each` of the length the request gives
+       * for `feet_mentions` ("10' of linear lighting in the kitchen"), or `default_feet` to verify when it gives none
+       * (Henry, 2026-11-09).
+       */
+      z
+        .object({
+          kind: z.literal("per_foot"),
+          feet_each: z.number().positive(),
+          feet_mentions: z.array(z.string().min(1)).min(1),
+          default_feet: z.number().positive(),
+          verify: z.string().min(1),
+        })
+        .strict(),
     ]),
     location: z.string().min(1),
     /** What this role contributes, shown as capability evidence. */
@@ -271,6 +285,11 @@ export const AllowanceSpecSchema = z
      */
     hours_per_foot: z.number().positive().optional(),
     /**
+     * With a length, `hours` covers this many feet and each foot past it adds `hours_per_foot`, instead of the larger
+     * of the two (linear lighting: 5 h for a 16 ft roll, 0.1 h a foot past it; Henry, 2026-11-09).
+     */
+    feet_in_hours: z.number().positive().optional(),
+    /**
      * Laid in a trench the request also asks for (conduit in an open trench): the trench's length times the
      * runs named, at this lower per-foot rate, at least `hours` (Henry, 2026-10-15).
      */
@@ -286,7 +305,8 @@ export const AllowanceFileSchema = z
     schema: z.literal("allowance_templates_v1"),
     version: z.string().min(1),
     labor_type: z.string().min(1),
-    allowances: z.array(AllowanceSpecSchema.omit({ labor_type: true })).min(1),
+    /** Each allowance is priced at the file's labor type unless it names its own (linear lighting at the electrician rate). */
+    allowances: z.array(AllowanceSpecSchema.extend({ labor_type: z.string().min(1).optional() })).min(1),
   })
   .strict();
 
@@ -379,11 +399,16 @@ export function combinePatterns(ps: PatternSpec[]): PatternSpec | null {
   if (new Set(roles.map((r) => r.role)).size !== roles.length) return null;
   const labors = ps.map((p) => p.labor);
   const parts = ps.map((p) => p.parts);
-  if (labors.some((l) => l === undefined) && labors.some((l) => l !== undefined)) return null;
-  if (new Set(labors.map((l) => l?.labor_type)).size > 1) return null;
+  // A pattern with no labor of its own (linear lighting, whose electrician labor is an allowance) joins one that has
+  // labor only when each of its roles sets its own hours, so none takes the other pattern's rate (Henry, 2026-11-09).
+  if (labors.some((l) => l === undefined) && labors.some((l) => l !== undefined)) {
+    if (ps.some((p) => !p.labor && p.roles.some((r) => r.hours_each === undefined))) return null;
+  }
+  const withLabor = labors.filter((l): l is NonNullable<typeof l> => l !== undefined);
+  if (new Set(withLabor.map((l) => l.labor_type)).size > 1) return null;
   if (new Set(parts.map((x) => x?.product_id)).size > 1) return null;
   const uniq = (xs: string[]) => [...new Set(xs)];
-  const first = labors[0];
+  const first = withLabor[0];
   const services = [...new Map(ps.flatMap((p) => p.services).map((s) => [s.category, s])).values()];
   return PatternSpecSchema.parse({
     schema: "architecture_pattern_v1",
@@ -398,11 +423,11 @@ export function combinePatterns(ps: PatternSpec[]): PatternSpec | null {
       ? {
           labor: {
             ...first,
-            base_hours: labors.reduce((sum, l) => sum + l!.base_hours, 0),
+            base_hours: withLabor.reduce((sum, l) => sum + l.base_hours, 0),
             // One visit: the largest add-on setup, not the sum.
-            add_on_base_hours: Math.max(0, ...labors.map((l) => l!.add_on_base_hours ?? 0)),
-            covers: uniq(labors.flatMap((l) => l!.covers)),
-            basis: labors.map((l, i) => `${ps[i]!.title}: ${l!.basis}`).join(" | "),
+            add_on_base_hours: Math.max(0, ...withLabor.map((l) => l.add_on_base_hours ?? 0)),
+            covers: uniq(withLabor.flatMap((l) => l.covers)),
+            basis: ps.flatMap((p) => (p.labor ? [`${p.title}: ${p.labor.basis}`] : [])).join(" | "),
           },
         }
       : {}),
@@ -439,7 +464,7 @@ export async function loadPatterns(dir = new URL("../patterns/", import.meta.url
   const allowances = await readFile(new URL(ALLOWANCES_FILE, dir), "utf8").then(
     (text) => {
       const file = AllowanceFileSchema.parse(JSON.parse(text));
-      return file.allowances.map((a) => ({ ...a, labor_type: file.labor_type }));
+      return file.allowances.map((a) => ({ ...a, labor_type: a.labor_type ?? file.labor_type }));
     },
     () => [],
   );
@@ -452,8 +477,11 @@ export async function loadPatterns(dir = new URL("../patterns/", import.meta.url
 }
 
 /** An allowance's hours: per unit for a counted one, or by length at its per-foot rate when it has one and a length is given. */
-export function allowanceHours(spec: Pick<AllowanceSpec, "hours" | "hours_per_foot" | "in_trench">, units = 1, feet?: number, inTrench = false): number {
+export function allowanceHours(spec: Pick<AllowanceSpec, "hours" | "hours_per_foot" | "in_trench" | "feet_in_hours">, units = 1, feet?: number, inTrench = false): number {
   const rate = inTrench ? spec.in_trench?.hours_per_foot : spec.hours_per_foot;
+  if (feet && rate && spec.feet_in_hours !== undefined && !inTrench) {
+    return Math.ceil(Math.round((spec.hours + Math.max(0, feet - spec.feet_in_hours) * rate) * 1000) / 1000 * 2) / 2;
+  }
   if (feet && rate) return Math.max(spec.hours, Math.ceil(Math.round(feet * rate * 1000) / 1000 * 2) / 2);
   return spec.hours * units;
 }

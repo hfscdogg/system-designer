@@ -1,0 +1,94 @@
+{
+  "schema": "architecture_pattern_v1",
+  "pattern": "linear_lighting",
+  "version": "2026-11-09.1",
+  "title": "Linear lighting",
+  "applies_when_any": ["linear_lighting"],
+  "roles": [
+    {
+      "role": "linear_tape_light",
+      "categories": ["Electrical Fixtures > Accessories", "Electrical Fixtures > LED"],
+      "label": "Proluxe warm-dim tape light (16.4 ft roll)",
+      "model": "PLX-STLWD-3018-16",
+      "critical": true,
+      "systems": ["linear_lighting"],
+      "product_id": "da0a1e42-30e3-4d7b-831e-f15255b7f2c6",
+      "precedent": "accepted_comparable",
+      "quantity": { "kind": "per_foot", "feet_each": 16.4, "feet_mentions": ["linear", "tape", "strip", "under cabinet", "undercabinet", "under-cabinet", "cove", "toe kick"], "default_feet": 16, "verify": "length of linear lighting, in feet" },
+      "location": "Kitchen",
+      "capability": "Warm-dim LED tape light, one roll per 16.4 ft of run",
+      "hours_each": 0,
+      "escalate_if_unresolved": false
+    },
+    {
+      "role": "linear_extrusion",
+      "categories": ["Mounts > Accessories"],
+      "label": "Proluxe aluminum extrusion with lens (2 m)",
+      "model": "PLX-EE45-AAFR-2M-BNDL1",
+      "critical": false,
+      "systems": ["linear_lighting"],
+      "product_id": "a7849edb-ea83-4570-8464-13c273c5d9fa",
+      "precedent": "accepted_comparable",
+      "quantity": { "kind": "per_foot", "feet_each": 6.56, "feet_mentions": ["linear", "tape", "strip", "under cabinet", "undercabinet", "under-cabinet", "cove", "toe kick"], "default_feet": 16, "verify": "length of linear lighting, in feet" },
+      "location": "Kitchen",
+      "capability": "Channel and diffuser lens the tape mounts in, one per 2 m (6.56 ft)",
+      "hours_each": 0,
+      "escalate_if_unresolved": false
+    },
+    {
+      "role": "linear_driver",
+      "categories": ["Lighting > Ballasts"],
+      "label": "Proluxe 60 W 24 V dimmable driver",
+      "model": "PLX-ADPTDRJ24V-60",
+      "critical": false,
+      "systems": ["linear_lighting"],
+      "product_id": "cbdf8bac-718b-4b30-8ca1-202ad7886df0",
+      "precedent": "accepted_comparable",
+      "quantity": { "kind": "per_foot", "feet_each": 16.4, "feet_mentions": ["linear", "tape", "strip", "under cabinet", "undercabinet", "under-cabinet", "cove", "toe kick"], "default_feet": 16, "verify": "length of linear lighting, in feet" },
+      "location": "Kitchen",
+      "capability": "Powers and dims the tape, one per roll",
+      "hours_each": 0,
+      "escalate_if_unresolved": false
+    },
+    {
+      "role": "linear_connectors",
+      "categories": ["Lighting > Accessories"],
+      "label": "Proluxe tape light connector blocks (bag of 10)",
+      "model": "PLX-TL-SC-4BLOCK",
+      "critical": false,
+      "systems": ["linear_lighting"],
+      "product_id": "183ce968-afd3-41c5-a394-420a8590812c",
+      "precedent": "accepted_comparable",
+      "quantity": { "kind": "fixed", "qty": 1 },
+      "location": "Kitchen",
+      "capability": "Splices and feeds for the tape runs",
+      "hours_each": 0,
+      "escalate_if_unresolved": false
+    },
+    {
+      "role": "linear_dimmer",
+      "categories": ["Lighting > Dimmers"],
+      "label": "Lutron Ariadni CL dimmer",
+      "model": "AYCL-153P-WH",
+      "critical": false,
+      "systems": ["linear_lighting"],
+      "product_id": "4dad2907-ef73-4676-bfb2-b08f0bccd2cd",
+      "precedent": "accepted_comparable",
+      "quantity": { "kind": "fixed", "qty": 1 },
+      "location": "Kitchen",
+      "capability": "Wall dimmer for the linear lighting",
+      "hours_each": 0,
+      "escalate_if_unresolved": false
+    }
+  ],
+  "services": [],
+  "parts": { "product_id": "141236a5-8780-493e-a20d-106b7f71c5b4", "label": "Design & Delivery" },
+  "assumptions": [
+    "Power is available at or near the driver location.",
+    "Cabinets or coves allow the extrusion to mount without modification."
+  ],
+  "exclusions": [
+    "New circuits or panel work.",
+    "Cabinet modification, patching and painting."
+  ]
+}
