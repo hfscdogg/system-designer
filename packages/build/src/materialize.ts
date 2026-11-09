@@ -680,6 +680,41 @@ function wordVariant(scope: ScopeDraftV1, role: RoleSpec) {
   });
 }
 
+/**
+ * A device list that names two of a role's word variants prices each one (Zack's Lewis job, 2026-11-09: an Arc Ultra in
+ * the living room and a Beam in the office were priced as two Arc Ultras and two Arc mounts). Each variant takes the
+ * count of Livewire's new devices that name it; the rest stay on the line's own record.
+ */
+function splitByWordVariants(lines: SelectionLine[], scope: ScopeDraftV1, roles: RoleSpec[]): void {
+  const devices = (scope.devices ?? []).filter((d) => d.supplied_by === "livewire" && !d.existing);
+  if (!devices.length) return;
+  for (const line of [...lines]) {
+    const role = roles.find((r) => r.role === line.role);
+    if (!role?.word_variants || line.requested_model || line.quantity < 2) continue;
+    const counts = new Map<string, number>();
+    for (const d of devices) {
+      const t = fold(d.item);
+      const v = role.word_variants.find((v) => v.product_id && v.words.some((w) => hasWord(t, fold(w))) && (!v.require || v.require.some((r) => hasWord(t, fold(r)))));
+      if (v) counts.set(v.product_id!, (counts.get(v.product_id!) ?? 0) + d.quantity);
+    }
+    if (counts.size < 2 && !(counts.size === 1 && !counts.has(line.record_id))) continue;
+    let left = line.quantity;
+    const split: SelectionLine[] = [];
+    for (const [record_id, n] of counts) {
+      const qty = Math.min(n, left);
+      if (qty <= 0) continue;
+      left -= qty;
+      split.push({ ...line, record_id, quantity: qty });
+    }
+    if (left > 0) {
+      const own = split.find((l) => l.record_id === line.record_id);
+      if (own) own.quantity += left;
+      else split.push({ ...line, quantity: left });
+    }
+    lines.splice(lines.indexOf(line), 1, ...split);
+  }
+}
+
 const PORT_WORDS: Record<string, number> = { one: 1, single: 1, two: 2, dual: 2, double: 2, three: 3, triple: 3, four: 4, quad: 4 };
 const PORTS = /\b(\d|one|single|two|dual|double|three|triple|four|quad)[- ]?(?:port|gang)\b/g;
 
@@ -1064,7 +1099,14 @@ export function materialize(given: ScopeDraftV1, pattern: PatternSpec, namedProd
     const askedBeside = !listedByDevices && (newTvAsked(original, role) || askedAsProduct(original, role, pattern.roles));
     // The customer supplies it new (their UniFi cameras): built like ours, then installed, not sold, with its install labor
     // (suppliedLines below), not kept as old gear (Zack's Morales job, 2026-11-06: four customer cameras carried no labor).
-    if (retained && !supplied.has(role.role) && !wantsNew(scope, role, pattern.roles) && !product && !askedBeside) {
+    // Kept gear the new devices can't work with is replaced: a Concord 4 panel with new PowerG sensors gets the IQ Panel.
+    const incompatible =
+      !!retained &&
+      !!role.replace_kept &&
+      !role.replace_kept.compatible.some((w) => hasWord(fold(retained), fold(w))) &&
+      candidates.some((r) => role.replace_kept!.with_new.includes(r.role) && names(r) && !excluded(scope, r));
+    if (incompatible) toVerify.push(`${role.label}: the existing ${retained} is replaced, since the new devices priced here need Livewire's standard ${role.label.toLowerCase()}`);
+    if (retained && !incompatible && !supplied.has(role.role) && !wantsNew(scope, role, pattern.roles) && !product && !askedBeside) {
       // Existing equipment being moved stays the customer's: its mount and labor are priced on the roles that carry it.
       // It is the customer's, like kept equipment: a critical role moved ("relocate the doorbell wiring" for the
       // client's Nest doorbell) no longer blocks the build as supported but unpriced (Ben Khandan-Barani, 2026-10-16).
@@ -1491,6 +1533,8 @@ export function materialize(given: ScopeDraftV1, pattern: PatternSpec, namedProd
     keptRoles.delete(role.role);
   }
 
+  splitByWordVariants(lines, original, pattern.roles);
+
   const devices = [...lines, ...suppliedLines].reduce((n, l) => n + l.quantity, 0);
   // Labor-only allowances the request mentions (framing a niche), priced as hours at the pattern's labor rate.
   const extras = (pattern.labor_extras ?? []).filter((x) => mentioned(scope, x.mentions)).map((x) => x.id);
@@ -1636,6 +1680,17 @@ export function materialize(given: ScopeDraftV1, pattern: PatternSpec, namedProd
 }
 
 const DOLLARS = String.raw`\$\s?(\d[\d,]*(?:\.\d{1,2})?)\s*(k\b)?`;
+/** An item, then (after a comma or "with") its amount as a placeholder or allowance at the end of the change. */
+const AMOUNT_AFTER_ITEM = new RegExp(String.raw`^(.+?)(?:[,;:]\s*|\s+)(?:(?:and|with|include|including|plus|use|using)\s+)?(?:a|an)?\s*${DOLLARS}\s*(?:placeholder|allowance)\s*\.?\s*$`, "i");
+/** The item an allowance is for, from the words before its amount: "1 x New turntable player to play his LP records" is a turntable player. */
+function itemNamed(text: string): string {
+  return text
+    .replace(/^\s*\d+\s*(?:x|×)\s*/i, "")
+    .replace(/^(?:(?:add|install|include|provide|supply|a|an|the|new|one|1)\s+)+/i, "")
+    .split(/\s+(?:to|for|that|which|so|with|in|on)\s+/i)[0]!
+    .replace(/[\s,;:-]+$/, "")
+    .trim();
+}
 const ALLOWANCE_FOR = new RegExp(String.raw`${DOLLARS}\s*(?:placeholder|allowance)\s+(?:for|on)\s+(?:a|an|the|their|his|her)?\s*([^,;.()\n]+)`, "gi");
 const ALLOWANCE_OF = new RegExp(String.raw`(?:placeholder|allowance)\s+of\s+${DOLLARS}\s+(?:for|on)\s+(?:a|an|the|their|his|her)?\s*([^,;.()\n]+)`, "gi");
 const ITEM_ALLOWANCE = new RegExp(String.raw`(?:^|[,;:]\s*|\b(?:add|include|plus|and)\s+(?:a|an|the)?\s*)([a-z][\w'’ -]{1,40}?)\s*(?:[-–—:]|\bat\b)\s*${DOLLARS}\s*(?:placeholder|allowance)\b`, "gi");
@@ -1661,10 +1716,15 @@ function equipmentAllowances(scope: ScopeDraftV1): Array<{ label: string; amount
     out.set(fold(label), { label, amount_cents: cents });
   };
   for (const c of scope.requested_changes) {
+    const before = out.size;
     for (const m of c.matchAll(ALLOWANCE_FOR)) add(m[1]!, m[2], m[3]!);
     for (const m of c.matchAll(ALLOWANCE_OF)) add(m[1]!, m[2], m[3]!);
     for (const m of c.matchAll(ITEM_ALLOWANCE)) add(m[2]!, m[3], m[1]!);
     for (const m of c.matchAll(ITEM_THEN_AMOUNT)) add(m[2]!, m[3], m[1]!);
+    // The amount after the item, with words between: "1 x New turntable player to play his LP records, include a $1,000
+    // allowance" is a $1,000 turntable player (Zack's Bennett job, 2026-11-09: it went to the verify list instead).
+    const trailing = out.size === before ? AMOUNT_AFTER_ITEM.exec(c) : null;
+    if (trailing) add(trailing[2]!, trailing[3], itemNamed(trailing[1]!));
   }
   return [...out.values()];
 }

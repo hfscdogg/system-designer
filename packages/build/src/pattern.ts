@@ -171,6 +171,12 @@ export const RoleSpecSchema = z
     variants: z
       .array(z.object({ sizes: z.array(z.number().int().positive()).min(1), product_id: z.string().uuid(), label: z.string().min(1), outdoor: z.boolean().optional() }).strict())
       .optional(),
+    /**
+     * Kept equipment this role replaces anyway when the request also prices new devices of `with_new` that only work with
+     * the standard, unless the kept one names a `compatible` brand or model: a kept Concord 4 panel can't run Qolsys PowerG
+     * keypads and sensors, so the IQ Panel is priced (Zack's Lewis job, 2026-11-09).
+     */
+    replace_kept: z.object({ compatible: z.array(z.string().min(1)).min(1), with_new: z.array(z.string().min(1)).min(1) }).strict().optional(),
     /** D-Tools product record. Null until Livewire chooses a standard product. */
     product_id: z.string().uuid().nullable(),
     precedent: z.enum(["livewire_standard", "accepted_comparable", "new_to_livewire"]),

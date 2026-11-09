@@ -1,7 +1,7 @@
 {
   "schema": "architecture_pattern_v1",
   "pattern": "security_modernization",
-  "version": "2026-10-14.1",
+  "version": "2026-11-09.1",
   "title": "Security modernization",
   "applies_when_any": [
     "intrusion_security"
@@ -20,6 +20,10 @@
       "retained_match": [
         "panel"
       ],
+      "replace_kept": {
+        "compatible": ["qolsys", "iq panel", "iq4", "iq 4", "iq2", "iq 2", "iqp"],
+        "with_new": ["keypad", "door_window_contact", "motion_detector", "glass_break", "smoke_heat_detector", "co_detector"]
+      },
       "product_id": "a9961718-da0e-4f1e-a94f-ce2a28dcc623",
       "precedent": "livewire_standard",
       "quantity": {
