@@ -247,7 +247,7 @@ export const SMOKE_SCENARIOS: SmokeScenario[] = [
           "Verify existing equipment, compatibility, and which devices can be reused. Proposed equipment: door contacts x3 (confirm locations), " +
           "window contacts x4 (confirm locations), motion sensors x2 (confirm locations), smoke detector x1 (second floor), keypads x2 (entryway and primary bedroom), " +
           "thermostat integration for up to 2 (verify Z-Wave compatibility). Monitoring: Alarm.com five-year discount agreement, $59.99 per month. " +
-          "Confirm required panel, communicator, and keypad compatibility.",
+          "Confirm required panel, communicator, and keypad compatibility. Replace any existing hard-wired smoke detectors with new wireless ones.",
         expect: { security_panel: 1, keypad: 2, door_window_contact: 7, motion_detector: 2, smoke_heat_detector: 1, thermostat: 0 },
       },
     ],
