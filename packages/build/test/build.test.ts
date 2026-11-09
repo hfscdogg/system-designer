@@ -3139,3 +3139,72 @@ describe("linear lighting (Henry, 2026-11-09)", () => {
     expect(validation.findings.filter((f) => f.severity === "block")).toEqual([]);
   });
 });
+
+// Zack's re-run after the 11/8 release (2026-11-09): Bennett's turntable allowance, Lewis's panel and Lewis's office Beam.
+describe("Zack's re-run (2026-11-09)", () => {
+  const none = { existing_equipment: { status: "none" as const, retained: [], removed_or_replaced: [] } };
+  const livewire = (item: string, room: string | null, quantity = 1) => ({ item, room, quantity, supplied_by: "livewire" as const, existing: false });
+  const existing = (item: string, room: string | null, quantity = 1) => ({ item, room, quantity, supplied_by: "customer" as const, existing: true });
+  async function job(o: object) {
+    const patterns = await loadPatterns();
+    const { scope } = approvedScope({ ...none, existing_detectors: "not_provided", project_type: null, ...o });
+    const pattern = selectPattern(scope.functional_systems, patterns)!;
+    return { scope, pattern, selection: materialize(scope, pattern) };
+  }
+  const priced = (sel: ReturnType<typeof materialize>) => sel.lines.map((l) => `${l.role}:${l.record_id} × ${l.quantity}`);
+
+  // run_de5d502b: "1 x New turntable player to play his LP records, include a $1,000 allowance".
+  it("an allowance stated after its item is priced, not left as a question", async () => {
+    const allowances = async (change: string) => (await job({ functional_systems: ["TV"], requested_changes: ["Living room: 65-inch Sony TV on the wall", change] })).selection.equipment_allowances;
+    expect(await allowances("1 x New turntable player to play his LP records, include a $1,000 allowance")).toEqual([{ label: "Turntable player (allowance)", amount_cents: 100000 }]);
+    expect(await allowances("Add a new turntable with a $1,000 allowance")).toEqual([{ label: "Turntable (allowance)", amount_cents: 100000 }]);
+    // The ones that already worked still read the same way, once.
+    expect(await allowances("Add a $1,000 placeholder for the turntable")).toEqual([{ label: "Turntable (allowance)", amount_cents: 100000 }]);
+    expect(await allowances("Customer has a $20,000 budget for the whole project")).toBeUndefined();
+  });
+
+  // run_604ef411: a Concord 4 kept as the panel while Qolsys PowerG keypads and sensors were priced.
+  it("a kept Concord 4 panel is replaced by the IQ Panel when new PowerG devices are priced", async () => {
+    const lewis = {
+      functional_systems: ["security", "alarm monitoring"],
+      requested_changes: ["Add 3 door contacts", "Add 4 window contacts", "Add 2 motion sensors", "Add 2 keypads"],
+      existing_equipment: { status: "described" as const, retained: ["Concord 4 panel"], removed_or_replaced: [] },
+    };
+    const { selection } = await job(lewis);
+    expect(selection.lines.map((l) => l.role)).toContain("security_panel");
+    expect(selection.to_verify).toEqual(expect.arrayContaining([expect.stringContaining("the existing Concord 4 panel is replaced")]));
+    // A kept Qolsys IQ panel stays: the new sensors work with it.
+    const kept = await job({ ...lewis, existing_equipment: { status: "described" as const, retained: ["Qolsys IQ Panel 4"], removed_or_replaced: [] } });
+    expect(kept.selection.lines.map((l) => l.role)).not.toContain("security_panel");
+    // Nothing new priced with it: the kept Concord stays, field-tested.
+    const alone = await job({ functional_systems: ["alarm monitoring"], requested_changes: ["Monitor the existing Concord 4 panel"], existing_equipment: { status: "described" as const, retained: ["Concord 4 panel"], removed_or_replaced: [] } });
+    expect(alone.selection.lines.map((l) => l.role)).not.toContain("security_panel");
+  });
+
+  // run_912cc317: an Arc Ultra in the living room and a Beam in the office priced as two Arc Ultras and two Arc mounts.
+  it("a device list with an Arc Ultra and a Beam prices one of each, with each one's mount", async () => {
+    const { pattern, selection } = await job({
+      functional_systems: ["TV"],
+      requested_changes: ["Living room: 65-inch Sony TV, Sonos Arc Ultra with a soundbar bracket", "Office: 43-inch TV and a Sonos Beam"],
+      devices: [livewire("65-inch Sony TV", "living room"), livewire("Sonos Arc Ultra soundbar", "living room"), livewire("43-inch TV", "office"), livewire("Sonos Beam", "office")],
+    });
+    const soundbar = pattern.roles.find((r) => r.role === "soundbar")!;
+    const mount = pattern.roles.find((r) => r.role === "soundbar_mount")!;
+    const id = (r: typeof soundbar, word: string) => r.word_variants!.find((v) => v.words.includes(word))!.product_id;
+    expect(priced(selection)).toEqual(
+      expect.arrayContaining([
+        `soundbar:${id(soundbar, "arc ultra")} × 1`,
+        `soundbar:${id(soundbar, "beam")} × 1`,
+        `soundbar_mount:${id(mount, "arc ultra")} × 1`,
+        `soundbar_mount:${id(mount, "beam")} × 1`,
+      ]),
+    );
+    // One soundbar named twice in the list is still one model.
+    const two = await job({
+      functional_systems: ["TV"],
+      requested_changes: ["Living room and den: 65-inch Sony TVs, each with a Sonos Arc Ultra"],
+      devices: [livewire("65-inch Sony TV", "living room"), livewire("Sonos Arc Ultra", "living room"), livewire("65-inch Sony TV", "den"), livewire("Sonos Arc Ultra", "den"), existing("old soundbar", "basement")],
+    });
+    expect(priced(two.selection).filter((l) => l.startsWith("soundbar:"))).toEqual([`soundbar:${id(soundbar, "arc ultra")} × 2`]);
+  });
+});
