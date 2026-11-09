@@ -30,6 +30,10 @@ export interface SmokeStep {
   receipt?: string[];
   /** The budget must carry a total (nothing left unresolved that withholds it). */
   total?: boolean;
+  /** Exact quantity per D-Tools record, for roles priced in more than one model (an Arc Ultra and a Beam). */
+  records?: Record<string, number>;
+  /** Words each priced equipment allowance must have one of ("Turntable"). */
+  allowances?: string[];
 }
 
 export interface SmokeScenario {
@@ -213,6 +217,60 @@ export const SMOKE_SCENARIOS: SmokeScenario[] = [
         pattern: "tv_media",
         expect: { tv_mount_articulating: 3, soundbar: 1 },
         atLeast: { television: 3 },
+      },
+    ],
+  },
+  {
+    // Zack's Bennett job (run_de5d502b, 2026-11-09): the $1,000 turntable allowance went to the verify list.
+    name: "Bennett (85-inch Bravia RGB, CoreLite, turntable allowance)",
+    steps: [
+      {
+        say:
+          `Customer Name: Monty Bennett. Address: ${ADDRESS}. The client wants to update his AV equipment in his basement movie room. ` +
+          "His audio system is operational. Livewire installed all his basement movie rooms about 15 years ago. The Wifi signal is good in the basement. " +
+          "Power outlets are available behind the TV location. Requirements: 1 x 85” Sony Bravia RGB TV, standing on top of a very long cabinet. " +
+          "1x Control 4 Halo Remote + CoreLite to operate the devices. 1 x New turntable player to play his LP records, include a $1,000 allowance. " +
+          "1 x Ethernet port at the back of the TV location. Data cables can be run from headend, to the front porch and down to the basement, approx 150 ft.",
+        expect: { television: 1, tv_mount: 0, tv_mount_articulating: 0, automation_controller: 1, automation_remote: 1 },
+        allowances: ["turntable"],
+        total: true,
+      },
+    ],
+  },
+  {
+    // Zack's Lewis security job (run_604ef411, 2026-11-09): the Concord 4 was kept while PowerG devices were priced.
+    name: "Annie Lewis (security: Concord 4 replaced)",
+    steps: [
+      {
+        say:
+          `Client: Annie Lewis, ${ADDRESS}. Residential. Security proposal. Existing system: described as "Connect Home" with a Concord 4 panel. ` +
+          "Verify existing equipment, compatibility, and which devices can be reused. Proposed equipment: door contacts x3 (confirm locations), " +
+          "window contacts x4 (confirm locations), motion sensors x2 (confirm locations), smoke detector x1 (second floor), keypads x2 (entryway and primary bedroom), " +
+          "thermostat integration for up to 2 (verify Z-Wave compatibility). Monitoring: Alarm.com five-year discount agreement, $59.99 per month. " +
+          "Confirm required panel, communicator, and keypad compatibility.",
+        expect: { security_panel: 1, keypad: 2, door_window_contact: 7, motion_detector: 2, smoke_heat_detector: 1, thermostat: 0 },
+      },
+    ],
+  },
+  {
+    // Zack's Lewis TV job (run_912cc317, 2026-11-09): the office Beam priced as a second Arc Ultra with an Arc mount.
+    name: "Annie Lewis (TVs: Arc Ultra and Beam)",
+    steps: [
+      {
+        say:
+          `Client: Annie Lewis, ${ADDRESS}. Residential. AV, television installations. Guest Room: 43-inch TV using streaming apps, articulating wall mount, ` +
+          "relocate existing power and data connections behind the TV. Living Room: 65-inch Sony TV, articulating wall mount using existing power and data locations, " +
+          "Sonos Arc Ultra mounted to the TV using a compatible soundbar bracket. Downstairs: 43-inch TV using Wi-Fi, single-arm articulating mount. " +
+          "Office: 43-inch TV and a Sonos Beam.",
+        pattern: "tv_media",
+        expect: { soundbar: 2, soundbar_mount: 2 },
+        atLeast: { television: 4 },
+        records: {
+          "5eb671b0-b05d-4671-940a-0d77f3bbeac7": 1, // Sonos Arc Ultra
+          "b8dc2e4b-a25b-4508-bf5b-e7f19959e73d": 1, // Sonos Beam (Gen 2)
+          "5e66b358-6e5b-44b9-85ef-8945af55280a": 1, // Sanus WSSATM1-B2 (Arc)
+          "7fb73570-69b6-4b86-b9b6-613bc02370ff": 1, // Sanus WSSBM1-B2 (Beam)
+        },
       },
     ],
   },
@@ -415,6 +473,12 @@ export async function runSmoke(deps: SmokeDeps): Promise<{ runs: string[]; failu
             .map(([role, q]) => `${role} expected at least ${q}, got ${got(role)}`),
           ...(s.receipt ?? []).filter((text) => !lines.some((l) => l.includes(text.toLowerCase()))).map((text) => `receipt is missing "${text}"`),
           ...(s.total && (await deps.store.readArtifact<Proposal>(run.id, "bind", "proposal"))?.commercial.total_cents == null ? ["the budget has no total"] : []),
+          ...Object.entries(s.records ?? {})
+            .filter(([id, q]) => (selection?.lines ?? []).filter((l) => l.record_id === id).reduce((n, l) => n + l.quantity, 0) !== q)
+            .map(([id, q]) => `record ${id} expected ${q}, got ${(selection?.lines ?? []).filter((l) => l.record_id === id).reduce((n, l) => n + l.quantity, 0)}`),
+          ...(s.allowances ?? [])
+            .filter((w) => !(selection?.equipment_allowances ?? []).some((a) => a.label.toLowerCase().includes(w.toLowerCase())))
+            .map((w) => `no equipment allowance for "${w}"`),
         ];
         if (wrong.length) {
           // What the interpreter read and what was priced, so a failure can be traced from the deploy log alone.
