@@ -23,6 +23,9 @@ import {
 } from "../src/index.ts";
 import { approvedScope, CATALOG, IDS, POLICY, product, testPattern } from "./fixtures.ts";
 
+/** WattBox WB-200-2, one per wall-mounted TV (Henry, 2026-11-10). */
+const WATTBOX_WB_200_2 = "7d27e620-e7dc-44ab-8ec7-ae7fe7805f03";
+
 async function admitAll(pattern: PatternSpec, catalog = CATALOG) {
   const reader = recordedDToolsReader(catalog);
   const admitted = new Map<string, AdmittedProduct>();
@@ -1274,6 +1277,8 @@ describe("Zack's round 3 (2026-10-13)", () => {
           ? product(id, "Livewire", "PARTS", 1, 0.01, { laborItems: [] })
           : id === mount.product_id
             ? product(id, "Sanus", "CILT4-B1", 249.99, 125, { laborItems: [] })
+            : id === WATTBOX_WB_200_2
+              ? product(id, "WattBox", "WB-200-2", 112.99, 47.71, { laborItems: [] })
             : tvIds.has(id)
               ? product(id, "Sony", `TV-${i}`, 1599, 1312, { laborItems: [] })
               : product(id, "TestCo", `DEV-${i}`, 300, 150, { laborItems: [] }),
@@ -1316,9 +1321,10 @@ describe("Zack's round 3 (2026-10-13)", () => {
     };
     for (const [name, o] of Object.entries(variants)) {
       const { proposal, validation } = await run(o);
-      expect(proposal.sections.flatMap((s) => s.lines.map((l) => `${l.brand} ${l.model} × ${l.quantity}`)), name).toEqual(["Sanus CILT4-B1 × 1"]);
-      // $249.99 mount + 4 h at $179 + 10% Design & Delivery: $1,062.99, as on b2b6865.
-      expect(proposal.commercial.subtotal_cents, name).toBe(106299);
+      expect(proposal.sections.flatMap((s) => s.lines.map((l) => `${l.brand} ${l.model} × ${l.quantity}`)), name).toEqual(["Sanus CILT4-B1 × 1", "WattBox WB-200-2 × 1"]);
+      // $249.99 mount + 4 h at $179 + 10% Design & Delivery: $1,062.99, as on b2b6865; plus the $112.99 WattBox per mounted TV
+      // and its Design & Delivery (Henry, 2026-11-10): $1,186.98.
+      expect(proposal.commercial.subtotal_cents, name).toBe(118698);
       expect(proposal.internal.gross_margin_pct!, name).toBeGreaterThanOrEqual(40);
       expect(validation.findings.map((f) => f.code), name).not.toContain("margin_exception");
       expect(proposal.remaining_verification, name).toEqual(
@@ -1460,7 +1466,8 @@ describe("Zack's round 4 (2026-10-15)", () => {
       existing_equipment: { status: "described", retained: ["Control4 controller"], removed_or_replaced: [] },
     });
     expect(selection.unresolved).toEqual([]);
-    expect(quantities(selection)).toEqual({ television: 1, tv_mount_articulating: 1 });
+    // A WattBox per wall-mounted TV (Henry, 2026-11-10).
+    expect(quantities(selection)).toEqual({ television: 1, tv_mount_articulating: 1, tv_power_protection: 1 });
     expect(selection.to_verify).toEqual(["Control4 CORE 1 controller (retained: Control4 controller): existing equipment must be field-tested before it can be reused"]);
     expect(selection.requirements.find((r) => r.system === "home_automation")).toMatchObject({ classification: "allowance", note: "existing equipment kept: Control4 CORE 1 controller" });
     // A remote the request asks for is still priced.
@@ -1481,8 +1488,8 @@ describe("Zack's round 4 (2026-10-15)", () => {
     expect(line && indoor.has(line.record_id)).toBeFalsy();
     // Henry, 2026-10-15: the Samsung Terrace QN75LST9D, Livewire's most quoted 75" outdoor TV.
     expect(line!.record_id).toBe("23502905-bbcf-4e3f-af0d-9bf230a9ad14");
-    // Henry, 2026-10-19: over 70" outdoors, the Sanus VODLF125-B2 (40-85") replaces the Strong ART2-L (37-70").
-    expect(selection.lines.find((l) => l.role === "tv_mount_articulating")!.record_id).toBe("5e126131-73ba-4869-a490-941cee78cd26");
+    // Henry, 2026-11-10: outdoors, the SunBrite SB-WM-ART2-L (42-75") replaces the Strong ART2-L (37-70"), as on Marshall's Morales quote.
+    expect(selection.lines.find((l) => l.role === "tv_mount_articulating")!.record_id).toBe("e06d2894-e654-4e27-b55a-447dd33de949");
     expect(selection.to_verify).toEqual([]);
     // An outdoor size with no approved outdoor model is listed to price, not priced as an indoor TV.
     const odd = await job({ functional_systems: ["outdoor TV"], requested_changes: ['Provide a new 85" weatherproof TV for the pool deck'], requested_quantities: [{ item: '85" weatherproof TV', quantity: 1 }] });
@@ -1674,10 +1681,10 @@ describe("Zack's round 5 (2026-10-19)", () => {
     expect(selection.lines.find((l) => l.role === "in_ceiling_speakers")).toMatchObject({ record_id: "2d7cf03e-3887-42d6-86f0-7ca328448201", quantity: 1 });
   });
 
-  it("McGetrick: a TV over 70\" gets the Sanus full-motion mount (outdoor or indoor); one no mount fits is listed to confirm", async () => {
+  it("McGetrick: a TV over 70\" gets an outdoor or full-motion mount that fits; one no mount fits is listed to confirm", async () => {
     const mount = (r: Awaited<ReturnType<typeof job>>) => r.selection.lines.find((l) => l.role === "tv_mount_articulating")!.record_id;
     const big = await job({ functional_systems: ["outdoor TV"], requested_changes: ['Provide a new 75" full weather outdoor TV', "Install an articulated mounting bracket"], requested_quantities: [{ item: '75" full weather outdoor TV', quantity: 1 }] });
-    expect(mount(big)).toBe("5e126131-73ba-4869-a490-941cee78cd26");
+    expect(mount(big)).toBe("e06d2894-e654-4e27-b55a-447dd33de949");
     expect(big.selection.to_verify).toEqual([]);
     const indoor = await job({ functional_systems: ["TV"], requested_changes: ['Mount the customer\'s 85" TV on an articulating mount in the family room'] });
     expect(mount(indoor)).toBe("2b111277-c810-411c-bebd-297ac03631ea");
@@ -1860,7 +1867,7 @@ describe("Zack's round 6 (2026-10-23)", () => {
 
   it("Britt: a 55\" outdoor TV goes on the Sanus outdoor mount, like McGetrick's 75\"; an indoor one stays on the Strong", async () => {
     const mount = async (o: object) => (await job(o)).selection.lines.find((l) => l.role === "tv_mount_articulating")!.record_id;
-    expect(await mount({ functional_systems: ["outdoor TV"], requested_changes: ["55’’ Outdoor rated TV with cover", "Articulated mounting bracket"] })).toBe("5e126131-73ba-4869-a490-941cee78cd26");
+    expect(await mount({ functional_systems: ["outdoor TV"], requested_changes: ["55’’ Outdoor rated TV with cover", "Articulated mounting bracket"] })).toBe("e06d2894-e654-4e27-b55a-447dd33de949");
     expect(await mount({ functional_systems: ["TV"], requested_changes: ["Mount the customer's 55-inch TV in the living room on an articulating mount"] })).toBe("e984e610-2be4-4e3e-9407-a90d3a70b6c8");
   });
 
@@ -2067,7 +2074,7 @@ describe("Henry's decisions (2026-10-27): D-Tools quote history for cabling, cam
 
   it("patterns carry the new version", async () => {
     const versions = Object.fromEntries((await loadPatterns()).map((p) => [p.pattern, p.version]));
-    expect(versions).toMatchObject({ prewire: "2026-10-30.1", tv_media: "2026-11-07.1", whole_home_audio: "2026-11-06.1" });
+    expect(versions).toMatchObject({ prewire: "2026-10-30.1", tv_media: "2026-11-10.1", whole_home_audio: "2026-11-06.1" });
   });
 
   it("Q1: a retrofit drop is two keystone jacks and 2 hours; a new-construction drop one jack and 1 hour", async () => {
@@ -2702,6 +2709,8 @@ describe("Zack's live session (2026-11-05)", () => {
     expect(selection.lines.find((l) => l.role === "television")!.record_id).toBe(tv.variants!.find((v) => v.sizes.includes(75) && !v.outdoor)!.product_id);
     // No wall mount for a TV on a cabinet, no enclosure for one drop, and nothing outdoor about a run past the porch.
     expect(selection.lines.some((l) => /mount|enclosure/.test(l.role))).toBe(false);
+    // The WattBox goes with a wall-mounted TV; a TV on a cabinet plugs in where it stands (Henry, 2026-11-10).
+    expect(selection.lines.some((l) => l.role === "tv_power_protection")).toBe(false);
     expect(selection.to_verify.some((v) => /outdoor/i.test(v))).toBe(false);
     expect(proposal.remaining_verification.filter((v) => /^Requested product/.test(v))).toEqual([]);
     expect(customer.title).toMatch(/Structured Wiring/);
@@ -2776,8 +2785,12 @@ describe("Zack's live session (2026-11-05)", () => {
     // Installing and configuring the customer's gear is still labor, their four cameras included (Henry, 2026-11-07).
     expect(selection.installed).toEqual(expect.arrayContaining([{ role: "outdoor_camera", quantity: 4 }]));
     expect(selection.labor!.hours).toBeGreaterThan(50);
-    // The porch's art arm mount is outdoor-rated (Sanus VODLF125-B2), not the indoor Strong mount.
-    expect(selection.lines.find((l) => l.role === "tv_mount_articulating")!.record_id).toBe("5e126131-73ba-4869-a490-941cee78cd26");
+    // The porch's art arm mount is outdoor-rated (SunBrite SB-WM-ART2-L, Henry 2026-11-10), not the indoor Strong mount.
+    expect(selection.lines.find((l) => l.role === "tv_mount_articulating")!.record_id).toBe("e06d2894-e654-4e27-b55a-447dd33de949");
+    // A WattBox per mounted TV, three as on Marshall's quote (D-Tools #32610; Henry, 2026-11-10).
+    const mounts = selection.lines.filter((l) => l.role === "tv_mount" || l.role === "tv_mount_articulating").reduce((n, l) => n + l.quantity, 0);
+    expect(mounts).toBe(3);
+    expect(selection.lines.find((l) => l.role === "tv_power_protection")).toMatchObject({ record_id: WATTBOX_WB_200_2, quantity: 3 });
     expect(proposal.commercial.subtotal_cents).toBeGreaterThan(0);
   });
 
@@ -3206,5 +3219,40 @@ describe("Zack's re-run (2026-11-09)", () => {
       devices: [livewire("65-inch Sony TV", "living room"), livewire("Sonos Arc Ultra", "living room"), livewire("65-inch Sony TV", "den"), livewire("Sonos Arc Ultra", "den"), existing("old soundbar", "basement")],
     });
     expect(priced(two.selection).filter((l) => l.startsWith("soundbar:"))).toEqual([`soundbar:${id(soundbar, "arc ultra")} × 2`]);
+  });
+});
+
+// Henry, 2026-11-10, from Marshall's Morales quote (D-Tools #32610): the SunBrite ART2-L is the outdoor articulating
+// mount, and every wall-mounted TV gets a WattBox WB-200-2.
+describe("outdoor articulating mount and a WattBox per TV (Henry, 2026-11-10)", () => {
+  const none = { existing_equipment: { status: "none" as const, retained: [], removed_or_replaced: [] } };
+  const quantities = (sel: ReturnType<typeof materialize>) => Object.fromEntries(sel.lines.map((l) => [l.role, l.quantity]));
+  async function job(o: object) {
+    const patterns = await loadPatterns();
+    const { scope } = approvedScope({ ...none, existing_detectors: "not_provided", ...o });
+    const pattern = selectPattern(scope.functional_systems, patterns)!;
+    return { scope, pattern, selection: materialize(scope, pattern) };
+  }
+  const mount = async (inches: number) =>
+    (await job({ functional_systems: ["outdoor TV"], requested_changes: [`Mount the customer's ${inches}-inch outdoor TV on the patio on an articulating mount`] })).selection.lines.find(
+      (l) => l.role === "tv_mount_articulating",
+    )!.record_id;
+
+  it("an outdoor TV goes on the SunBrite ART2-L, the ART2-XL past 75 inches, and the Sanus only past 80", async () => {
+    expect(await mount(55)).toBe("e06d2894-e654-4e27-b55a-447dd33de949");
+    expect(await mount(75)).toBe("e06d2894-e654-4e27-b55a-447dd33de949");
+    expect(await mount(80)).toBe("5b8f507a-f2bf-4506-8cd7-fb95138d0870");
+    expect(await mount(85)).toBe("5e126131-73ba-4869-a490-941cee78cd26");
+  });
+
+  it("each wall-mounted TV, ours or the customer's, gets a WattBox WB-200-2", async () => {
+    const { selection } = await job({
+      functional_systems: ["TV"],
+      requested_changes: ["Mount the customer's 65-inch TV in the family room", "Mount the customer's 55-inch TV in the bedroom on an articulating mount"],
+    });
+    const q = quantities(selection);
+    expect((q.tv_mount ?? 0) + (q.tv_mount_articulating ?? 0)).toBe(2);
+    expect(q.tv_power_protection).toBe(2);
+    expect(selection.lines.find((l) => l.role === "tv_power_protection")!.record_id).toBe(WATTBOX_WB_200_2);
   });
 });
