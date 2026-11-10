@@ -9,6 +9,7 @@ import {
   hashCanonical,
   normalizeExtraction,
   parsePastedItems,
+  salvageClarificationPatch,
   validateClarificationPatch,
   validateExtraction,
   type CurrentReceipt,
@@ -207,12 +208,20 @@ export function createActivities(deps: ActivityDeps): RunActivities {
    * (staging smoke, 2026-11-09: "add 10' of linear lighting in the kitchen" placed in two runs, not in the third).
    */
   async function interpretAnswer(runId: string, kind: "revision" | "clarification", current: ScopeExtraction, questions: string[], answer: string) {
-    let last: { patch: ReturnType<typeof validateClarificationPatch>; model: string } | undefined;
+    let last: { patch: ReturnType<typeof validateClarificationPatch>; model: string; raw?: unknown } | undefined;
     for (let i = 0; i < Math.max(1, attempts); i++) {
       const { raw, model } = await deps.interpreter.interpret({ current, questions, answer });
       await recordModelReply(runId, kind, kind === "revision" ? { answer } : { questions, answer }, raw, model);
-      last = { patch: validateClarificationPatch(raw), model };
+      last = { patch: validateClarificationPatch(raw), model, raw };
       if (last.patch.ok && !last.patch.value.unmapped) break;
+    }
+    // Every reading refused: keep what the last one wrote correctly, and record what was left out.
+    if (!last!.patch.ok) {
+      const salvaged = salvageClarificationPatch(last!.raw);
+      if (salvaged) {
+        await store.appendEvent(runId, `${kind}_salvaged`, "system", { model: last!.model, dropped: salvaged.dropped, errors: last!.patch.errors });
+        return { patch: { ok: true as const, value: salvaged.value }, model: last!.model };
+      }
     }
     return last!;
   }

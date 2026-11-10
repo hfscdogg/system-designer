@@ -17,6 +17,7 @@ import {
   normalizeServiceCategories,
   parseApprovalText,
   validateClarificationPatch,
+  salvageClarificationPatch,
   validateExtraction,
 } from "../src/index.ts";
 import { completeExtraction, emptyExtraction, noPatch } from "./fixtures.ts";
@@ -365,5 +366,27 @@ describe("state machine and signals", () => {
     expect(decideSignal(current, { type: "approved", receiptId: "R-X-1", scopeHash: "sha256:abc", approvalId: "a1" }).action).toBe("reject");
     expect(decideSignal(current, { type: "approved", receiptId: "R-X-2", scopeHash: "sha256:zzz", approvalId: "a1" }).action).toBe("reject");
     expect(decideSignal({ ...current, status: "NEEDS_CLARIFICATION" }, { type: "approved", receiptId: "R-X-2", scopeHash: "sha256:abc", approvalId: "a1" }).action).toBe("reject");
+  });
+});
+
+// Staging smoke, 2026-11-10: Jeff German's "add 10' of linear lighting in the kitchen" refused twice.
+describe("a reply refused for one malformed field", () => {
+  it("keeps the fields it wrote correctly and names the ones left out", () => {
+    const raw = {
+      ...noPatch,
+      requested_changes: ["Retrofit one Cat6 run", "Add 10 ft of linear lighting in the kitchen"],
+      functional_systems: ["structured wiring", "linear lighting"],
+      devices: [{ item: "linear lighting", room: "kitchen", quantity: "10 ft", supplied_by: "livewire", existing: false }],
+    };
+    expect(validateClarificationPatch(raw).ok).toBe(false);
+    const salvaged = salvageClarificationPatch(raw)!;
+    expect(salvaged.dropped).toEqual(["devices"]);
+    expect(salvaged.value).toMatchObject({ requested_changes: raw.requested_changes, functional_systems: raw.functional_systems, devices: null, unmapped: false });
+  });
+
+  it("salvages nothing from a reply that says it couldn't map the answer, or one with nothing valid", () => {
+    expect(salvageClarificationPatch({ ...noPatch, unmapped: true, devices: [{ item: "x", quantity: "a lot" }] })).toBeNull();
+    expect(salvageClarificationPatch({ ...noPatch, devices: [{ item: "x", quantity: "a lot" }] })).toBeNull();
+    expect(salvageClarificationPatch("not a patch")).toBeNull();
   });
 });

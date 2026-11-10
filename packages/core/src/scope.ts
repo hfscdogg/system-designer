@@ -308,6 +308,29 @@ export function validateClarificationPatch(raw: unknown): Validated<Clarificatio
   return parseStrict(ClarificationPatchSchema, raw, semanticErrors);
 }
 
+/**
+ * The fields of a refused patch that are valid on their own. A reply that restates a whole list wrongly (a device
+ * with a count of "10 ft") shouldn't discard the change it also wrote correctly (staging smoke, 2026-11-10: Jeff
+ * German's "add 10' of linear lighting in the kitchen" refused twice). Null when nothing usable is left, or the
+ * reply said it couldn't map the answer.
+ */
+export function salvageClarificationPatch(raw: unknown): { value: ClarificationPatch; dropped: string[] } | null {
+  if (!raw || typeof raw !== "object" || (raw as { unmapped?: unknown }).unmapped !== false) return null;
+  const fields = Object.keys(ClarificationPatchSchema.shape).filter((k) => k !== "size_is_unknown" && k !== "unmapped");
+  const empty: Record<string, unknown> = { ...Object.fromEntries(fields.map((f) => [f, null])), size_is_unknown: false, unmapped: false };
+  const kept: Record<string, unknown> = { ...empty };
+  const dropped: string[] = [];
+  for (const f of fields) {
+    const v = (raw as Record<string, unknown>)[f];
+    if (v === null || v === undefined) continue;
+    if (validateClarificationPatch({ ...empty, [f]: v }).ok) kept[f] = v;
+    else dropped.push(f);
+  }
+  if (!dropped.length || fields.every((f) => kept[f] === null)) return null;
+  const whole = validateClarificationPatch({ ...kept, size_is_unknown: (raw as { size_is_unknown?: unknown }).size_is_unknown === true });
+  return whole.ok ? { value: whole.value, dropped } : null;
+}
+
 /** Apply a validated patch. Fields the patch leaves null are preserved (PRD §9.1). */
 export function applyClarification(base: ScopeExtraction, patch: ClarificationPatch): ScopeExtraction {
   const next: ScopeExtraction = structuredClone(base);

@@ -387,9 +387,20 @@ export async function runSmoke(deps: SmokeDeps): Promise<{ runs: string[]; failu
   const whyStopped = async (runId: string): Promise<string> => {
     const last = (await deps.store.listEvents(runId)).filter((e) => e.type === "state_changed").at(-1)?.data;
     const blockers = (await deps.store.latestReceipt(runId))?.body.blockers ?? [];
+    // Why the model's reading was refused, and what it replied, so a "couldn't place" is diagnosable from the CI log
+    // (staging smoke, 2026-11-10: Jeff German's linear-lighting revision refused twice with no reason on record).
+    const events = await deps.store.listEvents(runId);
+    const refused = events.filter((e) => /_(unmapped|rejected)$/.test(e.type)).map((e) => `${e.type} ${JSON.stringify(e.data).slice(0, 400)}`);
+    const replies: string[] = [];
+    for (const a of (await deps.store.listArtifacts(runId)).filter((x) => x.stage === "model")) {
+      const record = await deps.store.readArtifact<{ kind?: string; raw?: unknown }>(runId, a.stage, a.name);
+      if (record && record.kind !== "extraction") replies.push(`${record.kind ?? a.name}: ${JSON.stringify(record.raw).slice(0, 1200)}`);
+    }
     const parts = [
       ...(last?.error ? [`at ${String(last.from ?? "?")}: ${String(last.error)}`] : []),
       ...(blockers.length ? [`blockers: ${JSON.stringify(blockers).slice(0, 300)}`] : []),
+      ...refused,
+      ...(replies.length ? [`model replies: ${replies.join(" | ")}`] : []),
     ];
     return parts.length ? ` (${parts.join("; ")})` : "";
   };
