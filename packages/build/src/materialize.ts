@@ -1412,6 +1412,16 @@ export function materialize(given: ScopeDraftV1, pattern: PatternSpec, namedProd
     if (!articulating && flat && mounts.articulating > 0) flat.quantity = Math.max(flat.quantity, mounts.articulating + mounts.flat + mounts.any);
   }
 
+  // What follows only the TV mounts (a WattBox per wall-mounted TV, Henry 2026-11-10) takes their final count, set just above.
+  const mountRoles = new Set(pattern.roles.filter((r) => r.alternative_group === "tv_mount").map((r) => r.role));
+  for (const line of lines) {
+    const role = pattern.roles.find((r) => r.role === line.role);
+    if (!role?.quantity_follows?.length || !role.quantity_follows.every((r) => mountRoles.has(r))) continue;
+    if (line.requested_model || statedQuantity(scope, role, pattern.roles) !== null) continue;
+    const mounted = lines.filter((l) => role.quantity_follows!.includes(l.role)).reduce((n, l) => n + l.quantity, 0);
+    if (mounted > 0) Object.assign(line, { quantity: mounted, quantity_basis: "fixed", verify: null });
+  }
+
   // Amplifiers follow the speakers they drive (Henry, 2026-10-12), once the request asks for speakers or counts existing ones.
   for (const line of lines) {
     const role = pattern.roles.find((r) => r.role === line.role);
