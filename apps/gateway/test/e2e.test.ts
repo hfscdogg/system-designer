@@ -343,6 +343,18 @@ describe("Google Chat → scope approval vertical slice", () => {
     expect(t.receipts().at(-1)!.lines).toContain("Client: Smith Family");
   });
 
+  it("applies what every reading wrote correctly when each one also restates a list wrongly", async () => {
+    // Staging smoke, 2026-11-10: a revision refused twice; one malformed device list shouldn't discard the change.
+    const bad = { ...noPatch, client: "Smith Family", devices: [{ item: "linear lighting", room: "kitchen", quantity: "10 ft", supplied_by: "livewire", existing: false }] };
+    const t = await setup([completeExtraction({ client: null })], [bad, bad]);
+    await t.send(chatMessage("Old alarm needs modernizing…"));
+    await t.send(chatMessage("it's for the Smith Family"));
+    expect(t.texts().join("\n")).not.toContain("I couldn't place");
+    expect(t.receipts().at(-1)!.lines).toContain("Client: Smith Family");
+    const run = (await t.store.listRunsForPerson("zack"))[0]!;
+    expect((await t.store.listEvents(run.id)).find((e) => e.type === "clarification_salvaged")?.data).toMatchObject({ dropped: ["devices"] });
+  });
+
   it("answers help and status without starting a run", async () => {
     const t = await setup();
     expect((await t.send(chatMessage("help"))).body).toMatchObject({ text: expect.stringContaining("scope receipt") });
