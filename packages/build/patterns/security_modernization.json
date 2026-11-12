@@ -1,7 +1,7 @@
 {
   "schema": "architecture_pattern_v1",
   "pattern": "security_modernization",
-  "version": "2026-11-09.1",
+  "version": "2026-11-12.1",
   "title": "Security modernization",
   "applies_when_any": [
     "intrusion_security"
@@ -413,6 +413,9 @@
     "product_id": "141236a5-8780-493e-a20d-106b7f71c5b4",
     "label": "Design & Delivery"
   },
+  "packages": [
+    { "terms": ["basic security system", "basic alarm system", "basic security package", "basic alarm package", "security package", "security system package"], "quantities": { "door_window_contact": 3, "motion_detector": 2 } }
+  ],
   "assumptions": [
     "Existing wiring paths are usable where devices are replaced.",
     "Power and a network or cellular signal are available at the equipment location.",

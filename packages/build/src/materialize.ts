@@ -127,6 +127,9 @@ function roleTerms(role: RoleSpec): string[] {
 // TV makers too: a "Sony ultra slim mount" is a mount, not a Sony TV (staging smoke, Baker, 2026-11-06).
 const BRANDS = new Set(["control4", "c4", "lutron", "sonos", "alarm.com", "sony", "bravia", "samsung", "lg"]);
 
+/** Devices of a kind no pattern prices, which a brand word alone must not count as one of ours. */
+const UNPRICED_KIND = /\b(av receivers?|a\/v receivers?|avrs?|receivers?|projectors?|projection screens?|screens?|processors?)\b/;
+
 /** The role's terms that name a device, not just its brand. */
 function deviceTerms(role: RoleSpec): string[] {
   return roleTerms(role).filter((t) => !BRANDS.has(t));
@@ -142,7 +145,7 @@ function modelNamed(scope: ScopeDraftV1, role: RoleSpec): boolean {
   return [...scope.requested_changes, ...scope.requested_quantities.map((q) => q.item)].some((x) => compact(x).includes(m));
 }
 
-function matchScore(text: string, role: RoleSpec): number {
+function matchScore(text: string, role: RoleSpec, counting = false): number {
   const t = fold(text);
   // The model number printed on the budget is the most specific way to name a device.
   if (role.model && compact(text).includes(compact(role.model))) return 2000 + role.model.length;
@@ -152,10 +155,17 @@ function matchScore(text: string, role: RoleSpec): number {
   const unpaired = role.mentions_require && !role.mentions_require.some((r) => hasWord(t, fold(r)));
   const own = new Set([fold(role.label), ...(role.retained_match ?? []).map(fold)]);
   // Whole words: the WattBox's "ups" is not in "upstairs" (Zack's Britt job, 2026-10-13).
-  const terms = deviceTerms(role).filter((term) => hasWord(t, term) && (!unpaired || own.has(term)));
+  // A count names its device, not the system it belongs to: a role's context words ("theater", "surround", "receiver")
+  // say a request wants it, never which role "in-ceiling surround speakers" or "1 Sony AV receiver" counts (Dillon's
+  // Gayatri job, 2026-11-12: its surround speakers priced as soundbars).
+  const context = new Set((role.context_terms ?? []).map(fold));
+  const terms = deviceTerms(role).filter((term) => hasWord(t, term) && (!unpaired || own.has(term)) && !(counting && context.has(term)));
   const words = (role.count_terms ?? []).map(fold).filter((term) => hasAllWords(t, term));
   // A brand alone is the weakest match: any device word for another role wins.
-  const brandOnly = roleTerms(role).some((term) => BRANDS.has(term) && hasWord(t, term)) ? 1 : 0;
+  // Nor does a brand claim a device of another kind that no role prices: a "Sony AV receiver" is not a Sony TV
+  // (Dillon's Gayatri job, 2026-11-12).
+  const otherKind = counting && UNPRICED_KIND.test(t);
+  const brandOnly = !otherKind && roleTerms(role).some((term) => BRANDS.has(term) && hasWord(t, term)) ? 1 : 0;
   return Math.max(0, brandOnly, ...[...terms, ...words].map((term) => term.length));
 }
 
@@ -170,12 +180,36 @@ function statedQuantity(scope: ScopeDraftV1, role: RoleSpec, roles: RoleSpec[]):
 
 /** The role a device or count names most specifically, if any. */
 function roleNamed(text: string, roles: RoleSpec[]): RoleSpec | undefined {
-  const scores = roles.map((r) => matchScore(text, r));
+  const scores = roles.map((r) => matchScore(text, r, true));
   const best = Math.max(0, ...scores);
   return best > 0 ? roles[scores.indexOf(best)] : undefined;
 }
 
 const deviceItem = (d: Device) => (d.room ? `${d.item} (${d.room})` : d.item);
+
+/**
+ * The counts a package the request names stands for ("a basic security system": 3 door contacts, 2 motions), as stated
+ * counts of each role's own label, for the roles the request gives no count of.
+ */
+function withPackages(scope: ScopeDraftV1, pattern: PatternSpec): ScopeDraftV1 {
+  const text = scope.requested_changes.map(fold).join(" | ");
+  const extra: Array<{ item: string; quantity: number }> = [];
+  for (const p of pattern.packages ?? []) {
+    if (!p.terms.some((t) => hasAllWords(text, fold(t)))) continue;
+    for (const [roleName, quantity] of Object.entries(p.quantities)) {
+      const role = pattern.roles.find((r) => r.role === roleName);
+      if (!role || statedQuantity(scope, role, pattern.roles) !== null || extra.some((e) => e.item === role.label)) continue;
+      extra.push({ item: role.label, quantity });
+    }
+  }
+  return extra.length ? { ...scope, requested_quantities: [...scope.requested_quantities, ...extra] } : scope;
+}
+
+/** A device-list count without the room deviceItem appended to it. */
+function withoutRoom(item: string, scope: ScopeDraftV1): string {
+  const room = (scope.devices ?? []).map((d) => d.room).find((r) => r && item.endsWith(` (${r})`));
+  return room ? item.slice(0, -` (${room})`.length) : item;
+}
 
 /**
  * The scope with its device list as the counts and kept equipment, for the roles the list names: Livewire's new
@@ -341,7 +375,8 @@ function statedItem(scope: ScopeDraftV1, role: RoleSpec, roles: RoleSpec[]): { i
       mine.push(q);
       continue;
     }
-    const scores = roles.map((r) => matchScore(q.item, r));
+    // The room a device-list entry carries ("projector (Theater)") is where it goes, not what it is.
+    const scores = roles.map((r) => matchScore(withoutRoom(q.item, scope), r, true));
     const best = Math.max(...scores);
     if (best > 0 && roles[scores.indexOf(best)] === role) mine.push(q);
   }
@@ -1009,7 +1044,7 @@ function statedForProduct(scope: ScopeDraftV1, n: NamedProduct | undefined): num
 export function materialize(given: ScopeDraftV1, pattern: PatternSpec, namedProducts: NamedProduct[] = [], admitted?: ReadonlySet<string>): Selection {
   // A scope that lists its devices prices from that list: Livewire's new devices are the counts, the customer's are
   // left out. A device list is never a set of totals over its items.
-  const stated = withDevices(given, pattern.roles);
+  const stated = withPackages(withDevices(given, pattern.roles), pattern);
   const original = stated.devices?.length ? stated : withoutTotals(stated);
   const retro = retrofit(stated);
   const lines: SelectionLine[] = [];
@@ -1658,6 +1693,17 @@ export function materialize(given: ScopeDraftV1, pattern: PatternSpec, namedProd
     if (otherModel) line.placeholder_for = otherModel;
     // A placeholder for indoor cameras isn't listed under our outdoor camera's "Exterior" (Zack's Jinny's job, 2026-11-03).
     if (asked && /\b(indoor|interior)\b/i.test(asked) && /^exterior$/i.test(line.location)) line.location = "Interior";
+  }
+
+  // A device on the rep's list that no role of the budget prices is named on it, not dropped (Dillon's Gayatri job,
+  // 2026-11-12: the projector, screen and AV receiver left the budget without a word).
+  const listedText = [...toVerify, ...allowances.map((a) => a.label), ...laborAllowances.map((a) => a.label), ...(equipmentAllowances(original).map((a) => a.label))].map(fold);
+  for (const d of original.devices ?? []) {
+    if (d.supplied_by !== "livewire" || d.existing || roleNamed(d.item, pattern.roles)) continue;
+    const item = fold(d.item);
+    if (original.excluded_scope.some((x) => item.includes(fold(x)) || fold(x).includes(item)) || listedText.some((t) => t.includes(item))) continue;
+    toVerify.push(`Requested product: ${d.item}${d.quantity > 1 ? ` × ${d.quantity}` : ""} (no Livewire standard; priced in the final proposal)`);
+    listedText.push(item);
   }
 
   return {

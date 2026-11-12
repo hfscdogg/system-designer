@@ -171,6 +171,12 @@ describe("add-on requests", () => {
     expect(isAddOnRequest({ requested_changes: ["Add glass-break sensors", "Replace legacy panel"] })).toBe(false);
     expect(isAddOnRequest({ requested_changes: [] })).toBe(false);
   });
+  // Henry's Kashouty job (2026-11-12): the contacts and motions were priced without a panel.
+  it("prices a basic security system added beside other additions as a new system", () => {
+    expect(isAddOnRequest({ requested_changes: ["Add a Sonos Arc to the family room TV", "Add a basic security system with 3 door contacts and 2 motion sensors"] })).toBe(false);
+    expect(isAddOnRequest({ requested_changes: ["Add Apple TV", "Budget basic 3 door 2 motion system"] })).toBe(false);
+    expect(isAddOnRequest({ requested_changes: ["Add 2 door contacts to the existing alarm"] })).toBe(true);
+  });
 });
 
 describe("generic audio and video", () => {

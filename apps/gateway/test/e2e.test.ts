@@ -1076,6 +1076,43 @@ describe("editing a scope and revising a finished budget", () => {
     expect(after.find((l) => name(l) === name(keep!))!.quantity).toBe(keep!.quantity);
   });
 
+  it("takes a pasted removal list's counts off the budget instead of setting them (Dillon's Gayatri job, 2026-11-11)", async () => {
+    const t = await setup([completeExtraction()]);
+    await t.send(chatMessage("Smith security upgrade"));
+    const [first] = t.receipts();
+    await t.send(click(first!.receiptId, first!.approve!.scopeHash));
+    const [original] = await t.store.listRunsForPerson("zack");
+    const [multi, single] = (await t.store.readArtifact<Proposal>(original!.id, "bind", "proposal"))!.sections.flatMap((s) => s.lines);
+    const name = (l: { brand: string; model: string }) => `${l.brand} ${l.model}`;
+    // First a budget with 3 of one item.
+    await t.send(controlClick("revise_budget", original!.id));
+    await t.send(chatMessage(`• ${name(multi!)} × 3\n• ${name(single!)} × ${single!.quantity}`));
+    const set = t.receipts().at(-1)!;
+    await t.send(click(set.receiptId, set.approve!.scopeHash));
+    const three = (await t.store.listRunsForPerson("zack")).find((r) => r.id !== original!.id && r.state === "READY_HELD")!;
+    // Then, as Dillon wrote it: a "Remove -" header and the budget's lines with the count to take out.
+    await t.send(controlClick("revise_budget", three.id));
+    await t.send(chatMessage([`Remove - `, `• ${name(multi!)} × 1`, `• ${name(single!)} × ${single!.quantity}`].join("\n")));
+    const second = t.receipts().at(-1)!;
+    expect(second.lines.join("\n")).toContain(`${name(multi!)}: set to 2 (pasted list)`);
+    expect(second.lines.join("\n")).toContain(`${name(single!)}: removed (pasted list)`);
+  });
+
+  it("reads a one-line removal with its counts between commas (Dillon's Gayatri job, 2026-11-11)", async () => {
+    const t = await setup([completeExtraction()]);
+    await t.send(chatMessage("Smith security upgrade"));
+    const [first] = t.receipts();
+    await t.send(click(first!.receiptId, first!.approve!.scopeHash));
+    const [original] = await t.store.listRunsForPerson("zack");
+    const [a, b] = (await t.store.readArtifact<Proposal>(original!.id, "bind", "proposal"))!.sections.flatMap((s) => s.lines);
+    await t.send(controlClick("revise_budget", original!.id));
+    // No space between brand and model, and a count before an item, as typed: "SanusCILT4-B1 x2", "x 1 SonosArc Ultra".
+    await t.send(chatMessage(`System Designer - Dillon remove ${a!.brand}${a!.model} x${a!.quantity}, x ${b!.quantity} ${b!.brand} ${b!.model}`));
+    const second = t.receipts().at(-1)!;
+    expect(second.lines.join("\n")).toContain(`${a!.brand} ${a!.model}: removed (pasted list)`);
+    expect(second.lines.join("\n")).toContain(`${b!.brand} ${b!.model}: removed (pasted list)`);
+  });
+
   it("names a pasted item that isn't on the budget instead of guessing", async () => {
     const t = await setup([completeExtraction()]);
     await t.send(chatMessage("Smith security upgrade"));

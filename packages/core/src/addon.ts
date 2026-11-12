@@ -5,7 +5,10 @@
  * modernization and is priced as a complete system, as is anything ambiguous.
  */
 const ADD_ON_VERB = /^(add|adding|additional|another|extra|move|relocate|fix|repair)\b/;
-const WHOLE_SYSTEM = /\b(new (security |alarm |audio |network |wi-?fi |control4 |lighting |camera )?system|whole[- ](home|house)|full system|complete system|entire (home|house|system)|new construction|new home|new build|pre-?wire|(install|new) (a |an )?(security|alarm) system)\b/;
+const WHOLE_SYSTEM = /\b(new (security |alarm |audio |network |wi-?fi |control4 |lighting |camera )?system|whole[- ](home|house)|full system|complete system|entire (home|house|system)|new construction|new home|new build|pre-?wire|(install|new|add|budget) (a |an )?(basic |new )?(security|alarm) system|basic (\d+ door \d+ motion |security |alarm )?(system|package))\b/;
+
+// "Add a basic security system with 3 door contacts and 2 motion sensors" is a new system, not an add-on to one
+// (Henry's Kashouty job, 2026-11-12: priced the contacts and motions without the panel they need).
 
 /** Replacing a consumable part (a panel battery) is service on the existing system, not a modernization. */
 const SERVICE_PART = /^(replace|replacing|swap|change)\b.*\bbatter(y|ies)\b/;

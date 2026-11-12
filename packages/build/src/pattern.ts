@@ -19,6 +19,12 @@ export const RoleSpecSchema = z
     /** If set, include the role only when the request mentions one of these terms (whole words, in its changes or stated counts). */
     mentions: z.array(z.string()).optional(),
     /**
+     * Mentions that say a request wants the role without naming its device ("theater" for a subwoofer, "surround" for a
+     * soundbar, "receiver" for a Sonos Port): never what a stated count or a device-list entry is (Dillon's Gayatri job,
+     * 2026-11-12: a theater's screen, projector and speakers priced as 8 Sonos Subs).
+     */
+    context_terms: z.array(z.string()).optional(),
+    /**
      * A mention counts only when the same change also names one of these (an "outdoor" eero needs Wi-Fi
      * words beside it, so "outdoor PoE cameras" adds no access point).
      */
@@ -331,6 +337,14 @@ export const PatternSpecSchema = z
     labor_extras: z
       .array(z.object({ id: z.string().min(1), label: z.string().min(1), hours: z.number().positive(), mentions: z.array(z.string()).min(1) }).strict())
       .optional(),
+    /**
+     * A package the request asks for by name, with no counts of its own ("a basic security system"): the counts it
+     * stands for, priced unless the request states that device's count (Henry's Kashouty job, 2026-11-12: "basic"
+     * is 3 door contacts and 2 motions).
+     */
+    packages: z
+      .array(z.object({ terms: z.array(z.string().min(1)).min(1), quantities: z.record(z.string(), z.number().int().positive()) }).strict())
+      .optional(),
     /** D-Tools parts-and-materials record, sized from the policy's parts mix target. */
     parts: z.object({ product_id: z.string().uuid(), label: z.string().min(1) }).strict().optional(),
     /** Labor allowances for out-of-pattern work (see AllowanceSpecSchema); attached by loadPatterns. */
@@ -439,6 +453,7 @@ export function combinePatterns(ps: PatternSpec[]): PatternSpec | null {
       : {}),
     ...(ps[0]!.parts ? { parts: ps[0]!.parts } : {}),
     ...(ps.some((p) => p.labor_extras?.length) ? { labor_extras: ps.flatMap((p) => p.labor_extras ?? []) } : {}),
+    ...(ps.some((p) => p.packages?.length) ? { packages: ps.flatMap((p) => p.packages ?? []) } : {}),
     ...(ps.some((p) => p.allowances?.length) ? { allowances: [...new Map(ps.flatMap((p) => p.allowances ?? []).map((a) => [a.key, a])).values()] } : {}),
     assumptions: uniq(ps.flatMap((p) => p.assumptions)),
     exclusions: uniq(ps.flatMap((p) => p.exclusions)),
