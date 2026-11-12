@@ -396,3 +396,15 @@ describe("a reply refused for one malformed field", () => {
     expect(salvageClarificationPatch("not a patch")).toBeNull();
   });
 });
+
+// Staging smoke, Biscuit Belly (2026-11-12): labeled "audio/video", an amplifier swap priced a TV mount and WattBox.
+describe("an amplifier job the model labels audio/video", () => {
+  const systems = (functional_systems: string[], requested_changes: string[]) =>
+    normalizeExtraction(completeExtraction({ functional_systems, requested_changes, requested_quantities: [] })).scope.functional_systems;
+  it("is music through the house when no request names a TV", () => {
+    expect(systems(["Audio/video"], ["Replace the amplifier for the existing ceiling speakers"])).toEqual(["whole_home_audio"]);
+  });
+  it("stays a TV job when a request names the TV", () => {
+    expect(systems(["Audio/video"], ["Mount the 65-inch TV", "Add an amp for the TV's speakers"])).toContain("audio_video");
+  });
+});
