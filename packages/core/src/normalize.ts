@@ -122,6 +122,19 @@ function tvSoundOnly(systems: string[], requests: string[]): string[] {
   return houseMusic ? systems : systems.filter((s) => s !== "whole_home_audio");
 }
 
+/**
+ * The other way round: a job the model labels "audio/video" whose requests name no TV but an amplifier or house
+ * speakers ("Replace the amplifier for the existing ceiling speakers") is music through the house, not a TV job
+ * (staging smoke, Biscuit Belly, 2026-11-12: priced a TV mount and WattBox for an amplifier swap).
+ */
+function musicNotTv(systems: string[], requests: string[]): string[] {
+  if (!systems.includes("audio_video") || systems.includes("whole_home_audio")) return systems;
+  const texts = requests.map(fold);
+  if (texts.some((t) => TV_WORDS.test(t) || /\b(home theater|theatre|media room|apple ?tv|roku|streaming|streamers?)\b/.test(t))) return systems;
+  if (!texts.some((t) => /\b((in|on)[- ](ceiling|wall)|ceiling|outdoor|patio|landscape) speakers?\b|\b(?<!\d ?)amps?\b|\bamplifiers?\b/.test(t))) return systems;
+  return [...systems.filter((s) => s !== "audio_video"), "whole_home_audio"];
+}
+
 export function normalizeFunctionalSystems(items: string[]): string[] {
   const raw = items.map((item) => ({ item, hits: systemHits(item) }));
   const hasTv = raw.some((m) => m.hits.includes("audio_video"));
@@ -238,7 +251,7 @@ export function normalizeExtraction(input: ScopeExtraction): NormalizedExtractio
     .map(fold)
     .some((t) => PREWIRE_DONE.test(t) || PREWIRE_DONE_LOOSE.test(t));
   if (prewired) notes.push("Pre-wire is already complete: structured wiring is not priced");
-  const systems = uniqSorted([...tvSoundOnly(normalizeFunctionalSystems(input.functional_systems), requests), ...requestedSystems(requests)]).filter(
+  const systems = uniqSorted([...musicNotTv(tvSoundOnly(normalizeFunctionalSystems(input.functional_systems), requests), requests), ...requestedSystems(requests)]).filter(
     (s) => !(prewired && s === "structured_wiring"),
   );
   const scope: ScopeExtraction = {
