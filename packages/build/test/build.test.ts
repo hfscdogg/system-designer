@@ -2074,7 +2074,7 @@ describe("Henry's decisions (2026-10-27): D-Tools quote history for cabling, cam
 
   it("patterns carry the new version", async () => {
     const versions = Object.fromEntries((await loadPatterns()).map((p) => [p.pattern, p.version]));
-    expect(versions).toMatchObject({ prewire: "2026-10-30.1", tv_media: "2026-11-10.1", whole_home_audio: "2026-11-06.1" });
+    expect(versions).toMatchObject({ prewire: "2026-10-30.1", tv_media: "2026-11-12.1", whole_home_audio: "2026-11-12.1" });
   });
 
   it("Q1: a retrofit drop is two keystone jacks and 2 hours; a new-construction drop one jack and 1 hour", async () => {
@@ -3256,3 +3256,78 @@ describe("outdoor articulating mount and a WattBox per TV (Henry, 2026-11-10)", 
     expect(selection.lines.find((l) => l.role === "tv_power_protection")!.record_id).toBe(WATTBOX_WB_200_2);
   });
 });
+
+// Dillon's Gayatri job (2026-11-11): a theater with a projector and a second-floor TV priced 8 Sonos Subs, 4 Arc Ultras
+// with their mounts and 2 Sonos Ports, and dropped the projector, screen and receiver without a word.
+describe("Dillon's Gayatri job (2026-11-11)", () => {
+  const none = { existing_equipment: { status: "none" as const, retained: [], removed_or_replaced: [] } };
+  const lw = (item: string, room: string | null, quantity = 1) => ({ item, room, quantity, supplied_by: "livewire" as const, existing: false });
+  async function job(o: object) {
+    const patterns = await loadPatterns();
+    const { scope } = approvedScope({ ...none, existing_detectors: "not_provided", project_type: null, ...o });
+    const pattern = selectPattern(scope.functional_systems, patterns)!;
+    return { scope, pattern, selection: materialize(scope, pattern) };
+  }
+  const gayatri = {
+      client: "Gayatri",
+      functional_systems: ["home theater", "projection", "surround sound", "Sonos", "TV", "soundbar", "lighting", "electrical"],
+      requested_changes: [
+        "Theater: acoustically transparent screen, approximately 130-inch, fixed-frame, wall-mounted",
+        "Theater: projector for the 130-inch screen at a 225-inch throw distance, target equipment budget approximately $2,500",
+        "Theater: projector mount/hardware allowance",
+        "Theater: 3 front in-wall speakers (left, center, right)",
+        "Theater: 2 in-ceiling surround speakers",
+        "Theater: powered subwoofer, 10- or 12-inch driver",
+        "Theater: AV receiver for the 5.1 system, Sony considered",
+        "Theater: Sonos Port to integrate the theater receiver into Sonos",
+        "Theater: surge protector",
+        "Wall sconces 6-7, client-supplied",
+        "Electrical boxes, wiring and materials for sconces and TV power",
+        "Switches or compatible dimmers",
+        "Relocate or add power behind the second-floor TV",
+        "Second floor: 45-inch TV",
+        "Second floor: TV mount",
+        "Second floor: Sonos soundbar",
+        "Second floor: soundbar mounting hardware",
+        "Second floor: surge protector",
+        "Second floor: HDMI cables and cable-management materials for gaming and streaming",
+      ],
+      requested_quantities: [
+        { item: "acoustically transparent screen", quantity: 1 }, { item: "projector", quantity: 1 }, { item: "front in-wall speakers", quantity: 3 },
+        { item: "in-ceiling surround speakers", quantity: 2 }, { item: "powered subwoofer", quantity: 1 }, { item: "AV receiver", quantity: 1 },
+        { item: "Sonos Port", quantity: 1 }, { item: "surge protector", quantity: 2 }, { item: "wall sconces", quantity: 7 },
+        { item: "television", quantity: 1 }, { item: "TV mount", quantity: 1 }, { item: "Sonos soundbar", quantity: 1 }, { item: "soundbar mounting hardware", quantity: 1 },
+      ],
+      devices: [
+        lw("acoustically transparent screen 130-inch", "Theater"), lw("projector", "Theater"), lw("projector mount", "Theater"),
+        lw("front in-wall speakers", "Theater", 3), lw("in-ceiling surround speakers", "Theater", 2), lw("powered subwoofer", "Theater"),
+        lw("Sony AV receiver", "Theater"), lw("Sonos Port", "Theater"), lw("surge protector", "Theater"),
+        { item: "wall sconces", room: null, quantity: 7, supplied_by: "customer" as const, existing: false },
+        lw("45-inch TV", "Second floor"), lw("TV mount", "Second floor"), lw("Sonos soundbar", "Second floor"), lw("soundbar mounting hardware", "Second floor"),
+        lw("surge protector", "Second floor"), lw("HDMI cables", "Second floor"),
+      ],
+  };
+
+  it("counts each device by what it is, not the room it's in or the system it belongs to", async () => {
+    const { selection } = await job(gayatri);
+    const q = Object.fromEntries(selection.lines.map((l) => [l.role, l.quantity]));
+    // "projector (Theater)" is no subwoofer; "in-ceiling surround speakers" are no soundbars; an AV receiver is no Sonos Port or TV.
+    expect(q).toMatchObject({ subwoofer: 1, soundbar: 1, soundbar_mount: 1, television: 1, tv_mount: 1, streaming_port: 1 });
+    // Two surge protectors asked for: the theater's and the TV's.
+    expect(q.tv_power_protection).toBe(2);
+  });
+
+  it("names the devices no Livewire standard prices instead of dropping them", async () => {
+    const { selection } = await job(gayatri);
+    expect(selection.to_verify).toEqual(
+      expect.arrayContaining([
+        "Requested product: acoustically transparent screen 130-inch (no Livewire standard; priced in the final proposal)",
+        "Requested product: projector (no Livewire standard; priced in the final proposal)",
+        "Requested product: Sony AV receiver (no Livewire standard; priced in the final proposal)",
+      ]),
+    );
+    // A device a role prices is never listed as unpriced.
+    expect(selection.to_verify.some((v) => /surge protector|HDMI|soundbar|subwoofer/i.test(v))).toBe(false);
+  });
+});
+

@@ -370,17 +370,42 @@ export function applyClarification(base: ScopeExtraction, patch: ClarificationPa
  * The item lines of a pasted budget list, "• Sony K65XR70 × 2", "Sony K65XR70 x 2" or "2 x Sony K65XR70": the item as
  * written and its new count. Other lines (the total, "Proposal validated for …", "+3 more") are not items.
  */
-export function parsePastedItems(text: string): Array<{ item: string; quantity: number }> {
-  const out: Array<{ item: string; quantity: number }> = [];
+export function parsePastedItems(text: string): Array<{ item: string; quantity: number; remove?: true }> {
+  return readPastedList(text).items;
+}
+
+/** "Remove", "Remove -", "Delete:" or "System Designer - Dillon remove …": the items after it are taken out, not set. */
+const REMOVE_HEAD = /^(?:system designer(?:\s*[-–:]\s*[a-z]+)?\s+)?(?:remove|delete|take out|take off)\b\s*[-–:]?\s*/i;
+
+/**
+ * A pasted list's items, and the lines under a removal that name no item with a count. Under a removal ("Remove" then
+ * "• Sanus CILT4-B1 × 1", or "remove Sonos IN-CEILING x 2, Sanus CILT4-B1 x2" on one line) each count is how many to
+ * take out (Dillon's Gayatri and Durante jobs, 2026-11-11: a pasted removal list set the mounts from 1 to 4).
+ */
+export function readPastedList(text: string): { items: Array<{ item: string; quantity: number; remove?: true }>; unread: string[] } {
+  const items: Array<{ item: string; quantity: number; remove?: true }> = [];
+  const unread: string[] = [];
+  let removing = false;
   for (const raw of text.split(/\r?\n/)) {
-    const line = raw.replace(/^\s*(?:[•*·-]|\d+[.)])\s+/, "").trim();
+    let line = raw.replace(/^\s*(?:[•*·-]|\d+[.)])\s+/, "").trim();
     if (!line || /^(revise|revision)\b[^:]*:?\s*$/i.test(line)) continue;
-    const after = /^(.+?)\s*[×x]\s*(\d+)$/i.exec(line);
-    const before = /^(\d+)\s*[×x]\s+(.+)$/i.exec(line);
-    const [item, n] = after ? [after[1]!, after[2]!] : before ? [before[2]!, before[1]!] : [null, null];
-    if (!item || /\$|\btotal\b|\bsubtotal\b|\bhours?\b/i.test(item)) continue;
-    out.push({ item: item.replace(/^(revise|revision)\s*:\s*/i, "").trim(), quantity: Number(n) });
+    const head = REMOVE_HEAD.exec(line);
+    if (head) {
+      removing = true;
+      line = line.slice(head[0].length).trim();
+      if (!line) continue;
+    }
+    for (const part of removing ? line.split(/\s*,\s*/).filter(Boolean) : [line]) {
+      const after = /^(.+?)\s*[×x]\s*(\d+)$/i.exec(part);
+      const before = /^(\d+)\s*[×x]\s+(.+)$/i.exec(part) ?? (removing ? /^[×x]\s*(\d+)\s+(.+)$/i.exec(part) : null);
+      const [item, n] = after ? [after[1]!, after[2]!] : before ? [before[2]!, before[1]!] : [null, null];
+      if (!item || /\$|\btotal\b|\bsubtotal\b|\bhours?\b/i.test(item)) {
+        if (removing) unread.push(part);
+        continue;
+      }
+      items.push({ item: item.replace(/^(revise|revision)\s*:\s*/i, "").trim(), quantity: Number(n), ...(removing ? { remove: true as const } : {}) });
+    }
   }
-  return out;
+  return { items, unread };
 }
 

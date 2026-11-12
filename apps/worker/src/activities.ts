@@ -8,7 +8,7 @@ import {
   systemsMentioned,
   hashCanonical,
   normalizeExtraction,
-  parsePastedItems,
+  readPastedList,
   salvageClarificationPatch,
   validateClarificationPatch,
   validateExtraction,
@@ -160,10 +160,13 @@ export function createActivities(deps: ActivityDeps): RunActivities {
     parentRunId: string,
     change: string,
   ): Promise<null | { ok: true; items: Array<{ item: string; role: string; record_id: string; quantity: number }> } | { ok: false; reason: string }> {
-    const parsed = parsePastedItems(change);
+    const { items: parsed, unread } = readPastedList(change);
     // One counted item with other words around it ("make it 2 TVs") is an ordinary revision for the model.
     const lines = change.split(/\r?\n/).map((l) => l.trim()).filter(Boolean);
     if (!parsed.length || (parsed.length === 1 && lines.length === 1 && !/[×]|\bx\s*\d+\s*$/i.test(lines[0]!))) return null;
+    // A removal with words of its own ("Sonos Sub G4 - Replace this with a Klipsch R-100SW") is for the model to read
+    // whole, not to apply in part.
+    if (unread.length) return null;
     const proposal = await store.readArtifact<Proposal>(parentRunId, "bind", "proposal");
     const priced = (proposal?.sections ?? []).flatMap((s) => s.lines);
     const key = (t: string) => t.toLowerCase().replace(/[^a-z0-9]/g, "");
@@ -172,7 +175,9 @@ export function createActivities(deps: ActivityDeps): RunActivities {
     for (const p of parsed) {
       const k = key(p.item);
       const line = priced.find((l) => [`${l.brand} ${l.model}`, l.model, l.label].some((t) => t && key(t) === k));
-      if (line) items.push({ item: [line.brand, line.model].filter(Boolean).join(" "), role: line.role, record_id: line.record_id, quantity: p.quantity });
+      // A removal takes its count off the line ("Sanus CILT4-B1 × 2" removed from 3 leaves 1); a count of the list sets it.
+      const quantity = p.remove && line ? Math.max(0, line.quantity - p.quantity) : p.quantity;
+      if (line) items.push({ item: [line.brand, line.model].filter(Boolean).join(" "), role: line.role, record_id: line.record_id, quantity });
       else unknown.push(p.item);
     }
     // Not this budget's list at all: let the model read it as words.

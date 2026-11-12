@@ -19,6 +19,12 @@ export const RoleSpecSchema = z
     /** If set, include the role only when the request mentions one of these terms (whole words, in its changes or stated counts). */
     mentions: z.array(z.string()).optional(),
     /**
+     * Mentions that say a request wants the role without naming its device ("theater" for a subwoofer, "surround" for a
+     * soundbar, "receiver" for a Sonos Port): never what a stated count or a device-list entry is (Dillon's Gayatri job,
+     * 2026-11-12: a theater's screen, projector and speakers priced as 8 Sonos Subs).
+     */
+    context_terms: z.array(z.string()).optional(),
+    /**
      * A mention counts only when the same change also names one of these (an "outdoor" eero needs Wi-Fi
      * words beside it, so "outdoor PoE cameras" adds no access point).
      */
