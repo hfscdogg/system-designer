@@ -405,7 +405,30 @@ function introRooms(scope: ScopeDraftV1, sections: Section[]): string[] {
 
 function settled(question: string, lines: BoundLine[]): boolean {
   if (/poe (switch|injector)/i.test(question) && lines.some((l) => POE_SWITCH.test(`${l.label} ${l.brand} ${l.model}`))) return true;
-  return pricedProduct(question, lines) || modelPicked(question, lines) || placeheld(question, lines);
+  return pricedProduct(question, lines) || modelPicked(question, lines) || placeheld(question, lines) || genericPriced(question, lines);
+}
+
+/** Words that describe a generic device's style or place, not which product it is. */
+const GENERIC_WORDS = new Set(["a", "an", "the", "new", "basic", "arm", "tilt", "tilting", "full", "motion", "style", "type", "wall", "tv", "television"]);
+
+/**
+ * "Requested product: Arm/tilt mount" or "soundbar for master bedroom" once a priced line is that device: a request that
+ * names no brand or model, whose every other word is the line's own (Henry's Kashouty job, 2026-11-12: listed to verify
+ * beside the articulating mount and Arc Ultra priced for them). A brand or model the line lacks ("Sony ultra slim
+ * mount", "Bretford cart") keeps it open.
+ */
+function genericPriced(question: string, lines: BoundLine[]): boolean {
+  const m = /^requested product:\s*(.+)$/i.exec(question.trim());
+  if (!m) return false;
+  // Where it goes is not what it is: "soundbar for master bedroom".
+  const what = m[1]!.replace(/\s+(for|in|at|on)\s+(the\s+)?[a-z' ]+$/i, "");
+  const words = what.toLowerCase().split(/[^a-z0-9]+/).filter(Boolean);
+  if (!words.length || words.some((w) => /\d/.test(w))) return false;
+  return lines.some((l) => {
+    const own = new Set(`${l.role.replace(/_/g, " ")} ${l.label} ${l.brand} ${l.model}`.toLowerCase().split(/[^a-z0-9]+/).filter(Boolean));
+    const has = (w: string) => own.has(w) || own.has(w.replace(/s$/, ""));
+    return words.some((w) => !GENERIC_WORDS.has(w) && has(w)) && words.every((w) => GENERIC_WORDS.has(w) || has(w));
+  });
 }
 
 /**

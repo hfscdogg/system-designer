@@ -2074,7 +2074,7 @@ describe("Henry's decisions (2026-10-27): D-Tools quote history for cabling, cam
 
   it("patterns carry the new version", async () => {
     const versions = Object.fromEntries((await loadPatterns()).map((p) => [p.pattern, p.version]));
-    expect(versions).toMatchObject({ prewire: "2026-10-30.1", tv_media: "2026-11-12.1", whole_home_audio: "2026-11-12.1" });
+    expect(versions).toMatchObject({ prewire: "2026-10-30.1", tv_media: "2026-11-12.2", whole_home_audio: "2026-11-12.1" });
   });
 
   it("Q1: a retrofit drop is two keystone jacks and 2 hours; a new-construction drop one jack and 1 hour", async () => {
@@ -3328,6 +3328,77 @@ describe("Dillon's Gayatri job (2026-11-11)", () => {
     );
     // A device a role prices is never listed as unpriced.
     expect(selection.to_verify.some((v) => /surge protector|HDMI|soundbar|subwoofer/i.test(v))).toBe(false);
+  });
+});
+
+// Henry's Kashouty job (2026-11-12): a family room Arc and Apple TV, a new master bedroom TV on an arm/tilt mount, and a
+// basic 3-door 2-motion security system. Every change read "Add …", so it priced as an add-on: the contacts and motions
+// without a panel, no WattBox, a tilt mount for the arm mount, and the mount and soundbar still listed to verify.
+describe("Henry's Kashouty job (2026-11-12)", () => {
+  const none = { existing_equipment: { status: "none" as const, retained: [], removed_or_replaced: [] } };
+  const quantities = (sel: ReturnType<typeof materialize>) => Object.fromEntries(sel.lines.map((l) => [l.role, l.quantity]));
+  async function job(o: object) {
+    const patterns = await loadPatterns();
+    const { scope, scopeHash, receiptId } = approvedScope({ ...none, existing_detectors: "not_provided", project_type: null, ...o });
+    const pattern = selectPattern(scope.functional_systems, patterns)!;
+    return { scope, scopeHash, receiptId, pattern, selection: materialize(scope, pattern) };
+  }
+  async function built(o: object) {
+    const { scope, scopeHash, receiptId, pattern, selection } = await job(o);
+    const catalog = Object.fromEntries(
+      patternRecordIds(pattern).map((id, i) => [
+        id,
+        id === pattern.parts!.product_id ? product(id, "Livewire", "PARTS", 1, 0.01, { laborItems: [] }) : product(id, "TestCo", `DEV-${i}`, 300, 150, { laborItems: [] }),
+      ]),
+    );
+    const { admitted } = await admitAll(pattern, catalog);
+    const result = compile(selection, admitted, pattern);
+    if (!result.ok) throw new Error(result.errors.join("\n"));
+    return { selection, proposal: bind(result.draft, { runId: "run_test", receiptId, approvalId: "ap_1", scopeHash, scope, policy: POLICY, releaseId: "rel" }) };
+  }
+  const kashouty = {
+    client: "Jonathan Kashouty",
+    functional_systems: ["TV", "soundbar", "streaming", "security system"],
+    requested_changes: [
+      "Add a Sonos Arc to the existing family room TV",
+      "Add an Apple TV in the family room",
+      "Add a basic security system with 3 door contacts and 2 motion sensors",
+      "Add an arm/tilt mount in the master bedroom",
+      "Add a new 60-inch Sony micro LED TV in the master bedroom",
+      "Add a Sonos Arc in the master bedroom",
+      "Add an Apple TV in the master bedroom",
+    ],
+    requested_quantities: [{ item: "Sonos Arc", quantity: 2 }, { item: "Apple TV", quantity: 2 }, { item: "door contacts", quantity: 3 }, { item: "motion sensors", quantity: 2 }],
+    unresolved_questions: ["Requested product: Arm/tilt mount", "Requested product: soundbar for master bedroom"],
+  };
+
+  it("prices the security system whole, the arm mount as articulating, and a WattBox with the new TV", async () => {
+    const { selection } = await job(kashouty);
+    expect(selection.add_on).toBe(false);
+    expect(quantities(selection)).toMatchObject({
+      security_panel: 1, door_window_contact: 3, motion_detector: 2,
+      tv_mount_articulating: 1, television: 1, soundbar: 2, soundbar_mount: 2, streamer: 2, tv_power_protection: 1,
+    });
+    expect(selection.lines.some((l) => l.role === "tv_mount")).toBe(false);
+  });
+
+  it("leaves no generic requested product open once a priced line is that device", async () => {
+    const { proposal } = await built(kashouty);
+    expect(proposal.remaining_verification.filter((v) => /^Requested product/.test(v))).toEqual([]);
+  });
+
+  it("prices a basic security system as 3 door contacts and 2 motions, and a TV solution as a TV", async () => {
+    const { selection } = await job({ functional_systems: ["TV", "security system"], requested_changes: ["TV solution for the master bedroom", "Basic security system"] });
+    expect(quantities(selection)).toMatchObject({ security_panel: 1, door_window_contact: 3, motion_detector: 2, television: 1, tv_mount: 1, tv_power_protection: 1 });
+    // Counts the request states win over the package's.
+    const four = await job({ functional_systems: ["security system"], requested_changes: ["Basic security system with 4 door contacts"], requested_quantities: [{ item: "door contacts", quantity: 4 }] });
+    expect(quantities(four.selection)).toMatchObject({ door_window_contact: 4, motion_detector: 2 });
+  });
+
+  it("keeps the WattBox with a TV mount an add-on prices", async () => {
+    const { selection } = await job({ functional_systems: ["TV"], requested_changes: ["Add a tilt mount for the customer's TV in the den"] });
+    expect(selection.add_on).toBe(true);
+    expect(quantities(selection)).toMatchObject({ tv_mount: 1, tv_power_protection: 1 });
   });
 });
 

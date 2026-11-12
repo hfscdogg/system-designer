@@ -187,6 +187,24 @@ function roleNamed(text: string, roles: RoleSpec[]): RoleSpec | undefined {
 
 const deviceItem = (d: Device) => (d.room ? `${d.item} (${d.room})` : d.item);
 
+/**
+ * The counts a package the request names stands for ("a basic security system": 3 door contacts, 2 motions), as stated
+ * counts of each role's own label, for the roles the request gives no count of.
+ */
+function withPackages(scope: ScopeDraftV1, pattern: PatternSpec): ScopeDraftV1 {
+  const text = scope.requested_changes.map(fold).join(" | ");
+  const extra: Array<{ item: string; quantity: number }> = [];
+  for (const p of pattern.packages ?? []) {
+    if (!p.terms.some((t) => hasAllWords(text, fold(t)))) continue;
+    for (const [roleName, quantity] of Object.entries(p.quantities)) {
+      const role = pattern.roles.find((r) => r.role === roleName);
+      if (!role || statedQuantity(scope, role, pattern.roles) !== null || extra.some((e) => e.item === role.label)) continue;
+      extra.push({ item: role.label, quantity });
+    }
+  }
+  return extra.length ? { ...scope, requested_quantities: [...scope.requested_quantities, ...extra] } : scope;
+}
+
 /** A device-list count without the room deviceItem appended to it. */
 function withoutRoom(item: string, scope: ScopeDraftV1): string {
   const room = (scope.devices ?? []).map((d) => d.room).find((r) => r && item.endsWith(` (${r})`));
@@ -1026,7 +1044,7 @@ function statedForProduct(scope: ScopeDraftV1, n: NamedProduct | undefined): num
 export function materialize(given: ScopeDraftV1, pattern: PatternSpec, namedProducts: NamedProduct[] = [], admitted?: ReadonlySet<string>): Selection {
   // A scope that lists its devices prices from that list: Livewire's new devices are the counts, the customer's are
   // left out. A device list is never a set of totals over its items.
-  const stated = withDevices(given, pattern.roles);
+  const stated = withPackages(withDevices(given, pattern.roles), pattern);
   const original = stated.devices?.length ? stated : withoutTotals(stated);
   const retro = retrofit(stated);
   const lines: SelectionLine[] = [];
