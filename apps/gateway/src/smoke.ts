@@ -294,6 +294,20 @@ export const SMOKE_SCENARIOS: SmokeScenario[] = [
       { say: "Revise: add 10' of linear lighting in the kitchen", expect: { linear_tape_light: 1, linear_extrusion: 2, linear_driver: 1, linear_dimmer: 1 } },
     ],
   },
+  {
+    // Henry's theater standard, 2026-11-13 (Dillon's Gayatri job priced its theater as 8 Sonos Subs): Livewire's package,
+    // the rep's projector budget as an allowance in place of the standard projector, and no Sonos Sub.
+    name: "Theater (Gayatri-style package)",
+    steps: [
+      {
+        say:
+          `Basement theater for the Smoke Test family, ${ADDRESS}. Residential. 5.1 system: 3 front in-wall speakers (left, center, right), ` +
+          "2 in-ceiling surround speakers, a powered subwoofer, a new AV receiver, and a projector with a target equipment budget of about $2,500 on a ceiling mount.",
+        pattern: "home_theater",
+        expect: { av_receiver: 1, front_speakers: 3, surround_speakers: 2, theater_subwoofer: 1, projector_mount: 1, projector: 0, subwoofer: 0 },
+      },
+    ],
+  },
 ];
 
 const CLARIFY_DEFAULTS = "Use your recommended defaults for anything I didn't say.";

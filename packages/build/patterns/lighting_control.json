@@ -1,15 +1,17 @@
 {
   "schema": "architecture_pattern_v1",
   "pattern": "lighting_control",
-  "version": "2026-10-08.1",
-  "title": "Lutron lighting control",
+  "version": "2026-11-13.1",
+  "title": "Lighting control",
   "applies_when_any": [
     "lighting_control"
   ],
   "roles": [
     {
       "role": "lighting_processor",
-      "categories": ["Lighting > Controllers"],
+      "categories": [
+        "Lighting > Controllers"
+      ],
       "label": "Lutron RadioRA 3 processor",
       "model": "RR-PROC3-KIT",
       "critical": true,
@@ -27,14 +29,40 @@
         "qty": 1
       },
       "location": "Equipment location",
-      "capability": "Wireless lighting control hub with app, schedules and scenes",
+      "capability": "Wireless lighting control hub with app, schedules and scenes: priced only when the request asks for smart control, scenes, an app or keypads (Henry, 2026-11-13)",
       "hours_each": 2,
-      "escalate_if_unresolved": false
+      "escalate_if_unresolved": false,
+      "mentions": [
+        "smart dimmer",
+        "smart dimmers",
+        "smart switch",
+        "smart switches",
+        "smart lighting",
+        "scene",
+        "scenes",
+        "lighting scenes",
+        "app",
+        "app control",
+        "schedule",
+        "schedules",
+        "ra3",
+        "radiora",
+        "radio ra",
+        "radiora 3",
+        "homeworks",
+        "keypad",
+        "keypads",
+        "lighting control",
+        "sunnata"
+      ]
     },
     {
       "role": "smart_dimmer",
-      "categories": ["Lighting > Dimmers", "Lighting > Switches"],
-      "label": "Lutron Sunnata dimmer",
+      "categories": [
+        "Lighting > Dimmers",
+        "Lighting > Switches"
+      ],
+      "label": "Lutron Ariadni CL dimmer",
       "critical": true,
       "systems": [
         "lighting_control"
@@ -42,7 +70,7 @@
       "retained_match": [
         "dimmer"
       ],
-      "product_id": "4c30dde8-aebb-48ed-b663-656fcb3ab1c3",
+      "product_id": "4dad2907-ef73-4676-bfb2-b08f0bccd2cd",
       "precedent": "livewire_standard",
       "quantity": {
         "kind": "minimum",
@@ -50,13 +78,55 @@
         "verify": "count of switch locations to replace with dimmers"
       },
       "location": "Existing switch locations",
-      "capability": "Replaces a wall switch; dims and joins scenes",
+      "capability": "Replaces a wall switch and dims it. Livewire's standard is the plain Lutron Ariadni CL; a Control4 dimmer when the request mentions Control4, a RadioRA 3 Sunnata dimmer when it asks for smart control, scenes, an app or keypads (Henry, 2026-11-13)",
       "hours_each": 0.5,
-      "escalate_if_unresolved": false
+      "escalate_if_unresolved": false,
+      "model": "AYCL-153P-WH",
+      "word_variants": [
+        {
+          "words": [
+            "control4",
+            "c4"
+          ],
+          "product_id": "dca9e13e-8799-438f-ad4e-88863586714f",
+          "model": "C4-APD120-WH",
+          "label": "Control4 adaptive phase dimmer"
+        },
+        {
+          "words": [
+            "smart dimmer",
+            "smart dimmers",
+            "smart switch",
+            "smart switches",
+            "smart lighting",
+            "scene",
+            "scenes",
+            "lighting scenes",
+            "app",
+            "app control",
+            "schedule",
+            "schedules",
+            "ra3",
+            "radiora",
+            "radio ra",
+            "radiora 3",
+            "homeworks",
+            "keypad",
+            "keypads",
+            "lighting control",
+            "sunnata"
+          ],
+          "product_id": "4c30dde8-aebb-48ed-b663-656fcb3ab1c3",
+          "model": "RRST-PRO-N-WH",
+          "label": "Lutron Sunnata RF dimmer"
+        }
+      ]
     },
     {
       "role": "scene_keypad",
-      "categories": ["Lighting > Keypads"],
+      "categories": [
+        "Lighting > Keypads"
+      ],
       "label": "Lutron Sunnata 4-button keypad",
       "model": "RRST-W4B-WH",
       "critical": false,

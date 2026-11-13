@@ -84,7 +84,7 @@ describe("patterns", () => {
   it("ships Livewire's standard D-Tools records for every role, and no invented service records", async () => {
     const patterns = await loadPatterns();
     expect(patterns.map((p) => p.pattern)).toEqual([
-      "access_control", "home_automation", "home_network", "lighting_control", "linear_lighting", "motorized_shades", "prewire",
+      "access_control", "home_automation", "home_network", "home_theater", "lighting_control", "linear_lighting", "motorized_shades", "prewire",
       "security_modernization", "smart_locks", "surveillance", "tv_media", "video_doorbell", "whole_home_audio",
     ]);
     for (const p of patterns) {
@@ -2074,7 +2074,7 @@ describe("Henry's decisions (2026-10-27): D-Tools quote history for cabling, cam
 
   it("patterns carry the new version", async () => {
     const versions = Object.fromEntries((await loadPatterns()).map((p) => [p.pattern, p.version]));
-    expect(versions).toMatchObject({ prewire: "2026-10-30.1", tv_media: "2026-11-12.2", whole_home_audio: "2026-11-12.1" });
+    expect(versions).toMatchObject({ prewire: "2026-10-30.1", tv_media: "2026-11-13.1", whole_home_audio: "2026-11-13.1", home_theater: "2026-11-13.1", lighting_control: "2026-11-13.1" });
   });
 
   it("Q1: a retrofit drop is two keystone jacks and 2 hours; a new-construction drop one jack and 1 hour", async () => {
@@ -3312,22 +3312,131 @@ describe("Dillon's Gayatri job (2026-11-11)", () => {
     const { selection } = await job(gayatri);
     const q = Object.fromEntries(selection.lines.map((l) => [l.role, l.quantity]));
     // "projector (Theater)" is no subwoofer; "in-ceiling surround speakers" are no soundbars; an AV receiver is no Sonos Port or TV.
-    expect(q).toMatchObject({ subwoofer: 1, soundbar: 1, soundbar_mount: 1, television: 1, tv_mount: 1, streaming_port: 1 });
+    // The second floor keeps its TV, mount, soundbar and soundbar mount.
+    expect(q).toMatchObject({ soundbar: 1, soundbar_mount: 1, television: 1, tv_mount: 1 });
     // Two surge protectors asked for: the theater's and the TV's.
     expect(q.tv_power_protection).toBe(2);
   });
 
-  it("names the devices no Livewire standard prices instead of dropping them", async () => {
+  // Henry, 2026-11-13: Livewire's theater package from its accepted D-Tools quotes, a rep's target budget as an allowance,
+  // a $2,500 screen allowance, and plain Lutron dimmers unless smart control or Control4 is asked for.
+  it("prices the theater package: receiver, in-wall LCR, in-ceiling surrounds, Klipsch sub, projector mount and Sonos Port", async () => {
+    const { scope, selection } = await job(gayatri);
+    expect(scope.functional_systems).toContain("home_theater");
+    // The theater's Port joins its receiver to Sonos: no whole-home audio is asked for.
+    expect(scope.functional_systems).not.toContain("whole_home_audio");
+    const q = Object.fromEntries(selection.lines.map((l) => [l.role, l.quantity]));
+    expect(q).toMatchObject({ av_receiver: 1, front_speakers: 3, surround_speakers: 2, theater_subwoofer: 1, projector_mount: 1, theater_sonos_port: 1 });
+    // The theater's Klipsch sub, not a Sonos Sub; its in-wall fronts, not in-ceiling ones.
+    expect(q).not.toHaveProperty("subwoofer");
+    expect(q).not.toHaveProperty("front_speakers_ceiling");
+    expect(q).not.toHaveProperty("streaming_port");
+  });
+
+  it("prices the projector at Dillon's target budget and the screen as a $2,500 allowance, with nothing left to price", async () => {
     const { selection } = await job(gayatri);
-    expect(selection.to_verify).toEqual(
-      expect.arrayContaining([
-        "Requested product: acoustically transparent screen 130-inch (no Livewire standard; priced in the final proposal)",
-        "Requested product: projector (no Livewire standard; priced in the final proposal)",
-        "Requested product: Sony AV receiver (no Livewire standard; priced in the final proposal)",
-      ]),
+    expect(selection.equipment_allowances).toEqual([
+      { label: "Projector (allowance)", amount_cents: 250000 },
+      { label: "Projection screen (allowance)", amount_cents: 250000 },
+    ]);
+    // The allowance is the projector: the standard Sony is not priced too.
+    expect(selection.lines.map((l) => l.role)).not.toContain("projector");
+    expect(selection.to_verify.some((v) => /^Requested product/.test(v))).toBe(false);
+  });
+
+  it("prices the sconces' dimmers as plain Lutron dimmers, with no RadioRA processor", async () => {
+    const { selection } = await job(gayatri);
+    const dimmers = selection.lines.find((l) => l.role === "smart_dimmer")!;
+    expect(dimmers.record_id).toBe("4dad2907-ef73-4676-bfb2-b08f0bccd2cd");
+    expect(selection.lines.map((l) => l.role)).not.toContain("lighting_processor");
+  });
+});
+
+// Henry's standards from Livewire's accepted D-Tools quotes (2026-11-13): the theater package, a rep's target budget as an
+// allowance, a $2,500 screen allowance, and plain Lutron dimmers unless Control4 or smart control is asked for.
+describe("Henry's theater, allowance and dimmer standards (2026-11-13)", () => {
+  const none = { existing_equipment: { status: "none" as const, retained: [], removed_or_replaced: [] } };
+  const quantities = (sel: ReturnType<typeof materialize>) => Object.fromEntries(sel.lines.map((l) => [l.role, l.quantity]));
+  async function job(o: object) {
+    const patterns = await loadPatterns();
+    const { scope } = approvedScope({ ...none, existing_detectors: "not_provided", project_type: null, ...o });
+    const pattern = selectPattern(scope.functional_systems, patterns)!;
+    return { scope, pattern, selection: materialize(scope, pattern) };
+  }
+
+  it("a theater with in-ceiling LCR prices the in-ceiling fronts, the projector, its mount and the screen allowance, and no TV", async () => {
+    const { scope, selection } = await job({
+      functional_systems: ["home theater", "surround sound"],
+      requested_changes: ["Basement theater: 7.1 system with in-ceiling LCR speakers", "Basement theater: 4 in-ceiling surround speakers", "Basement theater: projector and a 120-inch projection screen", "Basement theater: new AV receiver"],
+      requested_quantities: [{ item: "in-ceiling surround speakers", quantity: 4 }],
+    });
+    expect(scope.functional_systems).toEqual(expect.arrayContaining(["home_theater"]));
+    expect(scope.functional_systems).not.toContain("audio_video");
+    expect(scope.functional_systems).not.toContain("whole_home_audio");
+    expect(quantities(selection)).toEqual(
+      expect.objectContaining({ av_receiver: 1, front_speakers_ceiling: 3, surround_speakers: 4, theater_subwoofer: 1, projector: 1, projector_mount: 1 }),
     );
-    // A device a role prices is never listed as unpriced.
-    expect(selection.to_verify.some((v) => /surge protector|HDMI|soundbar|subwoofer/i.test(v))).toBe(false);
+    expect(quantities(selection)).not.toHaveProperty("front_speakers");
+    expect(quantities(selection)).not.toHaveProperty("theater_sonos_port");
+    expect(selection.equipment_allowances).toEqual([{ label: "Projection screen (allowance)", amount_cents: 250000 }]);
+  });
+
+  it("Oscar Durante: the receiver and Klipsch sub on his TV, with his four in-ceiling speakers kept and no Sonos Sub", async () => {
+    const { scope, selection } = await job({
+      functional_systems: ["TV", "home theater", "surround sound"],
+      existing_equipment: { status: "described", retained: ["four existing in-ceiling speakers", "completed prewiring"], removed_or_replaced: ["Sonos Sub Gen 4"] },
+      requested_changes: [
+        "Change the Sony TV to a 100-inch Sony BRAVIA 7, quantity 1",
+        "Remove the Sonos Sub Gen 4 and replace it with 1 Klipsch powered subwoofer",
+        "Add 1 Sony STR-AZ3000ES A/V receiver",
+        "Include 1 WattBox surge protector",
+        "Use the four existing in-ceiling speakers and completed prewiring",
+      ],
+      requested_quantities: [{ item: "Sony BRAVIA 7 100-inch TV", quantity: 1 }, { item: "Klipsch powered subwoofer", quantity: 1 }, { item: "Sony STR-AZ3000ES A/V receiver", quantity: 1 }],
+    });
+    expect(scope.functional_systems).toContain("home_theater");
+    const q = quantities(selection);
+    expect(q).toMatchObject({ av_receiver: 1, theater_subwoofer: 1, television: 1 });
+    // His own speakers stay; the Sonos Sub he's removing isn't priced back.
+    for (const r of ["front_speakers", "front_speakers_ceiling", "surround_speakers", "subwoofer"]) expect(q).not.toHaveProperty(r);
+  });
+
+  it("Danny Lewis: rewiring his existing 5.1 system sells no theater", async () => {
+    const { scope } = await job({
+      functional_systems: ["TV", "home theater"],
+      existing_equipment: { status: "described", retained: ["55-inch Sony TV", "Yamaha receiver", "Klipsch speakers and one subwoofer"], removed_or_replaced: [] },
+      requested_changes: ["Remove and reinstall the existing TV", "Supply and install new speaker wiring for all five speakers", "Reconnect and test the existing 5.1 system", "Reconnect the TV, Yamaha receiver, speakers and subwoofer"],
+    });
+    expect(scope.functional_systems).not.toContain("home_theater");
+  });
+
+  it("a rep's target budget for the receiver prices it as an allowance instead of the standard", async () => {
+    const { selection } = await job({
+      functional_systems: ["home theater"],
+      requested_changes: ["Media room: 5.1 system", "Media room: target budget of $3,000 for the AV receiver"],
+    });
+    expect(selection.equipment_allowances).toEqual([{ label: "AV receiver (allowance)", amount_cents: 300000 }]);
+    expect(selection.lines.map((l) => l.role)).not.toContain("av_receiver");
+    expect(quantities(selection)).toMatchObject({ front_speakers: 3, surround_speakers: 2, theater_subwoofer: 1 });
+  });
+
+  it("a budget for the whole job is no allowance", async () => {
+    const { selection } = await job({ functional_systems: ["home theater"], requested_changes: ["Media room: 5.1 system, budget around $20,000"] });
+    expect(selection.equipment_allowances).toBeUndefined();
+    expect(selection.lines.map((l) => l.role)).toContain("av_receiver");
+  });
+
+  it("dimmers are plain Lutron by default, Control4 when Control4 is mentioned, RadioRA 3 with its processor for smart control", async () => {
+    const dimmers = async (changes: string[], systems = ["lighting"]) => (await job({ functional_systems: systems, requested_changes: changes, requested_quantities: [{ item: "dimmers", quantity: 8 }] })).selection;
+    const plain = await dimmers(["Replace 8 light switches with dimmers"]);
+    expect(plain.lines.find((l) => l.role === "smart_dimmer")).toMatchObject({ record_id: "4dad2907-ef73-4676-bfb2-b08f0bccd2cd", quantity: 8 });
+    expect(plain.lines.map((l) => l.role)).not.toContain("lighting_processor");
+    const c4 = await dimmers(["Replace 8 light switches with Control4 dimmers"]);
+    expect(c4.lines.find((l) => l.role === "smart_dimmer")).toMatchObject({ record_id: "dca9e13e-8799-438f-ad4e-88863586714f", quantity: 8 });
+    expect(c4.lines.map((l) => l.role)).not.toContain("lighting_processor");
+    const smart = await dimmers(["Replace 8 light switches with smart dimmers controlled from the app"]);
+    expect(smart.lines.find((l) => l.role === "smart_dimmer")).toMatchObject({ record_id: "4c30dde8-aebb-48ed-b663-656fcb3ab1c3", quantity: 8 });
+    expect(smart.lines.map((l) => l.role)).toContain("lighting_processor");
   });
 });
 

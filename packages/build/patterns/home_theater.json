@@ -1,0 +1,40 @@
+{
+  "schema": "architecture_pattern_v1",
+  "pattern": "home_theater",
+  "version": "2026-11-13.1",
+  "title": "Home theater",
+  "applies_when_any": ["home_theater"],
+  "roles": [
+    { "role": "av_receiver", "categories": ["Receivers > A/V Controller", "Receivers > Surround"], "label": "Sony STR-AZ3000ES 9.2-channel A/V receiver", "model": "STR-AZ3000ES", "count_terms": ["a/v receiver", "av receiver", "avr", "surround receiver", "theater receiver", "receiver"], "retained_match": ["receiver", "avr"], "critical": true, "systems": ["home_theater"], "product_id": "f4795b84-0524-41c2-b4cd-ba2be215114c", "precedent": "livewire_standard", "quantity": { "kind": "fixed", "qty": 1 }, "location": "Equipment location or media cabinet", "capability": "Livewire's most-sold A/V receiver: on 25 accepted quotes, 16 since 2025 (the STR-AZ1000ES on 12; Henry, 2026-11-13)", "hours_each": 2, "escalate_if_unresolved": false },
+    { "role": "front_speakers", "retained_match": ["speakers", "speaker"], "alternative_group": "front_lcr", "categories": ["Speakers > In-Wall"], "label": "Klipsch PRO-250-RPW-LCR in-wall LCR speaker", "model": "PRO-250-RPW-LCR", "count_terms": ["front speaker", "front speakers", "in-wall speaker", "in-wall speakers", "lcr", "left center right", "left, center, right", "center channel", "front in-wall"], "critical": false, "systems": ["home_theater"], "product_id": "99ba1b3e-6b52-4b8e-8659-9d0c0e6c28be", "precedent": "livewire_standard", "quantity": { "kind": "minimum", "qty": 3, "verify": "left, center and right front speakers" }, "location": "Front wall, beside and below the screen", "capability": "In-wall left, center and right speakers (Klipsch, Livewire's theater speaker brand; Henry, 2026-11-13)", "hours_each": 1.5, "escalate_if_unresolved": false },
+    { "role": "front_speakers_ceiling", "retained_match": ["speakers", "speaker"], "alternative_group": "front_lcr", "categories": ["Speakers > In-Ceiling"], "label": "Klipsch PRO-180RPC-LCR in-ceiling LCR speaker", "model": "PRO-180RPC-LCR", "mentions": ["in-ceiling lcr", "ceiling lcr", "in-ceiling front", "in-ceiling left", "in-ceiling center", "ceiling front"], "count_terms": ["in-ceiling lcr", "ceiling lcr", "in-ceiling front", "ceiling front"], "critical": false, "systems": ["home_theater"], "product_id": "9239731d-a61b-4690-803d-dcbc5d35a1f5", "precedent": "livewire_standard", "quantity": { "kind": "minimum", "qty": 3, "verify": "left, center and right front speakers" }, "location": "Ceiling, in front of the seating", "capability": "In-ceiling left, center and right speakers, on 3 accepted theater quotes", "hours_each": 1, "escalate_if_unresolved": false },
+    { "role": "surround_speakers", "retained_match": ["speakers", "speaker"], "categories": ["Speakers > In-Ceiling"], "label": "Klipsch CS-16C II in-ceiling surround speaker", "model": "CS-16C II", "count_terms": ["surround speaker", "surround speakers", "surrounds", "rear speaker", "rear speakers", "in-ceiling surround", "rear in-ceiling"], "critical": false, "systems": ["home_theater"], "product_id": "eb816611-e7e6-44b6-98e2-55acaebf9dbe", "precedent": "livewire_standard", "quantity": { "kind": "minimum", "qty": 2, "verify": "surround speaker locations, coordinated with seating" }, "location": "Ceiling beside or behind the seating", "capability": "In-ceiling surround speakers, on 4 accepted theater quotes", "hours_each": 1, "escalate_if_unresolved": false },
+    { "role": "theater_subwoofer", "categories": ["Speakers > Subwoofers"], "label": "Klipsch R-121SW 12-inch powered subwoofer", "model": "R-121SW", "count_terms": ["powered subwoofer", "theater subwoofer", "subwoofer", "subwoofers", "sub"], "critical": false, "systems": ["home_theater"], "product_id": "8113e686-a28e-4e71-abc9-cbaceed5002b", "precedent": "livewire_standard", "quantity": { "kind": "fixed", "qty": 1 }, "location": "Front of the room", "capability": "The subwoofer on most of Livewire's accepted receiver quotes (5)", "hours_each": 0.5, "escalate_if_unresolved": false },
+    { "role": "projector", "categories": ["Display Devices > Projectors"], "label": "Sony VPL-XW5000ES 4K laser projector", "model": "VPL-XW5000ES", "mentions": ["projector", "projection"], "count_terms": ["projector"], "critical": false, "systems": ["home_theater"], "product_id": "d5ed34d9-8a0b-45f6-a5e3-6d7240f7b0e1", "precedent": "livewire_standard", "quantity": { "kind": "fixed", "qty": 1 }, "location": "Ceiling, at the throw distance for the screen", "capability": "Livewire's most-sold projector (8 accepted quotes); a rep's stated budget for it is priced as an allowance instead (Henry, 2026-11-13)", "hours_each": 2.5, "escalate_if_unresolved": false },
+    { "role": "projector_mount", "categories": ["Mounts > Projector Mounts"], "label": "Strong SM-PROJ-XL projector mount", "model": "SM-PROJ-XL-BLK", "mentions": ["projector", "projection"], "count_terms": ["projector mount", "projector hardware", "projector mounting"], "critical": false, "systems": ["home_theater"], "product_id": "69c89b5f-13f6-41a1-aa5c-7967b42eec12", "precedent": "livewire_standard", "quantity": { "kind": "fixed", "qty": 1 }, "location": "Ceiling", "capability": "Livewire's projector mount on 12 accepted quotes", "hours_each": 0, "escalate_if_unresolved": false },
+    { "role": "theater_sonos_port", "categories": ["A/V Sources > Media Players", "Audio > Streaming"], "label": "Sonos Port", "mentions": ["sonos port", "into sonos", "with sonos", "to sonos", "sonos system", "sonos app"], "count_terms": ["sonos port"], "critical": false, "systems": ["home_theater"], "product_id": "b96590da-e411-411e-91e8-ce7ad67381bd", "precedent": "livewire_standard", "quantity": { "kind": "fixed", "qty": 1 }, "location": "Beside the receiver", "capability": "Joins the theater receiver to the client's Sonos system", "hours_each": 0.5, "escalate_if_unresolved": false }
+  ],
+  "default_allowances": [
+    { "terms": ["screen", "projection screen"], "label": "Projection screen (allowance)", "amount_cents": 250000 }
+  ],
+  "services": [
+    { "category": "design", "label": "Theater design", "product_id": null },
+    { "category": "removal", "label": "Removal of existing equipment", "product_id": null },
+    { "category": "installation", "label": "Installation", "product_id": null },
+    { "category": "programming", "label": "Setup and calibration", "product_id": null },
+    { "category": "testing", "label": "Testing", "product_id": null },
+    { "category": "training", "label": "Client training", "product_id": null }
+  ],
+  "labor": { "labor_type": "07LABOR1MAN", "base_hours": 2, "add_on_base_hours": 1.5, "hours_per_device": 1, "covers": ["design", "removal", "installation", "programming", "testing", "commissioning", "training", "project_management"], "basis": "Home theater standard from Livewire's accepted D-Tools quotes (Henry, 2026-11-13): 2 hours of setup and calibration, plus each device's own hours (receiver 2, in-wall speaker 1.5, in-ceiling speaker 1, projector 2.5, sub and Port 0.5). To refit against accepted theater quotes as they accumulate." },
+  "parts": { "product_id": "141236a5-8780-493e-a20d-106b7f71c5b4", "label": "Design & Delivery" },
+  "assumptions": [
+    "Speaker wire and power are run to each speaker, projector and equipment location as part of installation.",
+    "Speakers are cut into standard drywall over wood framing.",
+    "Quantities marked as minimums are confirmed during a site visit."
+  ],
+  "exclusions": [
+    "Acoustic treatment, seating and riser construction unless listed.",
+    "Patching and painting.",
+    "Streaming and cable subscriptions."
+  ]
+}
