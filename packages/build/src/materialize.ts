@@ -1773,7 +1773,7 @@ const ITEM_ALLOWANCE = new RegExp(String.raw`(?:^|[,;:]\s*|\b(?:add|include|plus
 // "Target" makes it the rep's figure for the device: a bare "budget around $20,000" is the whole job's (no allowance).
 const TARGET = String.raw`(?:target|targeted)(?:\s+(?:equipment|product|hardware|unit))?\s*(?:budget|price|cost|spend)?(?:\s+(?:of|at|is|around))?(?:\s+(?:approximately|approx\.?|about|around|roughly|up to|~))?\s*~?\s*`;
 /** An item, then the rep's target budget for it: "projector …, target equipment budget approximately $2,500". */
-const TARGET_AFTER_ITEM = new RegExp(String.raw`^(.+?)[,;(]\s*(?:with\s+)?(?:a\s+)?${TARGET}${DOLLARS}`, "i");
+const TARGET_AFTER_ITEM = new RegExp(String.raw`^(.+?)(?:[,;(]\s*(?:with\s+)?|\s+with\s+)(?:a\s+)?${TARGET}${DOLLARS}`, "i");
 /** A target budget for an item: "target budget of $2,500 for the projector". */
 const TARGET_FOR_ITEM = new RegExp(String.raw`${TARGET}${DOLLARS}\s+(?:for|on)\s+(?:a|an|the|their|his|her)?\s*([^,;.()\n]+)`, "i");
 

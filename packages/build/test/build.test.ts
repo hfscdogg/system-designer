@@ -2074,7 +2074,7 @@ describe("Henry's decisions (2026-10-27): D-Tools quote history for cabling, cam
 
   it("patterns carry the new version", async () => {
     const versions = Object.fromEntries((await loadPatterns()).map((p) => [p.pattern, p.version]));
-    expect(versions).toMatchObject({ prewire: "2026-10-30.1", tv_media: "2026-11-13.1", whole_home_audio: "2026-11-13.1", home_theater: "2026-11-13.1", lighting_control: "2026-11-13.1" });
+    expect(versions).toMatchObject({ prewire: "2026-10-30.1", tv_media: "2026-11-13.1", whole_home_audio: "2026-11-13.1", home_theater: "2026-11-13.2", lighting_control: "2026-11-13.1" });
   });
 
   it("Q1: a retrofit drop is two keystone jacks and 2 hours; a new-construction drop one jack and 1 hour", async () => {
@@ -3418,6 +3418,18 @@ describe("Henry's theater, allowance and dimmer standards (2026-11-13)", () => {
     expect(selection.equipment_allowances).toEqual([{ label: "AV receiver (allowance)", amount_cents: 300000 }]);
     expect(selection.lines.map((l) => l.role)).not.toContain("av_receiver");
     expect(quantities(selection)).toMatchObject({ front_speakers: 3, surround_speakers: 2, theater_subwoofer: 1 });
+  });
+
+  it("a target budget after \"with\" is the device's allowance, and a projector ceiling mount is the projector mount", async () => {
+    // Staging smoke, 2026-11-13: "a projector with a target equipment budget of about $2,500" priced the standard projector.
+    const { selection } = await job({
+      functional_systems: ["home theater"],
+      requested_changes: ["Basement theater: projector with a target equipment budget of about $2,500", "Basement theater: projector ceiling mount"],
+    });
+    expect(selection.equipment_allowances).toEqual([{ label: "Projector (allowance)", amount_cents: 250000 }]);
+    expect(selection.lines.map((l) => l.role)).not.toContain("projector");
+    expect(quantities(selection)).toMatchObject({ projector_mount: 1 });
+    expect(selection.to_verify.some((v) => /^Requested product/.test(v))).toBe(false);
   });
 
   it("a budget for the whole job is no allowance", async () => {
