@@ -1773,7 +1773,9 @@ const ITEM_ALLOWANCE = new RegExp(String.raw`(?:^|[,;:]\s*|\b(?:add|include|plus
 // "Target" makes it the rep's figure for the device: a bare "budget around $20,000" is the whole job's (no allowance).
 const TARGET = String.raw`(?:target|targeted)(?:\s+(?:equipment|product|hardware|unit))?\s*(?:budget|price|cost|spend)?(?:\s+(?:of|at|is|around))?(?:\s+(?:approximately|approx\.?|about|around|roughly|up to|~))?\s*~?\s*`;
 /** An item, then the rep's target budget for it: "projector …, target equipment budget approximately $2,500". */
-const TARGET_AFTER_ITEM = new RegExp(String.raw`^(.+?)(?:[,;(]\s*(?:with\s+)?|\s+with\s+)(?:a\s+)?${TARGET}${DOLLARS}`, "i");
+const TARGET_AFTER_ITEM = new RegExp(String.raw`^(.+?)(?:\s*[,;:(—–-]\s*(?:with\s+)?|\s+(?:with|has|at)\s+)(?:an?\s+)?${TARGET}${DOLLARS}`, "i");
+/** An item, then its amount and "target": "projector with a $2,500 target budget", "projector, $2,500 target". */
+const AMOUNT_TARGET_AFTER_ITEM = new RegExp(String.raw`^(.+?)(?:\s*[,;:(—–-]\s*(?:with\s+)?|\s+(?:with|has|at)\s+)(?:an?\s+)?(?:approximately\s+|about\s+|around\s+|~\s*)?${DOLLARS}\s*(?:equipment\s+)?target\b`, "i");
 /** A target budget for an item: "target budget of $2,500 for the projector". */
 const TARGET_FOR_ITEM = new RegExp(String.raw`${TARGET}${DOLLARS}\s+(?:for|on)\s+(?:a|an|the|their|his|her)?\s*([^,;.()\n]+)`, "i");
 
@@ -1810,10 +1812,11 @@ function equipmentAllowances(scope: ScopeDraftV1): Array<{ label: string; amount
     if (trailing) add(trailing[2]!, trailing[3], itemNamed(trailing[1]!));
     // A rep's target for one device is its allowance: "projector for the 130-inch screen, target equipment budget
     // approximately $2,500" is a $2,500 projector (Henry, 2026-11-13, on Dillon's Gayatri job).
-    const target = out.size === before ? (TARGET_AFTER_ITEM.exec(c) ?? null) : null;
-    if (target) add(target[2]!, target[3], itemNamed(target[1]!.replace(/^[^:]{1,30}:\s*/, "")));
+    // "Target … for the AV receiver" names its device; otherwise the device comes before the target.
     const targetFor = out.size === before ? TARGET_FOR_ITEM.exec(c) : null;
     if (targetFor) add(targetFor[1]!, targetFor[2], targetFor[3]!);
+    const target = out.size === before ? (TARGET_AFTER_ITEM.exec(c) ?? AMOUNT_TARGET_AFTER_ITEM.exec(c)) : null;
+    if (target) add(target[2]!, target[3], itemNamed(target[1]!.replace(/^[^:]{1,30}:\s*/, "")).replace(/\s+(?:alone|only|itself|by itself)$/i, ""));
   }
   return [...out.values()];
 }

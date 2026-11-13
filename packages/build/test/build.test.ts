@@ -3432,6 +3432,22 @@ describe("Henry's theater, allowance and dimmer standards (2026-11-13)", () => {
     expect(selection.to_verify.some((v) => /^Requested product/.test(v))).toBe(false);
   });
 
+  it("a device's target budget in the other ways reps write it is that device's allowance", async () => {
+    // Staging smoke, 2026-11-13 (second run): the projector's target still priced the standard projector.
+    for (const change of [
+      "Projector: target equipment budget of about $2,500",
+      "Projector (target budget ~$2,500)",
+      "Projector - target budget approximately $2,500",
+      "The projector alone has a target equipment budget of about $2,500",
+      "Add a projector with a $2,500 target budget",
+      "Projector, $2,500 target",
+    ]) {
+      const { selection } = await job({ functional_systems: ["home theater"], requested_changes: ["Basement theater: 5.1 system", change] });
+      expect(selection.equipment_allowances, change).toEqual([{ label: "Projector (allowance)", amount_cents: 250000 }]);
+      expect(selection.lines.map((l) => l.role), change).not.toContain("projector");
+    }
+  });
+
   it("a budget for the whole job is no allowance", async () => {
     const { selection } = await job({ functional_systems: ["home theater"], requested_changes: ["Media room: 5.1 system, budget around $20,000"] });
     expect(selection.equipment_allowances).toBeUndefined();
