@@ -98,6 +98,11 @@ function mentioned(scope: ScopeDraftV1, terms: string[], require?: string[], wit
     .some((t) => terms.some((term) => hasWord(t, fold(term))) && (!require || require.some((r) => hasWord(t, fold(r)))));
 }
 
+/** A request that keeps this role by name, not one that takes it out ("Remove the Sonos Sub and replace it with a Klipsch"). */
+function yieldsUnless(scope: ScopeDraftV1, words: string[]): boolean {
+  return requestTexts(scope).some((t) => !/\b(remov\w*|replac\w*|instead|swap\w*|in place of)\b/.test(t) && words.some((w) => hasWord(t, fold(w))));
+}
+
 /**
  * Phrases that name another role of the same count group ("PoE access point" for the wired eero):
  * their words ask for that role, not this one. A PoE access point is not a request for mesh Wi-Fi
@@ -1054,6 +1059,11 @@ export function materialize(given: ScopeDraftV1, pattern: PatternSpec, namedProd
   const blockedRoles = new Set<string>();
 
   const candidates = pattern.roles.filter((role) => role.systems.some((s) => original.functional_systems.includes(s)));
+  // Equipment priced as an allowance: the rep's own, then the pattern's defaults the request asks for. A device the rep
+  // prices as an allowance is not priced again as the standard.
+  const repAllowances = equipmentAllowances(original);
+  const equipment = [...repAllowances, ...defaultAllowances(original, pattern, repAllowances)];
+  const byAllowance = new Set(repAllowances.map((a) => roleNamed(a.item, candidates)?.role).filter((r): r is string => !!r));
   // Products the request names by model are priced in the role they fill, and name that role. Their words name nothing else.
   const requested = namedForRoles(namedProducts, candidates);
   // A change that already names a product by model ("Klipsch AW-525 outdoor speakers") is priced as that product, not by brand.
@@ -1084,6 +1094,7 @@ export function materialize(given: ScopeDraftV1, pattern: PatternSpec, namedProd
   const poweredOnly = new Set<string>();
   for (const role of candidates) {
     if (role.alternative_group && namedGroups.has(role.alternative_group) && !namedSpecifically(scope, role, pattern.roles)) continue;
+    if (byAllowance.has(role.role)) continue;
     // In an add-on, a role is priced when the request names it or names its own system (smoke detection alongside sensors).
     const ownSystemRequested = role.systems.some((s) => scope.functional_systems.includes(s) && !pattern.applies_when_any.includes(s));
     const products = requested.get(role.role) ?? [];
@@ -1106,6 +1117,12 @@ export function materialize(given: ScopeDraftV1, pattern: PatternSpec, namedProd
       (!!role.variants?.length && wantsNew(scope, role, pattern.roles)) ||
       keptHere;
     if ((role.mentions || role.asked_by) && !asked && !modelNamed(scope, role) && !product) {
+      notAsked.add(role.role);
+      continue;
+    }
+    // A theater's own device takes the place of the TV's (its Klipsch sub, not a Sonos Sub), unless the request names this one.
+    const yields = role.yields_to;
+    if (yields && candidates.some((r) => yields.roles.includes(r.role) && !byAllowance.has(r.role)) && !product && !modelNamed(scope, role) && statedQuantity(scope, role, pattern.roles) === null && !yieldsUnless(scope, yields.unless)) {
       notAsked.add(role.role);
       continue;
     }
@@ -1697,11 +1714,13 @@ export function materialize(given: ScopeDraftV1, pattern: PatternSpec, namedProd
 
   // A device on the rep's list that no role of the budget prices is named on it, not dropped (Dillon's Gayatri job,
   // 2026-11-12: the projector, screen and AV receiver left the budget without a word).
-  const listedText = [...toVerify, ...allowances.map((a) => a.label), ...laborAllowances.map((a) => a.label), ...(equipmentAllowances(original).map((a) => a.label))].map(fold);
+  const listedText = [...toVerify, ...allowances.map((a) => a.label), ...laborAllowances.map((a) => a.label), ...equipment.map((a) => a.label)].map(fold);
   for (const d of original.devices ?? []) {
     if (d.supplied_by !== "livewire" || d.existing || roleNamed(d.item, pattern.roles)) continue;
     const item = fold(d.item);
     if (original.excluded_scope.some((x) => item.includes(fold(x)) || fold(x).includes(item)) || listedText.some((t) => t.includes(item))) continue;
+    // A device an allowance prices ("acoustically transparent screen 130-inch" under the screen allowance) is no unpriced product.
+    if (equipment.some((a) => hasWord(item, fold(a.item)) || hasWord(fold(a.item), item))) continue;
     toVerify.push(`Requested product: ${d.item}${d.quantity > 1 ? ` × ${d.quantity}` : ""} (no Livewire standard; priced in the final proposal)`);
     listedText.push(item);
   }
@@ -1729,7 +1748,7 @@ export function materialize(given: ScopeDraftV1, pattern: PatternSpec, namedProd
       ...(a.feet ? { feet: a.feet } : {}),
       ...(a.trenched ? { trenched: true as const } : {}),
     })),
-    ...(equipmentAllowances(original).length ? { equipment_allowances: equipmentAllowances(original) } : {}),
+    ...(equipment.length ? { equipment_allowances: allowanceLines(equipment) } : {}),
     to_verify: toVerify,
     ...(verifyOnly.size ? { listed: [...verifyOnly] } : {}),
   };
@@ -1751,6 +1770,13 @@ const ALLOWANCE_FOR = new RegExp(String.raw`${DOLLARS}\s*(?:placeholder|allowanc
 const ALLOWANCE_OF = new RegExp(String.raw`(?:placeholder|allowance)\s+of\s+${DOLLARS}\s+(?:for|on)\s+(?:a|an|the|their|his|her)?\s*([^,;.()\n]+)`, "gi");
 const ITEM_ALLOWANCE = new RegExp(String.raw`(?:^|[,;:]\s*|\b(?:add|include|plus|and)\s+(?:a|an|the)?\s*)([a-z][\w'’ -]{1,40}?)\s*(?:[-–—:]|\bat\b)\s*${DOLLARS}\s*(?:placeholder|allowance)\b`, "gi");
 
+// "Target" makes it the rep's figure for the device: a bare "budget around $20,000" is the whole job's (no allowance).
+const TARGET = String.raw`(?:target|targeted)(?:\s+(?:equipment|product|hardware|unit))?\s*(?:budget|price|cost|spend)?(?:\s+(?:of|at|is|around))?(?:\s+(?:approximately|approx\.?|about|around|roughly|up to|~))?\s*~?\s*`;
+/** An item, then the rep's target budget for it: "projector …, target equipment budget approximately $2,500". */
+const TARGET_AFTER_ITEM = new RegExp(String.raw`^(.+?)[,;(]\s*(?:with\s+)?(?:a\s+)?${TARGET}${DOLLARS}`, "i");
+/** A target budget for an item: "target budget of $2,500 for the projector". */
+const TARGET_FOR_ITEM = new RegExp(String.raw`${TARGET}${DOLLARS}\s+(?:for|on)\s+(?:a|an|the|their|his|her)?\s*([^,;.()\n]+)`, "i");
+
 const ITEM_THEN_AMOUNT = new RegExp(String.raw`(?:^|[,;:]\s*|\b(?:add|include|plus|and)\s+(?:a|an|the)?\s*)([a-z][\w'’ -]{1,40}?)\s+(?:placeholder|allowance)\s*(?:\(\s*|[-–—:]\s*|of\s+|at\s+)${DOLLARS}`, "gi");
 
 /**
@@ -1758,18 +1784,19 @@ const ITEM_THEN_AMOUNT = new RegExp(String.raw`(?:^|[,;:]\s*|\b(?:add|include|pl
  * the bar TV", "turntable – $1,000 allowance". Priced at the rep's amount as an allowance line (Henry, 2026-11-07); a
  * budget for the whole job ("$20,000 budget") is no allowance.
  */
-function equipmentAllowances(scope: ScopeDraftV1): Array<{ label: string; amount_cents: number }> {
-  const out = new Map<string, { label: string; amount_cents: number }>();
+function equipmentAllowances(scope: ScopeDraftV1): Array<{ label: string; amount_cents: number; item: string }> {
+  const out = new Map<string, { label: string; amount_cents: number; item: string }>();
   const add = (amount: string, k: string | undefined, item: string) => {
     const what = item
       .replace(/\s+/g, " ")
+      .replace(/^[^:]{1,30}:\s*/, "")
       .replace(/\b(?:placeholder|allowance|to be selected|tbd)\b.*$/i, "")
       .trim()
       .replace(/^(?:(?:add|include|plus|and|a|an|the)(?:\s+|$))+/i, "");
     const cents = Math.round(Number(amount.replace(/,/g, "")) * (k ? 1000 : 1) * 100);
     if (!what || !Number.isFinite(cents) || cents <= 0) return;
     const label = `${what[0]!.toUpperCase()}${what.slice(1)} (allowance)`;
-    out.set(fold(label), { label, amount_cents: cents });
+    out.set(fold(label), { label, amount_cents: cents, item: what });
   };
   for (const c of scope.requested_changes) {
     const before = out.size;
@@ -1781,8 +1808,29 @@ function equipmentAllowances(scope: ScopeDraftV1): Array<{ label: string; amount
     // allowance" is a $1,000 turntable player (Zack's Bennett job, 2026-11-09: it went to the verify list instead).
     const trailing = out.size === before ? AMOUNT_AFTER_ITEM.exec(c) : null;
     if (trailing) add(trailing[2]!, trailing[3], itemNamed(trailing[1]!));
+    // A rep's target for one device is its allowance: "projector for the 130-inch screen, target equipment budget
+    // approximately $2,500" is a $2,500 projector (Henry, 2026-11-13, on Dillon's Gayatri job).
+    const target = out.size === before ? (TARGET_AFTER_ITEM.exec(c) ?? null) : null;
+    if (target) add(target[2]!, target[3], itemNamed(target[1]!.replace(/^[^:]{1,30}:\s*/, "")));
+    const targetFor = out.size === before ? TARGET_FOR_ITEM.exec(c) : null;
+    if (targetFor) add(targetFor[1]!, targetFor[2], targetFor[3]!);
   }
   return [...out.values()];
+}
+
+/** Equipment allowances as the selection lists them. */
+const allowanceLines = (xs: Array<{ label: string; amount_cents: number }>) => xs.map(({ label, amount_cents }) => ({ label, amount_cents }));
+
+/**
+ * The pattern's default allowances the request asks for (a theater's screen at $2,500) that no allowance of the rep's
+ * names. A screen the customer keeps or supplies is not asked for.
+ */
+function defaultAllowances(scope: ScopeDraftV1, pattern: PatternSpec, rep: Array<{ item: string }>): Array<{ label: string; amount_cents: number; item: string }> {
+  const texts = requestTexts(scope).filter((t) => !EXISTING_ITEM.test(t) && !OWNED_ITEM.test(t) && !SUPPLIED.test(t));
+  return (pattern.default_allowances ?? [])
+    .filter((a) => texts.some((t) => a.terms.some((w) => hasWord(t, fold(w)))))
+    .filter((a) => !rep.some((r) => a.terms.some((w) => hasWord(fold(r.item), fold(w)))) && !excluded(scope, { label: a.label, mentions: a.terms } as RoleSpec))
+    .map((a) => ({ label: a.label, amount_cents: a.amount_cents, item: a.terms[0]! }));
 }
 
 /**

@@ -160,6 +160,26 @@ export function normalizeFunctionalSystems(items: string[]): string[] {
 /** Smoke and CO in one device ("2 smoke/CO detectors", "smoke and carbon monoxide detectors", "combo detectors"). */
 export const SMOKE_CO_COMBO = /\b(smoke ?(\/|&|\+|-|and)? ?(co|carbon monoxide)|(co|carbon monoxide) ?(\/|&|\+|and) ?smoke|(combo|combination) (smoke |smoke\/co )?(detectors?|alarms?))\b/;
 
+const THEATER_GEAR =
+  /\b(?<!(existing|current|old|the|keep|their|his|her|its|customer's|client's|owner's) )(a\/?v receivers?|avrs?|surround receivers?|(theater|theatre) receivers?|projectors?|projection screens?|[579]\.[124](\.[246])?( (channel|system|surround|setup|sound))?|lcr|left[, ]+center[, ]+(and )?right|center channel)\b/;
+
+/** Music through the house in a theater job: words a theater's own speakers never are ("in-ceiling surround speakers" are not). */
+const THEATER_HOUSE_MUSIC = /\b(whole[- ](home|house)|distributed|multi[- ]room|background|music|zones?|outdoor|patio|landscape|kitchen|sonos amps?|(?<!\d ?)amps?|amplifiers?|era( 100| 300)?|sonos five)\b/;
+const TV_ITSELF = /\b(tvs?|televisions?|oled|qled|soundbars?|sound bars?|arc( ultra)?|sonos beam|apple ?tv|roku)\b/;
+
+/**
+ * A theater job is priced by the theater pattern: whole-home audio stays only when the requests ask for music through the
+ * house, and the TV pattern only when they name a TV or soundbar (Henry, 2026-11-13; Dillon's Gayatri job priced the
+ * theater as 8 Sonos Subs).
+ */
+function theaterOnly(systems: string[], requests: string[]): string[] {
+  if (!systems.includes("home_theater")) return systems;
+  const texts = requests.map(fold);
+  return systems.filter(
+    (s) => !(s === "whole_home_audio" && !texts.some((t) => THEATER_HOUSE_MUSIC.test(t))) && !(s === "audio_video" && !texts.some((t) => TV_ITSELF.test(t))),
+  );
+}
+
 /**
  * Systems a device the rep asks for implies, whatever the model listed as systems: the extractor
  * folds "1 x wired smart doorbell camera" into the cameras (Zack's Britt and Bowen-Rees jobs,
@@ -170,6 +190,9 @@ const REQUESTED_SYSTEMS: Array<[systems: string[], pattern: RegExp]> = [
   [["fire_detection", "co_detection"], SMOKE_CO_COMBO],
   // "Security panel × 1" asks for the alarm system even when the model left it off the systems (staging smoke, 2026-10-15).
   [["intrusion_security"], /\b(?<!(existing|current|old|keep the|keep) )(security|alarm|intrusion) (panel|system)s?\b/],
+  // A theater's own gear asks for Livewire's theater package (Henry, 2026-11-13): a new AV receiver, a projector and its
+  // screen, a 5.1 or 7.1 system, front LCR speakers.
+  [["home_theater"], THEATER_GEAR],
 ];
 
 const PREWIRE_DONE =
@@ -177,9 +200,12 @@ const PREWIRE_DONE =
 /** Pre-wire said done in other words ("pre-wire work (assumed complete)", "all pre-wire assumed done"), not still to do. */
 const PREWIRE_DONE_LOOSE = /\bpre-?wir(e|ing)\b(?![^.;]*\b(to be|needs?|will|should|must|remaining|left)\b)[^.;]{0,30}?\b(complete|completed|done|finished|in place)\b/;
 
+/** Work on gear the customer keeps ("Reconnect and test the existing 5.1 system") sells no theater (Dillon's Danny Lewis job, 2026-11-12). */
+const KEPT_GEAR = /\b(existing|current|reconnect\w*|reinstall\w*|retain\w*|keep|keeping|kept|reus\w*|remove|removing)\b/;
+
 function requestedSystems(requests: string[]): string[] {
   const texts = requests.map(fold);
-  return REQUESTED_SYSTEMS.filter(([, p]) => texts.some((t) => p.test(t))).flatMap(([systems]) => systems);
+  return REQUESTED_SYSTEMS.filter(([, p]) => texts.some((t) => p.test(t) && !(p === THEATER_GEAR && KEPT_GEAR.test(t)))).flatMap(([systems]) => systems);
 }
 
 export interface ServiceNormalization {
@@ -251,7 +277,7 @@ export function normalizeExtraction(input: ScopeExtraction): NormalizedExtractio
     .map(fold)
     .some((t) => PREWIRE_DONE.test(t) || PREWIRE_DONE_LOOSE.test(t));
   if (prewired) notes.push("Pre-wire is already complete: structured wiring is not priced");
-  const systems = uniqSorted([...musicNotTv(tvSoundOnly(normalizeFunctionalSystems(input.functional_systems), requests), requests), ...requestedSystems(requests)]).filter(
+  const systems = theaterOnly(uniqSorted([...musicNotTv(tvSoundOnly(normalizeFunctionalSystems(input.functional_systems), requests), requests), ...requestedSystems(requests)]), requests).filter(
     (s) => !(prewired && s === "structured_wiring"),
   );
   const scope: ScopeExtraction = {

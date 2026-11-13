@@ -40,6 +40,11 @@ export const RoleSpecSchema = z
     stated_length_per: z.array(z.string().min(1)).min(1).optional(),
     /** When priced without any of these roles, `verify` is listed to check (an eero access point with no eero router priced). */
     verify_without: z.object({ roles: z.array(z.string()).min(1), verify: z.string().min(1) }).strict().optional(),
+    /**
+     * Left out when one of `roles` is priced, unless the request names it by one of `unless` or gives it a count of its
+     * own: a theater's Klipsch sub replaces the TV's Sonos Sub, its LCR speakers the soundbar (Henry, 2026-11-13).
+     */
+    yields_to: z.object({ roles: z.array(z.string()).min(1), unless: z.array(z.string().min(1)).min(1) }).strict().optional(),
     /** Include the role only when one of these roles is included (a switch and power protection for the eero network). */
     with_roles: z.array(z.string()).min(1).optional(),
     /**
@@ -345,6 +350,13 @@ export const PatternSpecSchema = z
     packages: z
       .array(z.object({ terms: z.array(z.string().min(1)).min(1), quantities: z.record(z.string(), z.number().int().positive()) }).strict())
       .optional(),
+    /**
+     * Equipment priced as a dollar allowance when the request asks for it by one of `terms` and no allowance of the rep's
+     * names it: a theater's screen is a $2,500 allowance (Henry, 2026-11-13).
+     */
+    default_allowances: z
+      .array(z.object({ terms: z.array(z.string().min(1)).min(1), label: z.string().min(1), amount_cents: z.number().int().positive() }).strict())
+      .optional(),
     /** D-Tools parts-and-materials record, sized from the policy's parts mix target. */
     parts: z.object({ product_id: z.string().uuid(), label: z.string().min(1) }).strict().optional(),
     /** Labor allowances for out-of-pattern work (see AllowanceSpecSchema); attached by loadPatterns. */
@@ -454,6 +466,7 @@ export function combinePatterns(ps: PatternSpec[]): PatternSpec | null {
     ...(ps[0]!.parts ? { parts: ps[0]!.parts } : {}),
     ...(ps.some((p) => p.labor_extras?.length) ? { labor_extras: ps.flatMap((p) => p.labor_extras ?? []) } : {}),
     ...(ps.some((p) => p.packages?.length) ? { packages: ps.flatMap((p) => p.packages ?? []) } : {}),
+    ...(ps.some((p) => p.default_allowances?.length) ? { default_allowances: ps.flatMap((p) => p.default_allowances ?? []) } : {}),
     ...(ps.some((p) => p.allowances?.length) ? { allowances: [...new Map(ps.flatMap((p) => p.allowances ?? []).map((a) => [a.key, a])).values()] } : {}),
     assumptions: uniq(ps.flatMap((p) => p.assumptions)),
     exclusions: uniq(ps.flatMap((p) => p.exclusions)),
