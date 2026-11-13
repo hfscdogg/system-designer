@@ -302,7 +302,8 @@ export const SMOKE_SCENARIOS: SmokeScenario[] = [
       {
         say:
           `Basement theater for the Smoke Test family, ${ADDRESS}. Residential. 5.1 system: 3 front in-wall speakers (left, center, right), ` +
-          "2 in-ceiling surround speakers, a powered subwoofer, a new AV receiver, and a projector with a target equipment budget of about $2,500 on a ceiling mount.",
+          "2 in-ceiling surround speakers, a powered subwoofer, a new AV receiver, and a projector on a projector ceiling mount. " +
+          "The projector alone has a target equipment budget of about $2,500.",
         pattern: "home_theater",
         expect: { av_receiver: 1, front_speakers: 3, surround_speakers: 2, theater_subwoofer: 1, projector_mount: 1, projector: 0, subwoofer: 0 },
       },
