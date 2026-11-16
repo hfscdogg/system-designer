@@ -101,7 +101,7 @@ describe("patterns", () => {
         1;
       expect(patternRecordIds(p), p.pattern).toHaveLength(records);
       // The allowance templates ride along with every pattern.
-      expect(p.allowances?.map((a) => a.key), p.pattern).toEqual(["outdoor_outlet", "electrical_outlet", "conduit", "trenching", "wiring_run", "camera_troubleshooting", "remote_programming", "linear_lighting"]);
+      expect(p.allowances?.map((a) => a.key), p.pattern).toEqual(["outdoor_outlet", "electrical_outlet", "conduit", "trenching", "wiring_run", "camera_troubleshooting", "speaker_relocation", "remote_programming", "linear_lighting"]);
     }
     const network = patterns.find((p) => p.pattern === "home_network")!;
     expect(network.applies_when_any).toEqual(["networking"]);
@@ -2074,7 +2074,7 @@ describe("Henry's decisions (2026-10-27): D-Tools quote history for cabling, cam
 
   it("patterns carry the new version", async () => {
     const versions = Object.fromEntries((await loadPatterns()).map((p) => [p.pattern, p.version]));
-    expect(versions).toMatchObject({ prewire: "2026-10-30.1", tv_media: "2026-11-13.1", whole_home_audio: "2026-11-13.1", home_theater: "2026-11-13.2", lighting_control: "2026-11-13.1" });
+    expect(versions).toMatchObject({ prewire: "2026-10-30.1", tv_media: "2026-11-16.1", whole_home_audio: "2026-11-13.1", home_theater: "2026-11-16.1", lighting_control: "2026-11-13.1" });
   });
 
   it("Q1: a retrofit drop is two keystone jacks and 2 hours; a new-construction drop one jack and 1 hour", async () => {
@@ -3539,3 +3539,136 @@ describe("Henry's Kashouty job (2026-11-12)", () => {
   });
 });
 
+
+// Weekly learn pass, 2026-11-16: Dillon's Gayatri Choudhary job (run_44a7eade6dd148f6bc0f2c917370bc16 and its 15
+// revisions, 2026-11-13) showed no total on any version and priced 2 Sanus mounts for 1 TV and the client's back
+// speakers as Klipsch surrounds; Dillon's Danny Lewis job (run_bf641b680c4c4c8792217318f6b81537, 2026-11-11) priced a
+// Sonos Sub on top of his own subwoofer.
+describe("learn pass (2026-11-16): Gayatri Choudhary and Danny Lewis", () => {
+  const none = { existing_equipment: { status: "none" as const, retained: [], removed_or_replaced: [] } };
+  const lw = (item: string, room: string | null, quantity = 1) => ({ item, room, quantity, supplied_by: "livewire" as const, existing: false });
+  const cust = (item: string, room: string | null, quantity = 1) => ({ item, room, quantity, supplied_by: "customer" as const, existing: false });
+  const quantities = (sel: ReturnType<typeof materialize>) => Object.fromEntries(sel.lines.map((l) => [l.role, l.quantity]));
+  async function job(o: object) {
+    const patterns = await loadPatterns();
+    const { scope } = approvedScope({ ...none, existing_detectors: "not_provided", project_type: null, ...o });
+    const pattern = selectPattern(scope.functional_systems, patterns)!;
+    return { scope, pattern, selection: materialize(scope, pattern) };
+  }
+  const gayatri = {
+    client: "Gayatri Choudhary",
+    functional_systems: ["home theater", "projection", "surround sound", "Sonos", "TV", "soundbar", "surge protection"],
+    requested_changes: [
+      "Theater: 130-inch acoustically transparent, fixed-frame, wall-mounted screen",
+      "Theater: projector for the 130-inch screen at a 225-inch throw distance, target equipment budget approximately $2,500",
+      "Theater: projector mount is supplied",
+      "Theater: supplied front in-wall speakers: front left, center and right, also back left and right",
+      "Theater: powered subwoofer, 10- or 12-inch driver",
+      "Theater: AV receiver Sony 3000",
+      "Theater: Sonos Port to integrate the theater receiver into Sonos",
+      "Theater: surge protector WattBox 300",
+      "Second-floor TV and gaming area: relocate power behind the second-floor TV",
+      "Second floor: 45-inch Sony Bravia TV",
+      "Second-floor TV and gaming area: fixed TV mount",
+      "Second floor: Sonos Arc soundbar",
+      "Second floor: soundbar mounting hardware if mounted beneath the TV",
+      "Second floor: surge protector for TV and associated equipment",
+    ],
+    requested_quantities: [
+      { item: "screen", quantity: 1 }, { item: "projector", quantity: 1 }, { item: "powered subwoofer", quantity: 1 }, { item: "AV receiver", quantity: 1 },
+      { item: "Sonos Port", quantity: 1 }, { item: "surge protector", quantity: 2 }, { item: "television", quantity: 1 }, { item: "TV mount", quantity: 1 },
+      { item: "Sonos soundbar", quantity: 1 }, { item: "soundbar mounting hardware", quantity: 1 },
+    ],
+    devices: [
+      lw("130-inch acoustically transparent screen", "Theater"), lw("projector", "Theater"), cust("projector mount", "Theater"),
+      cust("front in-wall speakers", "Theater", 3), cust("back left and right speakers", "Theater", 2),
+      lw("powered subwoofer", "Theater"), lw("Sony 3000 AV receiver", "Theater"), lw("Sonos Port", "Theater"), lw("WattBox 300 surge protector", "Theater"),
+      lw("Sony Bravia 45-inch TV", "Second floor"), lw("fixed TV mount", "Second-floor TV and gaming area"), lw("Sonos Arc", "Second floor"),
+      lw("soundbar mounting hardware", "Second floor"), lw("surge protector", "Second floor"),
+    ],
+  };
+
+  it("\"surge protection\" and \"projection\" listed as systems are the TV's and theater's gear, not uncovered systems", async () => {
+    const { scope, selection } = await job(gayatri);
+    expect(scope.functional_systems).not.toContain("surge protection");
+    expect(scope.functional_systems).not.toContain("projection");
+    expect(selection.requirements.filter((r) => r.classification === "unresolved")).toEqual([]);
+    // Without a TV, theater or network they are still escalated, as before.
+    const alone = approvedScope({ ...none, existing_detectors: "not_provided", project_type: null, functional_systems: ["lighting", "surge protection"], requested_changes: ["Whole-house surge protection"] });
+    expect(alone.scope.functional_systems).toContain("surge protection");
+  });
+
+  it("prices 1 TV mount for 1 TV: the soundbar's mounting hardware is not a TV mount", async () => {
+    const { selection } = await job(gayatri);
+    expect(quantities(selection)).toMatchObject({ television: 1, tv_mount: 1, soundbar: 1, soundbar_mount: 1 });
+  });
+
+  it("a TV mount listed under a longer name for the TV's room is that TV's mount", async () => {
+    const { selection } = await job({
+      functional_systems: ["TV"],
+      requested_changes: ["Second floor: 45-inch Sony Bravia TV", "Second-floor TV and gaming area: fixed TV mount"],
+      requested_quantities: [{ item: "TV mount", quantity: 1 }],
+      devices: [lw("Sony Bravia 45-inch TV", "Second floor"), lw("fixed TV mount", "Second-floor TV and gaming area")],
+    });
+    expect(quantities(selection)).toMatchObject({ television: 1, tv_mount: 1 });
+    // A TV in a room no mount names still gets its own.
+    const two = await job({
+      functional_systems: ["TV"],
+      requested_changes: ["Second floor: 45-inch Sony Bravia TV", "Basement: 65-inch Sony Bravia TV", "Second-floor TV and gaming area: fixed TV mount"],
+      requested_quantities: [{ item: "TV mount", quantity: 1 }],
+      devices: [lw("Sony Bravia 45-inch TV", "Second floor"), lw("Sony Bravia 65-inch TV", "Basement"), lw("fixed TV mount", "Second-floor TV and gaming area")],
+    });
+    expect(quantities(two.selection).tv_mount).toBe(2);
+  });
+
+  it("the client's back left and right speakers are surrounds they supply: installed, not priced", async () => {
+    const { selection } = await job(gayatri);
+    const q = quantities(selection);
+    expect(q).not.toHaveProperty("surround_speakers");
+    expect(q).not.toHaveProperty("front_speakers");
+    expect(q).toMatchObject({ av_receiver: 1, theater_subwoofer: 1, theater_sonos_port: 1 });
+    // One entry for the whole set supplies the surrounds it names too.
+    const one = await job({
+      functional_systems: ["home theater"],
+      requested_changes: ["Theater: AV receiver", "Theater: powered subwoofer", "Theater: supplied front in-wall speakers, also back left and right"],
+      devices: [cust("front in-wall speakers left, center, right and back left and right", "Theater", 5), lw("AV receiver", "Theater")],
+    });
+    expect(quantities(one.selection)).not.toHaveProperty("surround_speakers");
+    expect(quantities(one.selection)).not.toHaveProperty("front_speakers");
+  });
+
+  it("Danny Lewis: the subwoofer he keeps is not priced again", async () => {
+    const { selection } = await job({
+      functional_systems: ["TV", "home theater", "surround sound", "surge protection"],
+      existing_equipment: {
+        status: "described",
+        retained: ["55-inch Sony TV", "Yamaha receiver", "Klipsch speakers and one subwoofer", "Comcast/Xfinity cable box", "over-the-air antenna"],
+        removed_or_replaced: ["existing speaker wiring and HDMI cables", "existing surge protector"],
+      },
+      requested_changes: [
+        "Remove and reinstall the existing TV to access wiring",
+        "Remove the existing speaker wiring and HDMI cables",
+        "Supply and install new wiring for all five speakers and replacement HDMI",
+        "Replace the existing surge protector with one large WattBox",
+        "Reconnect the TV, Yamaha receiver, speakers, subwoofer, cable box and existing antenna",
+        "Test audio and video operation",
+      ],
+    });
+    const q = quantities(selection);
+    expect(q).not.toHaveProperty("subwoofer");
+    expect(q).not.toHaveProperty("theater_subwoofer");
+    expect(q).toHaveProperty("tv_power_protection");
+  });
+
+  // Henry, 2026-11-16 (1a): moving a speaker the client supplies or keeps is 1 hour of labor per speaker.
+  it("labor to move a supplied speaker is a speaker relocation allowance, 1 hour per speaker", async () => {
+    const allowance = async (change: string) =>
+      (await job({ functional_systems: ["home theater"], requested_changes: ["Theater: AV receiver", change] })).selection.labor_allowances?.find((a) => a.key === "speaker_relocation");
+    expect(await allowance("Add labor to move the supplied center channel speaker up 14 inches")).toMatchObject({ hours: 1 });
+    expect(await allowance("Relocate the 2 existing surround speakers to the back wall")).toMatchObject({ hours: 2, quantity: 2 });
+    expect(await allowance("Move both rear speakers behind the couch")).toMatchObject({ hours: 2, quantity: 2 });
+    // New speakers and speaker wiring are not a relocation.
+    expect(await allowance("Add 6 in-ceiling speakers on the lower level")).toBeUndefined();
+    expect(await allowance("Remove the existing speaker wiring and run new speaker wire")).toBeUndefined();
+  });
+});

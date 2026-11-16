@@ -292,6 +292,11 @@ export const AllowanceSpecSchema = z
      */
     counted: z.boolean().optional(),
     /**
+     * With `counted`: each change counts the units it names ("move the 2 surround speakers" is 2, "move the center
+     * channel speaker" is 1), not one per change.
+     */
+    count_in_text: z.literal(true).optional(),
+    /**
      * Roles each priced unit of which needs one more of this counted allowance (a cable run per wired access point),
      * unless the request states its own count of runs or drops, which already includes them.
      */

@@ -203,6 +203,20 @@ const PREWIRE_DONE_LOOSE = /\bpre-?wir(e|ing)\b(?![^.;]*\b(to be|needs?|will|sho
 /** Work on gear the customer keeps ("Reconnect and test the existing 5.1 system") sells no theater (Dillon's Danny Lewis job, 2026-11-12). */
 const KEPT_GEAR = /\b(existing|current|reconnect\w*|reinstall\w*|retain\w*|keep|keeping|kept|reus\w*|remove|removing)\b/;
 
+/**
+ * Parts of a TV, theater or network the model sometimes lists as systems of their own ("surge protection", "projection").
+ * With a TV, theater or network in the job they are that system's gear, priced by its pattern (the WattBox, the projector
+ * and screen), not systems no pattern covers that withhold the total (Dillon's Gayatri Choudhary job, 2026-11-13: no
+ * total on any of 15 revisions). Without one, they stay as written and are escalated as before.
+ */
+const COMPONENT_SYSTEMS = /^(surge( protection| protectors?| suppression)?|power (protection|conditioning|conditioners?)|(battery backup|ups)( power)?|projection( screens?| systems?)?|projectors?( screens?)?)$/;
+const COMPONENT_HOSTS = ["audio_video", "home_theater", "networking"];
+
+function withoutComponentSystems(systems: string[]): string[] {
+  if (!systems.some((s) => COMPONENT_HOSTS.includes(s))) return systems;
+  return systems.filter((s) => !COMPONENT_SYSTEMS.test(s));
+}
+
 function requestedSystems(requests: string[]): string[] {
   const texts = requests.map(fold);
   return REQUESTED_SYSTEMS.filter(([, p]) => texts.some((t) => p.test(t) && !(p === THEATER_GEAR && KEPT_GEAR.test(t)))).flatMap(([systems]) => systems);
@@ -277,7 +291,7 @@ export function normalizeExtraction(input: ScopeExtraction): NormalizedExtractio
     .map(fold)
     .some((t) => PREWIRE_DONE.test(t) || PREWIRE_DONE_LOOSE.test(t));
   if (prewired) notes.push("Pre-wire is already complete: structured wiring is not priced");
-  const systems = theaterOnly(uniqSorted([...musicNotTv(tvSoundOnly(normalizeFunctionalSystems(input.functional_systems), requests), requests), ...requestedSystems(requests)]), requests).filter(
+  const systems = withoutComponentSystems(theaterOnly(uniqSorted([...musicNotTv(tvSoundOnly(normalizeFunctionalSystems(input.functional_systems), requests), requests), ...requestedSystems(requests)]), requests)).filter(
     (s) => !(prewired && s === "structured_wiring"),
   );
   const scope: ScopeExtraction = {
