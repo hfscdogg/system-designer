@@ -1461,7 +1461,10 @@ export function materialize(given: ScopeDraftV1, pattern: PatternSpec, namedProd
       // (staging smoke, Green, 2026-11-06: mounts listed for the fitness room only; the family room's new TV got none).
       // Once per kind of mount: a tilt and an articulating line share the TVs they carry.
       const kind = role.alternative_group ?? role.role;
-      const gap = role.per_moved && !gapped.has(kind) ? unmountedNew(original, role, pattern.roles) : 0;
+      // Any TV mount line takes the gap, the articulating one too: the Office TV with no mount listed beside three
+      // articulating ones still gets its mount (staging smoke, Annie Lewis, 2026-11-17: priced 3 mounts for 4 TVs).
+      const mountKind = !!role.per_moved || (!!role.alternative_group && pattern.roles.some((r) => r.alternative_group === role.alternative_group && r.per_moved));
+      const gap = mountKind && !gapped.has(kind) ? unmountedNew(original, role, pattern.roles) : 0;
       if (gap > 0) {
         gapped.add(kind);
         Object.assign(line, { quantity: stated + gap, quantity_basis: "fixed", verify: null });
