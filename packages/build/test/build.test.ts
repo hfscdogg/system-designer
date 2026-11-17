@@ -3011,8 +3011,32 @@ describe("Zack's live session (2026-11-05)", () => {
         ],
       });
     expect(priced((await step3(["Only need 1 TV mount"])).selection)).toEqual(expect.arrayContaining(["tv_mount × 1"]));
-    // Without the rep's total, the family room's new TV still gets its own mount.
+    // Without the rep's words, a count equal to the listed mount is the list: the family room's new TV still gets its own.
     expect(priced((await step3([])).selection)).toEqual(expect.arrayContaining(["tv_mount × 2"]));
+  });
+
+  it("Green (staging smoke, step 3, 2026-11-17 second run): the rep's \"TV mount\" × 1 beside \"wall mount (fitness room)\" × 2 prices 1", async () => {
+    const { selection } = await job({
+      client: "Smoke Test",
+      functional_systems: ["TV", "networking"],
+      requested_changes: [
+        "Sell a new 77-inch Sony BRAVIA 8 OLED TV with a Sonos Arc Ultra soundbar for the family room",
+        "Move the existing TV and soundbar to the fitness room and wall-mount both there",
+        "Add 3 eero access points",
+        "The existing soundbar keeps its own mount",
+      ],
+      requested_quantities: [{ item: "TV mount", quantity: 1 }],
+      existing_equipment: { status: "described" as const, retained: ["existing TV", "existing soundbar"], removed_or_replaced: [] },
+      devices: [
+        livewire("Sony BRAVIA 8 OLED 77-inch TV", "family room"),
+        livewire("Sonos Arc Ultra soundbar", "family room"),
+        livewire("wall mount", "fitness room", 2),
+        livewire("eero access point", null, 3),
+        customer("existing TV", "fitness room", 1, true),
+        customer("existing soundbar", "fitness room", 1, true),
+      ],
+    });
+    expect(priced(selection)).toEqual(expect.arrayContaining(["tv_mount × 1"]));
   });
 
   // Henry, 2026-11-07: eeros on the customer's own router are eeros, OvrC and a WattBox, no switch.
@@ -3644,7 +3668,6 @@ describe("learn pass (2026-11-16): Gayatri Choudhary and Danny Lewis", () => {
     const two = await job({
       functional_systems: ["TV"],
       requested_changes: ["Second floor: 45-inch Sony Bravia TV", "Basement: 65-inch Sony Bravia TV", "Second-floor TV and gaming area: fixed TV mount"],
-      requested_quantities: [{ item: "TV mount", quantity: 1 }],
       devices: [lw("Sony Bravia 45-inch TV", "Second floor"), lw("Sony Bravia 65-inch TV", "Basement"), lw("fixed TV mount", "Second-floor TV and gaming area")],
     });
     expect(quantities(two.selection).tv_mount).toBe(2);
