@@ -82,6 +82,15 @@ export const RoleSpecSchema = z
     alternative_group: z.string().optional(),
     /** Priced one for each unit of these roles when the request states no count of its own (a memory card per camera). */
     quantity_follows: z.array(z.string()).optional(),
+    /**
+     * The count follows the units of a per-unit default allowance (`id`): one per unit up to `up_to` units, or one per
+     * `per` units once there are more than `above` (a shade power supply per wired shade up to 4, a 10-shade panel above
+     * that). Not priced when the allowance isn't.
+     */
+    follows_allowance: z
+      .object({ id: z.string().min(1), up_to: z.number().int().positive().optional(), above: z.number().int().nonnegative().optional(), per: z.number().int().positive().optional() })
+      .strict()
+      .optional(),
     /** One more of this role for each existing item the request moves that matches these terms (a mount per moved TV). */
     per_moved: z.array(z.string()).optional(),
     /**
@@ -129,6 +138,8 @@ export const RoleSpecSchema = z
             product_id: z.string().uuid().nullable(),
             model: z.string().min(1).optional(),
             label: z.string().min(1),
+            /** A line for the rep's verify list when this variant is chosen ("HomeWorks: final pricing from a Lutron custom quote"). */
+            note: z.string().min(1).optional(),
           })
           .strict(),
       )
@@ -292,6 +303,11 @@ export const AllowanceSpecSchema = z
      */
     counted: z.boolean().optional(),
     /**
+     * With `counted`: each change counts the units it names ("move the 2 surround speakers" is 2, "move the center
+     * channel speaker" is 1), not one per change.
+     */
+    count_in_text: z.literal(true).optional(),
+    /**
      * Roles each priced unit of which needs one more of this counted allowance (a cable run per wired access point),
      * unless the request states its own count of runs or drops, which already includes them.
      */
@@ -355,7 +371,21 @@ export const PatternSpecSchema = z
      * names it: a theater's screen is a $2,500 allowance (Henry, 2026-11-13).
      */
     default_allowances: z
-      .array(z.object({ terms: z.array(z.string().min(1)).min(1), label: z.string().min(1), amount_cents: z.number().int().positive() }).strict())
+      .array(
+        z
+          .object({
+            terms: z.array(z.string().min(1)).min(1),
+            label: z.string().min(1),
+            amount_cents: z.number().int().positive(),
+            /** An id roles can follow (`follows_allowance`). */
+            id: z.string().min(1).optional(),
+            /** The amount is per unit the request counts ("3 wired shades" is 3 × the amount), one when it counts none. */
+            per_unit: z.literal(true).optional(),
+            /** Roles the allowance stands in for, not priced beside it (a wired shade allowance in place of the battery shade). */
+            replaces_roles: z.array(z.string().min(1)).min(1).optional(),
+          })
+          .strict(),
+      )
       .optional(),
     /** D-Tools parts-and-materials record, sized from the policy's parts mix target. */
     parts: z.object({ product_id: z.string().uuid(), label: z.string().min(1) }).strict().optional(),

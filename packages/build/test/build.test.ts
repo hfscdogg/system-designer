@@ -101,7 +101,7 @@ describe("patterns", () => {
         1;
       expect(patternRecordIds(p), p.pattern).toHaveLength(records);
       // The allowance templates ride along with every pattern.
-      expect(p.allowances?.map((a) => a.key), p.pattern).toEqual(["outdoor_outlet", "electrical_outlet", "conduit", "trenching", "wiring_run", "camera_troubleshooting", "remote_programming", "linear_lighting"]);
+      expect(p.allowances?.map((a) => a.key), p.pattern).toEqual(["outdoor_outlet", "electrical_outlet", "conduit", "trenching", "wiring_run", "camera_troubleshooting", "speaker_relocation", "palladiom_keypads", "wired_shade_install", "remote_programming", "linear_lighting"]);
     }
     const network = patterns.find((p) => p.pattern === "home_network")!;
     expect(network.applies_when_any).toEqual(["networking"]);
@@ -2074,7 +2074,7 @@ describe("Henry's decisions (2026-10-27): D-Tools quote history for cabling, cam
 
   it("patterns carry the new version", async () => {
     const versions = Object.fromEntries((await loadPatterns()).map((p) => [p.pattern, p.version]));
-    expect(versions).toMatchObject({ prewire: "2026-10-30.1", tv_media: "2026-11-13.1", whole_home_audio: "2026-11-13.1", home_theater: "2026-11-13.2", lighting_control: "2026-11-13.1" });
+    expect(versions).toMatchObject({ prewire: "2026-10-30.1", tv_media: "2026-11-16.1", whole_home_audio: "2026-11-13.1", home_theater: "2026-11-16.1", lighting_control: "2026-11-16.1" });
   });
 
   it("Q1: a retrofit drop is two keystone jacks and 2 hours; a new-construction drop one jack and 1 hour", async () => {
@@ -3539,3 +3539,217 @@ describe("Henry's Kashouty job (2026-11-12)", () => {
   });
 });
 
+
+// Weekly learn pass, 2026-11-16: Dillon's Gayatri Choudhary job (run_44a7eade6dd148f6bc0f2c917370bc16 and its 15
+// revisions, 2026-11-13) showed no total on any version and priced 2 Sanus mounts for 1 TV and the client's back
+// speakers as Klipsch surrounds; Dillon's Danny Lewis job (run_bf641b680c4c4c8792217318f6b81537, 2026-11-11) priced a
+// Sonos Sub on top of his own subwoofer.
+describe("learn pass (2026-11-16): Gayatri Choudhary and Danny Lewis", () => {
+  const none = { existing_equipment: { status: "none" as const, retained: [], removed_or_replaced: [] } };
+  const lw = (item: string, room: string | null, quantity = 1) => ({ item, room, quantity, supplied_by: "livewire" as const, existing: false });
+  const cust = (item: string, room: string | null, quantity = 1) => ({ item, room, quantity, supplied_by: "customer" as const, existing: false });
+  const quantities = (sel: ReturnType<typeof materialize>) => Object.fromEntries(sel.lines.map((l) => [l.role, l.quantity]));
+  async function job(o: object) {
+    const patterns = await loadPatterns();
+    const { scope } = approvedScope({ ...none, existing_detectors: "not_provided", project_type: null, ...o });
+    const pattern = selectPattern(scope.functional_systems, patterns)!;
+    return { scope, pattern, selection: materialize(scope, pattern) };
+  }
+  const gayatri = {
+    client: "Gayatri Choudhary",
+    functional_systems: ["home theater", "projection", "surround sound", "Sonos", "TV", "soundbar", "surge protection"],
+    requested_changes: [
+      "Theater: 130-inch acoustically transparent, fixed-frame, wall-mounted screen",
+      "Theater: projector for the 130-inch screen at a 225-inch throw distance, target equipment budget approximately $2,500",
+      "Theater: projector mount is supplied",
+      "Theater: supplied front in-wall speakers: front left, center and right, also back left and right",
+      "Theater: powered subwoofer, 10- or 12-inch driver",
+      "Theater: AV receiver Sony 3000",
+      "Theater: Sonos Port to integrate the theater receiver into Sonos",
+      "Theater: surge protector WattBox 300",
+      "Second-floor TV and gaming area: relocate power behind the second-floor TV",
+      "Second floor: 45-inch Sony Bravia TV",
+      "Second-floor TV and gaming area: fixed TV mount",
+      "Second floor: Sonos Arc soundbar",
+      "Second floor: soundbar mounting hardware if mounted beneath the TV",
+      "Second floor: surge protector for TV and associated equipment",
+    ],
+    requested_quantities: [
+      { item: "screen", quantity: 1 }, { item: "projector", quantity: 1 }, { item: "powered subwoofer", quantity: 1 }, { item: "AV receiver", quantity: 1 },
+      { item: "Sonos Port", quantity: 1 }, { item: "surge protector", quantity: 2 }, { item: "television", quantity: 1 }, { item: "TV mount", quantity: 1 },
+      { item: "Sonos soundbar", quantity: 1 }, { item: "soundbar mounting hardware", quantity: 1 },
+    ],
+    devices: [
+      lw("130-inch acoustically transparent screen", "Theater"), lw("projector", "Theater"), cust("projector mount", "Theater"),
+      cust("front in-wall speakers", "Theater", 3), cust("back left and right speakers", "Theater", 2),
+      lw("powered subwoofer", "Theater"), lw("Sony 3000 AV receiver", "Theater"), lw("Sonos Port", "Theater"), lw("WattBox 300 surge protector", "Theater"),
+      lw("Sony Bravia 45-inch TV", "Second floor"), lw("fixed TV mount", "Second-floor TV and gaming area"), lw("Sonos Arc", "Second floor"),
+      lw("soundbar mounting hardware", "Second floor"), lw("surge protector", "Second floor"),
+    ],
+  };
+
+  it("\"surge protection\" and \"projection\" listed as systems are the TV's and theater's gear, not uncovered systems", async () => {
+    const { scope, selection } = await job(gayatri);
+    expect(scope.functional_systems).not.toContain("surge protection");
+    expect(scope.functional_systems).not.toContain("projection");
+    expect(selection.requirements.filter((r) => r.classification === "unresolved")).toEqual([]);
+    // Without a TV, theater or network they are still escalated, as before.
+    const alone = approvedScope({ ...none, existing_detectors: "not_provided", project_type: null, functional_systems: ["lighting", "surge protection"], requested_changes: ["Whole-house surge protection"] });
+    expect(alone.scope.functional_systems).toContain("surge protection");
+  });
+
+  it("prices 1 TV mount for 1 TV: the soundbar's mounting hardware is not a TV mount", async () => {
+    const { selection } = await job(gayatri);
+    expect(quantities(selection)).toMatchObject({ television: 1, tv_mount: 1, soundbar: 1, soundbar_mount: 1 });
+  });
+
+  it("a TV mount listed under a longer name for the TV's room is that TV's mount", async () => {
+    const { selection } = await job({
+      functional_systems: ["TV"],
+      requested_changes: ["Second floor: 45-inch Sony Bravia TV", "Second-floor TV and gaming area: fixed TV mount"],
+      requested_quantities: [{ item: "TV mount", quantity: 1 }],
+      devices: [lw("Sony Bravia 45-inch TV", "Second floor"), lw("fixed TV mount", "Second-floor TV and gaming area")],
+    });
+    expect(quantities(selection)).toMatchObject({ television: 1, tv_mount: 1 });
+    // A TV in a room no mount names still gets its own.
+    const two = await job({
+      functional_systems: ["TV"],
+      requested_changes: ["Second floor: 45-inch Sony Bravia TV", "Basement: 65-inch Sony Bravia TV", "Second-floor TV and gaming area: fixed TV mount"],
+      requested_quantities: [{ item: "TV mount", quantity: 1 }],
+      devices: [lw("Sony Bravia 45-inch TV", "Second floor"), lw("Sony Bravia 65-inch TV", "Basement"), lw("fixed TV mount", "Second-floor TV and gaming area")],
+    });
+    expect(quantities(two.selection).tv_mount).toBe(2);
+  });
+
+  it("the client's back left and right speakers are surrounds they supply: installed, not priced", async () => {
+    const { selection } = await job(gayatri);
+    const q = quantities(selection);
+    expect(q).not.toHaveProperty("surround_speakers");
+    expect(q).not.toHaveProperty("front_speakers");
+    expect(q).toMatchObject({ av_receiver: 1, theater_subwoofer: 1, theater_sonos_port: 1 });
+    // One entry for the whole set supplies the surrounds it names too.
+    const one = await job({
+      functional_systems: ["home theater"],
+      requested_changes: ["Theater: AV receiver", "Theater: powered subwoofer", "Theater: supplied front in-wall speakers, also back left and right"],
+      devices: [cust("front in-wall speakers left, center, right and back left and right", "Theater", 5), lw("AV receiver", "Theater")],
+    });
+    expect(quantities(one.selection)).not.toHaveProperty("surround_speakers");
+    expect(quantities(one.selection)).not.toHaveProperty("front_speakers");
+  });
+
+  it("Danny Lewis: the subwoofer he keeps is not priced again", async () => {
+    const { selection } = await job({
+      functional_systems: ["TV", "home theater", "surround sound", "surge protection"],
+      existing_equipment: {
+        status: "described",
+        retained: ["55-inch Sony TV", "Yamaha receiver", "Klipsch speakers and one subwoofer", "Comcast/Xfinity cable box", "over-the-air antenna"],
+        removed_or_replaced: ["existing speaker wiring and HDMI cables", "existing surge protector"],
+      },
+      requested_changes: [
+        "Remove and reinstall the existing TV to access wiring",
+        "Remove the existing speaker wiring and HDMI cables",
+        "Supply and install new wiring for all five speakers and replacement HDMI",
+        "Replace the existing surge protector with one large WattBox",
+        "Reconnect the TV, Yamaha receiver, speakers, subwoofer, cable box and existing antenna",
+        "Test audio and video operation",
+      ],
+    });
+    const q = quantities(selection);
+    expect(q).not.toHaveProperty("subwoofer");
+    expect(q).not.toHaveProperty("theater_subwoofer");
+    expect(q).toHaveProperty("tv_power_protection");
+  });
+
+  // Henry, 2026-11-16 (1a): moving a speaker the client supplies or keeps is 1 hour of labor per speaker.
+  it("labor to move a supplied speaker is a speaker relocation allowance, 1 hour per speaker", async () => {
+    const allowance = async (change: string) =>
+      (await job({ functional_systems: ["home theater"], requested_changes: ["Theater: AV receiver", change] })).selection.labor_allowances?.find((a) => a.key === "speaker_relocation");
+    expect(await allowance("Add labor to move the supplied center channel speaker up 14 inches")).toMatchObject({ hours: 1 });
+    expect(await allowance("Relocate the 2 existing surround speakers to the back wall")).toMatchObject({ hours: 2, quantity: 2 });
+    expect(await allowance("Move both rear speakers behind the couch")).toMatchObject({ hours: 2, quantity: 2 });
+    // New speakers and speaker wiring are not a relocation.
+    expect(await allowance("Add 6 in-ceiling speakers on the lower level")).toBeUndefined();
+    expect(await allowance("Remove the existing speaker wiring and run new speaker wire")).toBeUndefined();
+  });
+});
+
+// Henry's HomeWorks standard (2026-11-16, decision 2b), from Livewire's accepted D-Tools HomeWorks quotes. Morgan's Roger
+// Jones job (run_3645b2c32da84affb5b053cb894d9838) asked for HomeWorks with 8 Palladiom keypads and 3 Palladiom wired shades
+// and priced RA3, Sunnata and battery Triathlon shades.
+describe("Henry's HomeWorks standard (2026-11-16)", () => {
+  const none = { existing_equipment: { status: "none" as const, retained: [], removed_or_replaced: [] } };
+  const records = (sel: ReturnType<typeof materialize>) => Object.fromEntries(sel.lines.map((l) => [l.role, { record_id: l.record_id, quantity: l.quantity }]));
+  async function job(o: object) {
+    const patterns = await loadPatterns();
+    const { scope } = approvedScope({ ...none, existing_detectors: "not_provided", project_type: null, ...o });
+    const pattern = selectPattern(scope.functional_systems, patterns)!;
+    return { scope, pattern, selection: materialize(scope, pattern) };
+  }
+  const HQP7 = "600eacda-2e76-4617-a51c-b9acdbfe621e";
+  const roger = {
+    client: "Roger Jones",
+    functional_systems: ["lighting control", "motorized shades"],
+    requested_changes: ["Lutron HomeWorks lighting control system", "8 Palladiom keypads", "3 Palladiom wired shades"],
+    requested_quantities: [{ item: "Palladiom keypads", quantity: 8 }, { item: "Palladiom wired shades", quantity: 3 }],
+  };
+
+  it("Roger Jones: a HomeWorks processor, PoE injector, HomeWorks dimmers and QS power, no RA3 or Sunnata RF", async () => {
+    const { selection } = await job(roger);
+    const r = records(selection);
+    expect(r.lighting_processor).toEqual({ record_id: HQP7, quantity: 1 });
+    expect(r.homeworks_poe_injector).toEqual({ record_id: "e900de5e-27cf-406a-9b48-c7f46390ca94", quantity: 1 });
+    expect(r.smart_dimmer!.record_id).toBe("eb16a320-7a52-4f44-a30b-d6278547a059");
+    expect(r.homeworks_qs_power!.record_id).toBe("b7731603-a016-4ab5-8b77-4ab7f52c6033");
+    expect(r.homeworks_enclosure!.record_id).toBe("36460a59-a103-4c20-ac8e-9048e872a1b8");
+    const ids = selection.lines.map((l) => l.record_id);
+    for (const ra3 of ["620daa43-9ffe-47a0-abfb-9d050b77f4d5", "4c30dde8-aebb-48ed-b663-656fcb3ab1c3", "a06da045-6a77-4aba-b494-711061e755b5"]) expect(ids).not.toContain(ra3);
+    expect(selection.labor?.extras).toContain("homeworks_programming");
+  });
+
+  it("Roger Jones: Palladiom keypads are listed to price with 1 hour each, and the rep is told it's a Lutron custom quote", async () => {
+    const { selection } = await job(roger);
+    expect(selection.lines.map((l) => l.role)).not.toContain("scene_keypad");
+    expect(selection.to_verify).toContain("Requested product: Lutron Palladiom or Alisse keypad (no Livewire standard; priced in the final proposal)");
+    expect(selection.to_verify.some((v) => /^HomeWorks: priced with one processor .*custom quote/.test(v))).toBe(true);
+    expect(selection.labor_allowances?.find((a) => a.key === "palladiom_keypads")).toMatchObject({ hours: 8, quantity: 8 });
+  });
+
+  it("Roger Jones: wired shades are $4,476 allowances with 3 hours each and a power supply each, not battery shades", async () => {
+    const { selection } = await job(roger);
+    expect(selection.equipment_allowances).toEqual([{ label: "Wired motorized shade (allowance, 3 × $4,476)", amount_cents: 1342800 }]);
+    const r = records(selection);
+    expect(r.shade_power_supply).toEqual({ record_id: "3808f945-7aa7-451d-9b6e-a8e47c85042f", quantity: 3 });
+    expect(r).not.toHaveProperty("shade_power_panel");
+    expect(r).not.toHaveProperty("battery_shade");
+    expect(r).not.toHaveProperty("shade_batteries");
+    expect(selection.labor_allowances?.find((a) => a.key === "wired_shade_install")).toMatchObject({ hours: 9, quantity: 3 });
+  });
+
+  it("more than 4 wired shades go on 10-shade panels instead of a supply each", async () => {
+    const { selection } = await job({ functional_systems: ["motorized shades"], requested_changes: ["12 wired shades in the great room"] });
+    const r = records(selection);
+    expect(r.shade_power_panel).toEqual({ record_id: "e9710332-96f0-4899-b097-f77e112fd951", quantity: 2 });
+    expect(r).not.toHaveProperty("shade_power_supply");
+    expect(selection.equipment_allowances).toEqual([{ label: "Wired motorized shade (allowance, 12 × $4,476)", amount_cents: 5371200 }]);
+  });
+
+  it("a HomeWorks job without wired keypads prices the HomeWorks Sunnata keypad and no QS power", async () => {
+    const { selection } = await job({ functional_systems: ["lighting"], requested_changes: ["HomeWorks QSX lighting with 10 dimmers and 3 keypads"], requested_quantities: [{ item: "dimmers", quantity: 10 }, { item: "keypads", quantity: 3 }] });
+    const r = records(selection);
+    expect(r.lighting_processor!.record_id).toBe(HQP7);
+    expect(r.scene_keypad).toEqual({ record_id: "9e12e7c5-6876-4da6-b8a6-51ce6408f5f7", quantity: 3 });
+    expect(r.smart_dimmer).toEqual({ record_id: "eb16a320-7a52-4f44-a30b-d6278547a059", quantity: 10 });
+    expect(r).not.toHaveProperty("homeworks_qs_power");
+    expect(r).not.toHaveProperty("homeworks_enclosure");
+  });
+
+  it("smart lighting and battery shades without HomeWorks stay on RadioRA 3 and Triathlon", async () => {
+    const { selection } = await job({ functional_systems: ["lighting", "shades"], requested_changes: ["Replace 8 light switches with smart dimmers", "2 keypads", "4 motorized shades"], requested_quantities: [{ item: "dimmers", quantity: 8 }] });
+    const roles = selection.lines.map((l) => l.role);
+    expect(records(selection).lighting_processor!.record_id).toBe("620daa43-9ffe-47a0-abfb-9d050b77f4d5");
+    for (const r of ["homeworks_poe_injector", "homeworks_qs_power", "shade_power_supply", "shade_power_panel"]) expect(roles).not.toContain(r);
+    expect(roles).toContain("battery_shade");
+    expect(selection.equipment_allowances).toBeUndefined();
+    expect(selection.labor?.extras ?? []).not.toContain("homeworks_programming");
+  });
+});

@@ -825,16 +825,41 @@ function unmountedNew(scope: ScopeDraftV1, role: RoleSpec, roles: RoleSpec[]): n
   // (staging smoke, Green step 3, 2026-11-06: priced 2).
   if (!mounts.length) return 0;
   const carried = devices.filter((d) => d.supplied_by === "livewire" && !d.existing && role.quantity_follows!.includes(roleNamed(d.item, roles)?.role ?? ""));
-  const room = (d: Device) => (d.room ?? "").toLowerCase();
+  const room = (d: Device) => roomWords(d.room ?? "").join(" ");
   let spare = mounts.filter((m) => !m.room).reduce((n, m) => n + m.quantity, 0);
+  // A mount listed under a longer or shorter name for the same room ("Second floor" and "Second-floor TV and gaming area")
+  // is that room's mount, once its own room's devices are covered (Dillon's Gayatri Choudhary job, 2026-11-13: 2 Sanus
+  // mounts for 1 TV, and six "make it 1 Sanus mount" revisions changed nothing).
+  const free = new Map(mounts.filter((m) => m.room).map((m) => [m, m.quantity - carried.filter((d) => room(d) === room(m)).reduce((n, d) => n + d.quantity, 0)]));
   let gap = 0;
   for (const d of carried) {
     if (mounts.some((m) => m.room && room(m) === room(d))) continue;
-    const take = Math.min(spare, d.quantity);
+    let need = d.quantity;
+    for (const [m, left] of free) {
+      if (need <= 0 || left <= 0 || !sameRoom(m.room!, d.room ?? "")) continue;
+      const take = Math.min(left, need);
+      free.set(m, left - take);
+      need -= take;
+    }
+    if (need <= 0) continue;
+    const take = Math.min(spare, need);
     spare -= take;
-    gap += d.quantity - take;
+    gap += need - take;
   }
   return gap;
+}
+
+/** A room name's words, hyphens and punctuation folded ("Second-floor TV area" → second floor tv area). */
+function roomWords(room: string): string[] {
+  return room.toLowerCase().replace(/[^a-z0-9]+/g, " ").trim().split(" ").filter(Boolean);
+}
+
+/** The same room under two names: one name's words open the other's ("second floor" and "second floor tv and gaming area"). */
+function sameRoom(a: string, b: string): boolean {
+  const [x, y] = [roomWords(a), roomWords(b)];
+  if (!x.length || !y.length) return false;
+  const [short, long] = x.length <= y.length ? [x, y] : [y, x];
+  return short.every((w, i) => long[i] === w);
 }
 
 /** Words that stand a TV on furniture instead of the wall: "standing on top of a very long cabinet", "on the credenza". */
@@ -896,6 +921,15 @@ function suppliedRoles(scope: ScopeDraftV1, roles: RoleSpec[]): Map<string, stri
   for (const d of devices.filter((d) => d.supplied_by === "customer" && !d.existing)) {
     const r = roleNamed(d.item, roles);
     if (r && !oursRoles.has(r.role) && !out.has(r.role)) out.set(r.role, fold(d.item));
+    // One entry for the customer's whole speaker set ("front in-wall speakers: left, center and right, also back left and
+    // right") supplies the surrounds it names too, not just the fronts (Dillon's Gayatri Choudhary job, 2026-11-13: the
+    // client's back speakers priced as Klipsch surrounds).
+    if (!r) continue;
+    for (const other of roles) {
+      if (other === r || oursRoles.has(other.role) || out.has(other.role) || !other.systems.some((x) => r.systems.includes(x))) continue;
+      const terms = (other.count_terms ?? []).map(fold).filter((x) => x.includes(" ") && !BRANDS.has(x));
+      if (terms.some((x) => new RegExp(String.raw`\b${escape(x)}(s|es)?\b`).test(fold(d.item)))) out.set(other.role, fold(d.item));
+    }
   }
   // The panel the customer's runs punch down into is in the customer's rack, with the rest of their network gear, unless
   // the request asks Livewire for one (Zack's Morales re-runs, 2026-11-06: a C2G panel priced beside their 2 panels).
@@ -924,6 +958,9 @@ function mountPlan(scope: ScopeDraftV1): { articulating: number; flat: number; a
     // A soundbar's or a camera's mount isn't a TV's.
     const tv = TV_WORD.test(c) || /\b(bravia|sony|samsung|lg|oled|qled)\b/.test(c) || ARTICULATING_MOUNT.test(c) || FLAT_MOUNT.test(c);
     if (!tv || (/\b(aps?|access points?|cameras?|equipment|speakers?)\b/.test(c) && !TV_WORD.test(c))) continue;
+    // "Soundbar mounting hardware, if mounted beneath the TV" mounts the soundbar, not a second TV (Dillon's Gayatri
+    // Choudhary job, 2026-11-13: 2 Sanus mounts for 1 TV).
+    if (/\b(soundbars?|sound bars?|arc( ultra)?|beam)\b/.test(c) && !/\b(tv|television) (wall )?mounts?\b/.test(c)) continue;
     if (ARTICULATING_MOUNT.test(c)) plan.articulating++;
     else if (FLAT_MOUNT.test(c)) plan.flat++;
     else plan.any++;
@@ -1062,8 +1099,10 @@ export function materialize(given: ScopeDraftV1, pattern: PatternSpec, namedProd
   // Equipment priced as an allowance: the rep's own, then the pattern's defaults the request asks for. A device the rep
   // prices as an allowance is not priced again as the standard.
   const repAllowances = equipmentAllowances(original);
-  const equipment = [...repAllowances, ...defaultAllowances(original, pattern, repAllowances)];
+  const defaults = defaultAllowances(original, pattern, repAllowances);
+  const equipment: Array<{ label: string; amount_cents: number; item: string }> = [...repAllowances, ...defaults];
   const byAllowance = new Set(repAllowances.map((a) => roleNamed(a.item, candidates)?.role).filter((r): r is string => !!r));
+  for (const a of defaults) for (const r of a.replaces_roles ?? []) byAllowance.add(r);
   // Products the request names by model are priced in the role they fill, and name that role. Their words name nothing else.
   const requested = namedForRoles(namedProducts, candidates);
   // A change that already names a product by model ("Klipsch AW-525 outdoor speakers") is priced as that product, not by brand.
@@ -1187,6 +1226,8 @@ export function materialize(given: ScopeDraftV1, pattern: PatternSpec, namedProd
       continue;
     }
     const word = product ? undefined : wordVariant(scope, role);
+    // A variant that changes how the job is quoted says so once on the verify list (HomeWorks: a Lutron custom quote).
+    if (word?.note && !toVerify.includes(word.note)) toVerify.push(word.note);
     if (word && !word.product_id) {
       // Words that name a device Livewire has no standard for (a mount for the customer's Playbar): listed to price, not priced as the standard.
       toVerify.push(`Requested product: ${word.label} (no Livewire standard; priced in the final proposal)`);
@@ -1462,6 +1503,17 @@ export function materialize(given: ScopeDraftV1, pattern: PatternSpec, namedProd
     }
     if (!flat && articulating && mounts.flat > 0) articulating.quantity = Math.max(articulating.quantity, mounts.articulating + mounts.flat + mounts.any);
     if (!articulating && flat && mounts.articulating > 0) flat.quantity = Math.max(flat.quantity, mounts.articulating + mounts.flat + mounts.any);
+  }
+
+  // Roles that follow a per-unit allowance's units: a Lutron shade power supply per wired shade up to 4, a 10-shade
+  // QSPS-10PNL panel per 10 above that (Henry, 2026-11-16). Neither is priced without the allowance.
+  for (const line of [...lines]) {
+    const f = pattern.roles.find((r) => r.role === line.role)?.follows_allowance;
+    if (!f || line.requested_model) continue;
+    const units = defaults.find((a) => a.id === f.id)?.units ?? 0;
+    const qty = !units ? 0 : f.per ? (units > (f.above ?? 0) ? Math.ceil(units / f.per) : 0) : units <= (f.up_to ?? Infinity) ? units : 0;
+    if (qty > 0) Object.assign(line, { quantity: qty, quantity_basis: "fixed", verify: null });
+    else lines.splice(lines.indexOf(line), 1);
   }
 
   // What follows only the TV mounts (a WattBox per wall-mounted TV, Henry 2026-11-10) takes their final count, set just above.
@@ -1828,12 +1880,33 @@ const allowanceLines = (xs: Array<{ label: string; amount_cents: number }>) => x
  * The pattern's default allowances the request asks for (a theater's screen at $2,500) that no allowance of the rep's
  * names. A screen the customer keeps or supplies is not asked for.
  */
-function defaultAllowances(scope: ScopeDraftV1, pattern: PatternSpec, rep: Array<{ item: string }>): Array<{ label: string; amount_cents: number; item: string }> {
+function defaultAllowances(
+  scope: ScopeDraftV1,
+  pattern: PatternSpec,
+  rep: Array<{ item: string }>,
+): Array<{ label: string; amount_cents: number; item: string; id?: string; units: number; replaces_roles?: string[] }> {
   const texts = requestTexts(scope).filter((t) => !EXISTING_ITEM.test(t) && !OWNED_ITEM.test(t) && !SUPPLIED.test(t));
+  const names = (t: string, a: { terms: string[] }) => a.terms.some((w) => hasWord(t, fold(w)));
   return (pattern.default_allowances ?? [])
-    .filter((a) => texts.some((t) => a.terms.some((w) => hasWord(t, fold(w)))))
-    .filter((a) => !rep.some((r) => a.terms.some((w) => hasWord(fold(r.item), fold(w)))) && !excluded(scope, { label: a.label, mentions: a.terms } as RoleSpec))
-    .map((a) => ({ label: a.label, amount_cents: a.amount_cents, item: a.terms[0]! }));
+    .filter((a) => texts.some((t) => names(t, a)))
+    .filter((a) => !rep.some((r) => names(fold(r.item), a)) && !excluded(scope, { label: a.label, mentions: a.terms } as RoleSpec))
+    .map((a) => {
+      // Per unit: the count the request states for it, else the units each change names ("3 Palladiom wired shades"), else one
+      // (Henry, 2026-11-16: wired shades at $4,476 each, what Elles paid the outside shade maker).
+      const stated = scope.requested_quantities.filter((q) => names(fold(q.item), a)).reduce((n, q) => n + q.quantity, 0);
+      const said = scope.requested_changes.map(fold).filter((t) => names(t, a)).reduce((n, t) => n + unitsNamed(t, a.terms), 0);
+      const units = a.per_unit ? Math.max(1, stated || said) : 1;
+      const each = `$${(a.amount_cents / 100).toLocaleString("en-US")}`;
+      const base = a.label.replace(/ \(allowance\)$/, "");
+      return {
+        label: a.per_unit && units > 1 ? `${base} (allowance, ${units} × ${each})` : a.label,
+        amount_cents: a.amount_cents * units,
+        item: a.terms[0]!,
+        units,
+        ...(a.id ? { id: a.id } : {}),
+        ...(a.replaces_roles ? { replaces_roles: a.replaces_roles } : {}),
+      };
+    });
 }
 
 /**
@@ -1997,6 +2070,17 @@ function statedCrewHours(scope: ScopeDraftV1): number | null {
 /** A change the request wants priced on its own line ("priced separately", "as a separate price", "broken out"). */
 const SEPARATELY = /\b(?:priced|price|quoted?|listed|shown)\s+(?:out\s+)?separately\b|\bseparate(?:ly)?\s+(?:line|price|priced|quote)\b|\bbroken\s+out\b/;
 
+const SMALL_NUMBERS: Record<string, number> = { one: 1, two: 2, both: 2, pair: 2, three: 3, four: 4, five: 5, six: 6, seven: 7, eight: 8 };
+/** How many of the things a change names it asks for: "move the 2 surround speakers" is 2, "both rear speakers" 2, else 1. */
+function unitsNamed(text: string, things: string[]): number {
+  const nouns = things.map((w) => escape(fold(w))).join("|");
+  if (!nouns) return 1;
+  const m = new RegExp(String.raw`\b(\d+|${Object.keys(SMALL_NUMBERS).join("|")})\b(?:\s+(?:of the|[\w-]+)){0,3}?\s+(?:${nouns})\b`).exec(text);
+  if (!m) return 1;
+  const n = /^\d+$/.test(m[1]!) ? Number(m[1]) : SMALL_NUMBERS[m[1]!]!;
+  return n > 0 && n <= 20 ? n : 1;
+}
+
 const allowanceTexts = (scope: ScopeDraftV1) => [...scope.requested_changes, ...scope.requested_quantities.map((q) => (STICK_ITEM.test(q.item) ? `${q.quantity} - ${q.item}` : q.item))].map(fold);
 
 function allowancesFor(
@@ -2017,7 +2101,8 @@ function allowancesFor(
     const asking = [...fromRequest, ...uncovered].filter(asks);
     if (!asking.length) return [];
     const stated = scope.requested_quantities.filter((q) => asks(fold(q.item))).reduce((n, q) => n + q.quantity, 0);
-    const changes = new Set(scope.requested_changes.map(fold).filter(asks)).size;
+    const asked = [...new Set(scope.requested_changes.map(fold).filter(asks))];
+    const changes = a.count_in_text ? asked.reduce((n, t) => n + unitsNamed(t, a.require ?? a.mentions), 0) : asked.length;
     // The wired access point's own drop (Zack's Britt job, 2026-10-15: 4 Ethernet ports and a PoE access point are 5 runs).
     // A count of wall ports ("4 Ethernet ports") leaves the access point's drop out; a count of drops or runs may include it (2026-10-23).
     const countsDrops = scope.requested_quantities.some((q) => asks(fold(q.item)) && !WALL_PORT.test(fold(q.item)));
