@@ -1,7 +1,7 @@
 {
   "schema": "architecture_pattern_v1",
   "pattern": "motorized_shades",
-  "version": "2026-10-08.1",
+  "version": "2026-11-16.1",
   "title": "Motorized shades",
   "applies_when_any": [
     "motorized_shades"
@@ -9,7 +9,10 @@
   "roles": [
     {
       "role": "battery_shade",
-      "categories": ["Shades & Blinds", "Motorized Window Treatments > Shades"],
+      "categories": [
+        "Shades & Blinds",
+        "Motorized Window Treatments > Shades"
+      ],
       "label": "Lutron Triathlon battery shade",
       "critical": true,
       "systems": [
@@ -43,6 +46,85 @@
       },
       "location": "In each shade",
       "capability": "Powers each shade for years",
+      "hours_each": 0,
+      "escalate_if_unresolved": false
+    },
+    {
+      "role": "shade_power_supply",
+      "categories": [
+        "Power Distribution > Power Supplies"
+      ],
+      "label": "Lutron QS shade power supply",
+      "model": "QSPS-P1-1-35V",
+      "critical": false,
+      "systems": [
+        "motorized_shades"
+      ],
+      "mentions": [
+        "wired shade",
+        "wired shades",
+        "hardwired shade",
+        "hardwired shades",
+        "hard-wired shade",
+        "hard-wired shades",
+        "qs shade",
+        "qs shades",
+        "sivoia qs",
+        "palladiom shade",
+        "palladiom shades"
+      ],
+      "follows_allowance": {
+        "id": "wired_shades",
+        "up_to": 4
+      },
+      "product_id": "3808f945-7aa7-451d-9b6e-a8e47c85042f",
+      "precedent": "livewire_standard",
+      "quantity": {
+        "kind": "fixed",
+        "qty": 1
+      },
+      "location": "Near each shade",
+      "capability": "One per wired shade up to 4, as on Elles Porch (3 shades, three QSPS-P1-1-35V) (Henry, 2026-11-16)",
+      "hours_each": 0,
+      "escalate_if_unresolved": false
+    },
+    {
+      "role": "shade_power_panel",
+      "categories": [
+        "Lighting > Lighting Panels"
+      ],
+      "label": "Lutron 10-shade power panel",
+      "model": "QSPS-10PNL",
+      "critical": false,
+      "systems": [
+        "motorized_shades"
+      ],
+      "mentions": [
+        "wired shade",
+        "wired shades",
+        "hardwired shade",
+        "hardwired shades",
+        "hard-wired shade",
+        "hard-wired shades",
+        "qs shade",
+        "qs shades",
+        "sivoia qs",
+        "palladiom shade",
+        "palladiom shades"
+      ],
+      "follows_allowance": {
+        "id": "wired_shades",
+        "above": 4,
+        "per": 10
+      },
+      "product_id": "e9710332-96f0-4899-b097-f77e112fd951",
+      "precedent": "livewire_standard",
+      "quantity": {
+        "kind": "fixed",
+        "qty": 1
+      },
+      "location": "Equipment location",
+      "capability": "One per 10 wired shades above 4, as on Overas (about 10 shades on one QSPS-10PNL) (Henry, 2026-11-16)",
       "hours_each": 0,
       "escalate_if_unresolved": false
     }
@@ -83,7 +165,7 @@
       "training",
       "project_management"
     ],
-    "basis": "Livewire shade quotes since 2024: about 1 hour per battery shade plus setup"
+    "basis": "Livewire shade quotes since 2024: about 1 hour per battery shade plus setup; a wired shade is 3 hours (Henry, 2026-11-16)"
   },
   "parts": {
     "product_id": "141236a5-8780-493e-a20d-106b7f71c5b4",
@@ -95,5 +177,30 @@
   "exclusions": [
     "Custom fabrics beyond the standard collection.",
     "Window trim or blocking work."
+  ],
+  "default_allowances": [
+    {
+      "terms": [
+        "wired shade",
+        "wired shades",
+        "hardwired shade",
+        "hardwired shades",
+        "hard-wired shade",
+        "hard-wired shades",
+        "qs shade",
+        "qs shades",
+        "sivoia qs",
+        "palladiom shade",
+        "palladiom shades"
+      ],
+      "label": "Wired motorized shade (allowance)",
+      "amount_cents": 447600,
+      "id": "wired_shades",
+      "per_unit": true,
+      "replaces_roles": [
+        "battery_shade",
+        "shade_batteries"
+      ]
+    }
   ]
 }

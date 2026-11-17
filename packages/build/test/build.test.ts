@@ -101,7 +101,7 @@ describe("patterns", () => {
         1;
       expect(patternRecordIds(p), p.pattern).toHaveLength(records);
       // The allowance templates ride along with every pattern.
-      expect(p.allowances?.map((a) => a.key), p.pattern).toEqual(["outdoor_outlet", "electrical_outlet", "conduit", "trenching", "wiring_run", "camera_troubleshooting", "speaker_relocation", "remote_programming", "linear_lighting"]);
+      expect(p.allowances?.map((a) => a.key), p.pattern).toEqual(["outdoor_outlet", "electrical_outlet", "conduit", "trenching", "wiring_run", "camera_troubleshooting", "speaker_relocation", "palladiom_keypads", "wired_shade_install", "remote_programming", "linear_lighting"]);
     }
     const network = patterns.find((p) => p.pattern === "home_network")!;
     expect(network.applies_when_any).toEqual(["networking"]);
@@ -2074,7 +2074,7 @@ describe("Henry's decisions (2026-10-27): D-Tools quote history for cabling, cam
 
   it("patterns carry the new version", async () => {
     const versions = Object.fromEntries((await loadPatterns()).map((p) => [p.pattern, p.version]));
-    expect(versions).toMatchObject({ prewire: "2026-10-30.1", tv_media: "2026-11-16.1", whole_home_audio: "2026-11-13.1", home_theater: "2026-11-16.1", lighting_control: "2026-11-13.1" });
+    expect(versions).toMatchObject({ prewire: "2026-10-30.1", tv_media: "2026-11-16.1", whole_home_audio: "2026-11-13.1", home_theater: "2026-11-16.1", lighting_control: "2026-11-16.1" });
   });
 
   it("Q1: a retrofit drop is two keystone jacks and 2 hours; a new-construction drop one jack and 1 hour", async () => {
@@ -3670,5 +3670,86 @@ describe("learn pass (2026-11-16): Gayatri Choudhary and Danny Lewis", () => {
     // New speakers and speaker wiring are not a relocation.
     expect(await allowance("Add 6 in-ceiling speakers on the lower level")).toBeUndefined();
     expect(await allowance("Remove the existing speaker wiring and run new speaker wire")).toBeUndefined();
+  });
+});
+
+// Henry's HomeWorks standard (2026-11-16, decision 2b), from Livewire's accepted D-Tools HomeWorks quotes. Morgan's Roger
+// Jones job (run_3645b2c32da84affb5b053cb894d9838) asked for HomeWorks with 8 Palladiom keypads and 3 Palladiom wired shades
+// and priced RA3, Sunnata and battery Triathlon shades.
+describe("Henry's HomeWorks standard (2026-11-16)", () => {
+  const none = { existing_equipment: { status: "none" as const, retained: [], removed_or_replaced: [] } };
+  const records = (sel: ReturnType<typeof materialize>) => Object.fromEntries(sel.lines.map((l) => [l.role, { record_id: l.record_id, quantity: l.quantity }]));
+  async function job(o: object) {
+    const patterns = await loadPatterns();
+    const { scope } = approvedScope({ ...none, existing_detectors: "not_provided", project_type: null, ...o });
+    const pattern = selectPattern(scope.functional_systems, patterns)!;
+    return { scope, pattern, selection: materialize(scope, pattern) };
+  }
+  const HQP7 = "600eacda-2e76-4617-a51c-b9acdbfe621e";
+  const roger = {
+    client: "Roger Jones",
+    functional_systems: ["lighting control", "motorized shades"],
+    requested_changes: ["Lutron HomeWorks lighting control system", "8 Palladiom keypads", "3 Palladiom wired shades"],
+    requested_quantities: [{ item: "Palladiom keypads", quantity: 8 }, { item: "Palladiom wired shades", quantity: 3 }],
+  };
+
+  it("Roger Jones: a HomeWorks processor, PoE injector, HomeWorks dimmers and QS power, no RA3 or Sunnata RF", async () => {
+    const { selection } = await job(roger);
+    const r = records(selection);
+    expect(r.lighting_processor).toEqual({ record_id: HQP7, quantity: 1 });
+    expect(r.homeworks_poe_injector).toEqual({ record_id: "e900de5e-27cf-406a-9b48-c7f46390ca94", quantity: 1 });
+    expect(r.smart_dimmer!.record_id).toBe("eb16a320-7a52-4f44-a30b-d6278547a059");
+    expect(r.homeworks_qs_power!.record_id).toBe("b7731603-a016-4ab5-8b77-4ab7f52c6033");
+    expect(r.homeworks_enclosure!.record_id).toBe("36460a59-a103-4c20-ac8e-9048e872a1b8");
+    const ids = selection.lines.map((l) => l.record_id);
+    for (const ra3 of ["620daa43-9ffe-47a0-abfb-9d050b77f4d5", "4c30dde8-aebb-48ed-b663-656fcb3ab1c3", "a06da045-6a77-4aba-b494-711061e755b5"]) expect(ids).not.toContain(ra3);
+    expect(selection.labor?.extras).toContain("homeworks_programming");
+  });
+
+  it("Roger Jones: Palladiom keypads are listed to price with 1 hour each, and the rep is told it's a Lutron custom quote", async () => {
+    const { selection } = await job(roger);
+    expect(selection.lines.map((l) => l.role)).not.toContain("scene_keypad");
+    expect(selection.to_verify).toContain("Requested product: Lutron Palladiom or Alisse keypad (no Livewire standard; priced in the final proposal)");
+    expect(selection.to_verify.some((v) => /^HomeWorks: priced with one processor .*custom quote/.test(v))).toBe(true);
+    expect(selection.labor_allowances?.find((a) => a.key === "palladiom_keypads")).toMatchObject({ hours: 8, quantity: 8 });
+  });
+
+  it("Roger Jones: wired shades are $4,476 allowances with 3 hours each and a power supply each, not battery shades", async () => {
+    const { selection } = await job(roger);
+    expect(selection.equipment_allowances).toEqual([{ label: "Wired motorized shade (allowance, 3 × $4,476)", amount_cents: 1342800 }]);
+    const r = records(selection);
+    expect(r.shade_power_supply).toEqual({ record_id: "3808f945-7aa7-451d-9b6e-a8e47c85042f", quantity: 3 });
+    expect(r).not.toHaveProperty("shade_power_panel");
+    expect(r).not.toHaveProperty("battery_shade");
+    expect(r).not.toHaveProperty("shade_batteries");
+    expect(selection.labor_allowances?.find((a) => a.key === "wired_shade_install")).toMatchObject({ hours: 9, quantity: 3 });
+  });
+
+  it("more than 4 wired shades go on 10-shade panels instead of a supply each", async () => {
+    const { selection } = await job({ functional_systems: ["motorized shades"], requested_changes: ["12 wired shades in the great room"] });
+    const r = records(selection);
+    expect(r.shade_power_panel).toEqual({ record_id: "e9710332-96f0-4899-b097-f77e112fd951", quantity: 2 });
+    expect(r).not.toHaveProperty("shade_power_supply");
+    expect(selection.equipment_allowances).toEqual([{ label: "Wired motorized shade (allowance, 12 × $4,476)", amount_cents: 5371200 }]);
+  });
+
+  it("a HomeWorks job without wired keypads prices the HomeWorks Sunnata keypad and no QS power", async () => {
+    const { selection } = await job({ functional_systems: ["lighting"], requested_changes: ["HomeWorks QSX lighting with 10 dimmers and 3 keypads"], requested_quantities: [{ item: "dimmers", quantity: 10 }, { item: "keypads", quantity: 3 }] });
+    const r = records(selection);
+    expect(r.lighting_processor!.record_id).toBe(HQP7);
+    expect(r.scene_keypad).toEqual({ record_id: "9e12e7c5-6876-4da6-b8a6-51ce6408f5f7", quantity: 3 });
+    expect(r.smart_dimmer).toEqual({ record_id: "eb16a320-7a52-4f44-a30b-d6278547a059", quantity: 10 });
+    expect(r).not.toHaveProperty("homeworks_qs_power");
+    expect(r).not.toHaveProperty("homeworks_enclosure");
+  });
+
+  it("smart lighting and battery shades without HomeWorks stay on RadioRA 3 and Triathlon", async () => {
+    const { selection } = await job({ functional_systems: ["lighting", "shades"], requested_changes: ["Replace 8 light switches with smart dimmers", "2 keypads", "4 motorized shades"], requested_quantities: [{ item: "dimmers", quantity: 8 }] });
+    const roles = selection.lines.map((l) => l.role);
+    expect(records(selection).lighting_processor!.record_id).toBe("620daa43-9ffe-47a0-abfb-9d050b77f4d5");
+    for (const r of ["homeworks_poe_injector", "homeworks_qs_power", "shade_power_supply", "shade_power_panel"]) expect(roles).not.toContain(r);
+    expect(roles).toContain("battery_shade");
+    expect(selection.equipment_allowances).toBeUndefined();
+    expect(selection.labor?.extras ?? []).not.toContain("homeworks_programming");
   });
 });

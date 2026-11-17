@@ -1099,8 +1099,10 @@ export function materialize(given: ScopeDraftV1, pattern: PatternSpec, namedProd
   // Equipment priced as an allowance: the rep's own, then the pattern's defaults the request asks for. A device the rep
   // prices as an allowance is not priced again as the standard.
   const repAllowances = equipmentAllowances(original);
-  const equipment = [...repAllowances, ...defaultAllowances(original, pattern, repAllowances)];
+  const defaults = defaultAllowances(original, pattern, repAllowances);
+  const equipment: Array<{ label: string; amount_cents: number; item: string }> = [...repAllowances, ...defaults];
   const byAllowance = new Set(repAllowances.map((a) => roleNamed(a.item, candidates)?.role).filter((r): r is string => !!r));
+  for (const a of defaults) for (const r of a.replaces_roles ?? []) byAllowance.add(r);
   // Products the request names by model are priced in the role they fill, and name that role. Their words name nothing else.
   const requested = namedForRoles(namedProducts, candidates);
   // A change that already names a product by model ("Klipsch AW-525 outdoor speakers") is priced as that product, not by brand.
@@ -1224,6 +1226,8 @@ export function materialize(given: ScopeDraftV1, pattern: PatternSpec, namedProd
       continue;
     }
     const word = product ? undefined : wordVariant(scope, role);
+    // A variant that changes how the job is quoted says so once on the verify list (HomeWorks: a Lutron custom quote).
+    if (word?.note && !toVerify.includes(word.note)) toVerify.push(word.note);
     if (word && !word.product_id) {
       // Words that name a device Livewire has no standard for (a mount for the customer's Playbar): listed to price, not priced as the standard.
       toVerify.push(`Requested product: ${word.label} (no Livewire standard; priced in the final proposal)`);
@@ -1499,6 +1503,17 @@ export function materialize(given: ScopeDraftV1, pattern: PatternSpec, namedProd
     }
     if (!flat && articulating && mounts.flat > 0) articulating.quantity = Math.max(articulating.quantity, mounts.articulating + mounts.flat + mounts.any);
     if (!articulating && flat && mounts.articulating > 0) flat.quantity = Math.max(flat.quantity, mounts.articulating + mounts.flat + mounts.any);
+  }
+
+  // Roles that follow a per-unit allowance's units: a Lutron shade power supply per wired shade up to 4, a 10-shade
+  // QSPS-10PNL panel per 10 above that (Henry, 2026-11-16). Neither is priced without the allowance.
+  for (const line of [...lines]) {
+    const f = pattern.roles.find((r) => r.role === line.role)?.follows_allowance;
+    if (!f || line.requested_model) continue;
+    const units = defaults.find((a) => a.id === f.id)?.units ?? 0;
+    const qty = !units ? 0 : f.per ? (units > (f.above ?? 0) ? Math.ceil(units / f.per) : 0) : units <= (f.up_to ?? Infinity) ? units : 0;
+    if (qty > 0) Object.assign(line, { quantity: qty, quantity_basis: "fixed", verify: null });
+    else lines.splice(lines.indexOf(line), 1);
   }
 
   // What follows only the TV mounts (a WattBox per wall-mounted TV, Henry 2026-11-10) takes their final count, set just above.
@@ -1865,12 +1880,33 @@ const allowanceLines = (xs: Array<{ label: string; amount_cents: number }>) => x
  * The pattern's default allowances the request asks for (a theater's screen at $2,500) that no allowance of the rep's
  * names. A screen the customer keeps or supplies is not asked for.
  */
-function defaultAllowances(scope: ScopeDraftV1, pattern: PatternSpec, rep: Array<{ item: string }>): Array<{ label: string; amount_cents: number; item: string }> {
+function defaultAllowances(
+  scope: ScopeDraftV1,
+  pattern: PatternSpec,
+  rep: Array<{ item: string }>,
+): Array<{ label: string; amount_cents: number; item: string; id?: string; units: number; replaces_roles?: string[] }> {
   const texts = requestTexts(scope).filter((t) => !EXISTING_ITEM.test(t) && !OWNED_ITEM.test(t) && !SUPPLIED.test(t));
+  const names = (t: string, a: { terms: string[] }) => a.terms.some((w) => hasWord(t, fold(w)));
   return (pattern.default_allowances ?? [])
-    .filter((a) => texts.some((t) => a.terms.some((w) => hasWord(t, fold(w)))))
-    .filter((a) => !rep.some((r) => a.terms.some((w) => hasWord(fold(r.item), fold(w)))) && !excluded(scope, { label: a.label, mentions: a.terms } as RoleSpec))
-    .map((a) => ({ label: a.label, amount_cents: a.amount_cents, item: a.terms[0]! }));
+    .filter((a) => texts.some((t) => names(t, a)))
+    .filter((a) => !rep.some((r) => names(fold(r.item), a)) && !excluded(scope, { label: a.label, mentions: a.terms } as RoleSpec))
+    .map((a) => {
+      // Per unit: the count the request states for it, else the units each change names ("3 Palladiom wired shades"), else one
+      // (Henry, 2026-11-16: wired shades at $4,476 each, what Elles paid the outside shade maker).
+      const stated = scope.requested_quantities.filter((q) => names(fold(q.item), a)).reduce((n, q) => n + q.quantity, 0);
+      const said = scope.requested_changes.map(fold).filter((t) => names(t, a)).reduce((n, t) => n + unitsNamed(t, a.terms), 0);
+      const units = a.per_unit ? Math.max(1, stated || said) : 1;
+      const each = `$${(a.amount_cents / 100).toLocaleString("en-US")}`;
+      const base = a.label.replace(/ \(allowance\)$/, "");
+      return {
+        label: a.per_unit && units > 1 ? `${base} (allowance, ${units} × ${each})` : a.label,
+        amount_cents: a.amount_cents * units,
+        item: a.terms[0]!,
+        units,
+        ...(a.id ? { id: a.id } : {}),
+        ...(a.replaces_roles ? { replaces_roles: a.replaces_roles } : {}),
+      };
+    });
 }
 
 /**
@@ -2066,7 +2102,7 @@ function allowancesFor(
     if (!asking.length) return [];
     const stated = scope.requested_quantities.filter((q) => asks(fold(q.item))).reduce((n, q) => n + q.quantity, 0);
     const asked = [...new Set(scope.requested_changes.map(fold).filter(asks))];
-    const changes = a.count_in_text ? asked.reduce((n, t) => n + unitsNamed(t, a.require ?? []), 0) : asked.length;
+    const changes = a.count_in_text ? asked.reduce((n, t) => n + unitsNamed(t, a.require ?? a.mentions), 0) : asked.length;
     // The wired access point's own drop (Zack's Britt job, 2026-10-15: 4 Ethernet ports and a PoE access point are 5 runs).
     // A count of wall ports ("4 Ethernet ports") leaves the access point's drop out; a count of drops or runs may include it (2026-10-23).
     const countsDrops = scope.requested_quantities.some((q) => asks(fold(q.item)) && !WALL_PORT.test(fold(q.item)));

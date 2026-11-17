@@ -1,7 +1,7 @@
 {
   "schema": "architecture_pattern_v1",
   "pattern": "lighting_control",
-  "version": "2026-11-13.1",
+  "version": "2026-11-16.1",
   "title": "Lighting control",
   "applies_when_any": [
     "lighting_control"
@@ -20,7 +20,8 @@
       ],
       "retained_match": [
         "lutron processor",
-        "radiora"
+        "radiora",
+        "homeworks"
       ],
       "product_id": "620daa43-9ffe-47a0-abfb-9d050b77f4d5",
       "precedent": "livewire_standard",
@@ -29,7 +30,7 @@
         "qty": 1
       },
       "location": "Equipment location",
-      "capability": "Wireless lighting control hub with app, schedules and scenes: priced only when the request asks for smart control, scenes, an app or keypads (Henry, 2026-11-13)",
+      "capability": "Wireless lighting control hub with app, schedules and scenes: priced only when the request asks for smart control, scenes, an app or keypads (Henry, 2026-11-13). HomeWorks (HQP7-RF-2) when the request names HomeWorks, QSX, Palladiom or Alisse; one processor, count confirmed on large homes (Henry, 2026-11-16)",
       "hours_each": 2,
       "escalate_if_unresolved": false,
       "mentions": [
@@ -49,7 +50,44 @@
         "radiora",
         "radio ra",
         "radiora 3",
+        "keypad",
+        "keypads",
+        "lighting control",
+        "sunnata",
         "homeworks",
+        "home works",
+        "homeworks qsx",
+        "qsx"
+      ],
+      "word_variants": [
+        {
+          "words": [
+            "homeworks",
+            "home works",
+            "homeworks qsx",
+            "qsx",
+            "palladiom",
+            "alisse"
+          ],
+          "product_id": "600eacda-2e76-4617-a51c-b9acdbfe621e",
+          "model": "HQP7-RF-2",
+          "label": "Lutron HomeWorks QSX processor",
+          "note": "HomeWorks: priced with one processor (confirm the count for a large home); Livewire's HomeWorks systems are quoted by Lutron as a custom quote, so confirm final pricing with Lutron before the proposal"
+        }
+      ],
+      "context_terms": [
+        "smart dimmer",
+        "smart dimmers",
+        "smart switch",
+        "smart switches",
+        "smart lighting",
+        "scene",
+        "scenes",
+        "lighting scenes",
+        "app",
+        "app control",
+        "schedule",
+        "schedules",
         "keypad",
         "keypads",
         "lighting control",
@@ -78,11 +116,24 @@
         "verify": "count of switch locations to replace with dimmers"
       },
       "location": "Existing switch locations",
-      "capability": "Replaces a wall switch and dims it. Livewire's standard is the plain Lutron Ariadni CL; a Control4 dimmer when the request mentions Control4, a RadioRA 3 Sunnata dimmer when it asks for smart control, scenes, an app or keypads (Henry, 2026-11-13)",
+      "capability": "Replaces a wall switch and dims it. Livewire's standard is the plain Lutron Ariadni CL; a Control4 dimmer when the request mentions Control4, a RadioRA 3 Sunnata dimmer when it asks for smart control, scenes, an app or keypads (Henry, 2026-11-13); a HomeWorks Sunnata dimmer (HRST-PRO-N-WH) on a HomeWorks job (Henry, 2026-11-16)",
       "hours_each": 0.5,
       "escalate_if_unresolved": false,
       "model": "AYCL-153P-WH",
       "word_variants": [
+        {
+          "words": [
+            "homeworks",
+            "home works",
+            "homeworks qsx",
+            "qsx",
+            "palladiom",
+            "alisse"
+          ],
+          "product_id": "eb16a320-7a52-4f44-a30b-d6278547a059",
+          "model": "HRST-PRO-N-WH",
+          "label": "Lutron HomeWorks Sunnata PRO dimmer"
+        },
         {
           "words": [
             "control4",
@@ -110,7 +161,6 @@
             "radiora",
             "radio ra",
             "radiora 3",
-            "homeworks",
             "keypad",
             "keypads",
             "lighting control",
@@ -138,7 +188,13 @@
         "scene",
         "scenes",
         "goodnight",
-        "entry"
+        "entry",
+        "homeworks",
+        "home works",
+        "homeworks qsx",
+        "qsx",
+        "palladiom",
+        "alisse"
       ],
       "product_id": "a06da045-6a77-4aba-b494-711061e755b5",
       "precedent": "livewire_standard",
@@ -148,7 +204,128 @@
         "verify": "keypad locations (entry, primary bedroom)"
       },
       "location": "Entry and primary bedroom",
-      "capability": "One-touch scenes such as Goodnight and Away",
+      "capability": "One-touch scenes such as Goodnight and Away. On a HomeWorks job the HomeWorks Sunnata 3-button keypad (HRST-W3BRL-WH); Palladiom and Alisse keypads have no Livewire standard and are listed to price, with 1 hour of labor each (Henry, 2026-11-16)",
+      "hours_each": 0.5,
+      "escalate_if_unresolved": false,
+      "word_variants": [
+        {
+          "words": [
+            "palladiom",
+            "alisse"
+          ],
+          "product_id": null,
+          "label": "Lutron Palladiom or Alisse keypad"
+        },
+        {
+          "words": [
+            "homeworks",
+            "home works",
+            "homeworks qsx",
+            "qsx",
+            "palladiom",
+            "alisse"
+          ],
+          "product_id": "9e12e7c5-6876-4da6-b8a6-51ce6408f5f7",
+          "model": "HRST-W3BRL-WH",
+          "label": "Lutron HomeWorks Sunnata 3-button keypad with raise/lower"
+        }
+      ],
+      "count_terms": [
+        "keypad",
+        "keypads",
+        "scene keypad",
+        "scene keypads",
+        "palladiom keypad",
+        "palladiom keypads"
+      ]
+    },
+    {
+      "role": "homeworks_poe_injector",
+      "categories": [
+        "Lighting > Accessories"
+      ],
+      "label": "Lutron PoE injector for the HomeWorks processor",
+      "model": "L-POEI-BL",
+      "critical": false,
+      "systems": [
+        "lighting_control"
+      ],
+      "mentions": [
+        "homeworks",
+        "home works",
+        "homeworks qsx",
+        "qsx",
+        "palladiom",
+        "alisse"
+      ],
+      "product_id": "e900de5e-27cf-406a-9b48-c7f46390ca94",
+      "precedent": "livewire_standard",
+      "quantity": {
+        "kind": "fixed",
+        "qty": 1
+      },
+      "location": "Equipment location",
+      "capability": "Powers the HomeWorks processor over its network cable; on Livewire's itemized HomeWorks system. Livewire's accepted HomeWorks quotes since 2024 (D-Tools): 21 accepted, 7 of them new systems or full upgrades; the one itemized new system, P-1751 Porch Lighting Control (quote 31272), had an HQP7-RF-2 processor, an L-POEI-BL power injector, an HRST keypad and five HRST-PRO-N-WH dimmers (Henry, 2026-11-16)",
+      "hours_each": 0,
+      "escalate_if_unresolved": false
+    },
+    {
+      "role": "homeworks_qs_power",
+      "categories": [
+        "Power Distribution > Power Supplies"
+      ],
+      "label": "Lutron QS power supply for wired keypads",
+      "model": "QSPS-DH-1-75-H",
+      "critical": false,
+      "systems": [
+        "lighting_control"
+      ],
+      "mentions": [
+        "palladiom",
+        "alisse",
+        "wired keypad",
+        "wired keypads",
+        "qs keypad",
+        "qs keypads"
+      ],
+      "product_id": "b7731603-a016-4ab5-8b77-4ab7f52c6033",
+      "precedent": "livewire_standard",
+      "quantity": {
+        "kind": "fixed",
+        "qty": 1
+      },
+      "location": "Equipment location",
+      "capability": "Powers the wired (QS) keypads of a HomeWorks system; priced only when wired keypads are asked for (Henry, 2026-11-16)",
+      "hours_each": 0.5,
+      "escalate_if_unresolved": false
+    },
+    {
+      "role": "homeworks_enclosure",
+      "categories": [
+        "Lighting > Enclosures"
+      ],
+      "label": "Lutron low-voltage enclosure",
+      "model": "L-LV14-120",
+      "critical": false,
+      "systems": [
+        "lighting_control"
+      ],
+      "mentions": [
+        "palladiom",
+        "alisse",
+        "wired keypad",
+        "wired keypads",
+        "qs keypad",
+        "qs keypads"
+      ],
+      "product_id": "36460a59-a103-4c20-ac8e-9048e872a1b8",
+      "precedent": "livewire_standard",
+      "quantity": {
+        "kind": "fixed",
+        "qty": 1
+      },
+      "location": "Equipment location",
+      "capability": "Houses the QS power supply; priced with it (Henry, 2026-11-16)",
       "hours_each": 0.5,
       "escalate_if_unresolved": false
     }
@@ -209,5 +386,20 @@
     "New light fixtures unless listed.",
     "Electrical rewiring or new circuits.",
     "Patching and painting."
+  ],
+  "labor_extras": [
+    {
+      "id": "homeworks_programming",
+      "label": "HomeWorks programming (3 hours beyond the 1-hour base)",
+      "hours": 3,
+      "mentions": [
+        "homeworks",
+        "home works",
+        "homeworks qsx",
+        "qsx",
+        "palladiom",
+        "alisse"
+      ]
+    }
   ]
 }
