@@ -862,6 +862,9 @@ function sameRoom(a: string, b: string): boolean {
   return short.every((w, i) => long[i] === w);
 }
 
+/** A rep's total of TV mounts: "only need 1 TV mount", "just 2 mounts", "only one wall mount". */
+const MOUNT_TOTAL = /\b(only|just)\b(?:\s+(?:need|needs|want|wants|use|price))?\s+(?:\d+|one|two|three|four|five|a single)\s+(?:[\w/-]+\s+){0,2}?mounts?\b/;
+
 /** Words that stand a TV on furniture instead of the wall: "standing on top of a very long cabinet", "on the credenza". */
 const STANDING = /\b(stand(s|ing)?|sits?|sitting|placed|set|rests?|resting)\s+on\b|\bon top of\b|\bon (?:a|an|the|his|her|their|its)\s+(?:[\w-]+\s+){0,3}?(cabinet|credenza|console|dresser|tv stand|media stand|table|furniture|media unit|sideboard|buffet)\b|\btable ?top\b/;
 /** How many TVs the request stands on furniture. */
@@ -1464,7 +1467,10 @@ export function materialize(given: ScopeDraftV1, pattern: PatternSpec, namedProd
       // Any TV mount line takes the gap, the articulating one too: the Office TV with no mount listed beside three
       // articulating ones still gets its mount (staging smoke, Annie Lewis, 2026-11-17: priced 3 mounts for 4 TVs).
       const mountKind = !!role.per_moved || (!!role.alternative_group && pattern.roles.some((r) => r.alternative_group === role.alternative_group && r.per_moved));
-      const gap = mountKind && !gapped.has(kind) ? unmountedNew(original, role, pattern.roles) : 0;
+      // The rep's own total ("only need 1 TV mount") is the count as written, whatever the device list still names
+      // (staging smoke, Green step 3, 2026-11-17: the fitness room's mount stayed listed and the family room TV took a second).
+      const repTotal = original.requested_changes.some((c) => MOUNT_TOTAL.test(fold(c)));
+      const gap = mountKind && !repTotal && !gapped.has(kind) ? unmountedNew(original, role, pattern.roles) : 0;
       if (gap > 0) {
         gapped.add(kind);
         Object.assign(line, { quantity: stated + gap, quantity_basis: "fixed", verify: null });

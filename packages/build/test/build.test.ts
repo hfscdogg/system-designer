@@ -2986,6 +2986,35 @@ describe("Zack's live session (2026-11-05)", () => {
     expect(priced(selection)).toEqual(expect.arrayContaining(["tv_mount × 1"]));
   });
 
+  it("Green (staging smoke, step 3, 2026-11-17): \"only need 1 TV mount\" with the fitness room's mount still listed prices 1", async () => {
+    const step3 = (changes: string[]) =>
+      job({
+        client: "Smoke Test",
+        functional_systems: ["TV", "networking"],
+        requested_changes: [
+          "Sell a new 77-inch Sony BRAVIA 8 OLED TV with a Sonos Arc Ultra soundbar for the family room",
+          "Move the existing TV and soundbar to the fitness room and wall-mount both there",
+          "Add 3 eero access points",
+          "The existing soundbar keeps its own mount",
+          ...changes,
+        ],
+        requested_quantities: [{ item: "TV mount", quantity: 1 }],
+        existing_equipment: { status: "described" as const, retained: ["existing TV", "existing soundbar"], removed_or_replaced: [] },
+        excluded_scope: ["wall mount for soundbar"],
+        devices: [
+          livewire("Sony BRAVIA 8 OLED 77-inch TV", "family room"),
+          livewire("Sonos Arc Ultra soundbar", "family room"),
+          livewire("wall mount for TV", "fitness room"),
+          livewire("eero access point", null, 3),
+          customer("existing TV", "fitness room", 1, true),
+          customer("existing soundbar", "fitness room", 1, true),
+        ],
+      });
+    expect(priced((await step3(["Only need 1 TV mount"])).selection)).toEqual(expect.arrayContaining(["tv_mount × 1"]));
+    // Without the rep's total, the family room's new TV still gets its own mount.
+    expect(priced((await step3([])).selection)).toEqual(expect.arrayContaining(["tv_mount × 2"]));
+  });
+
   // Henry, 2026-11-07: eeros on the customer's own router are eeros, OvrC and a WattBox, no switch.
   describe("eeros on the customer's own router", () => {
     const network = (o: object) => job({ functional_systems: ["networking"], ...o }).then((j) => j.selection.lines.map((l) => l.role));
