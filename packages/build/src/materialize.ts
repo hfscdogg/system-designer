@@ -1469,7 +1469,17 @@ export function materialize(given: ScopeDraftV1, pattern: PatternSpec, namedProd
       const mountKind = !!role.per_moved || (!!role.alternative_group && pattern.roles.some((r) => r.alternative_group === role.alternative_group && r.per_moved));
       // The rep's own total ("only need 1 TV mount") is the count as written, whatever the device list still names
       // (staging smoke, Green step 3, 2026-11-17: the fitness room's mount stayed listed and the family room TV took a second).
-      const repTotal = original.requested_changes.some((c) => MOUNT_TOTAL.test(fold(c)));
+      // The revision puts that count in the stated counts ("TV mount" × 1), which the device list replaces: read it there too
+      // (staging smoke, Green step 3, 2026-11-17 second run: "wall mount (fitness room) × 2" on the list, the rep's 1 dropped).
+      const kin = (r: RoleSpec | undefined) => !!r && (r === role || (!!role.alternative_group && r.alternative_group === role.alternative_group));
+      const repTotal =
+        original.requested_changes.some((c) => MOUNT_TOTAL.test(fold(c))) ||
+        given.requested_quantities.some((q) => {
+          if (!kin(roleNamed(q.item, pattern.roles)) || (given.devices ?? []).some((d) => fold(d.item) === fold(q.item))) return false;
+          // Only a count below the mounts the list names lowers them: a count equal to the list is the list, not a total.
+          const listed = (given.devices ?? []).filter((d) => d.supplied_by === "livewire" && !d.existing && kin(roleNamed(d.item, pattern.roles))).reduce((n, d) => n + d.quantity, 0);
+          return q.quantity < listed;
+        });
       const gap = mountKind && !repTotal && !gapped.has(kind) ? unmountedNew(original, role, pattern.roles) : 0;
       if (gap > 0) {
         gapped.add(kind);
