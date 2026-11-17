@@ -3753,3 +3753,35 @@ describe("Henry's HomeWorks standard (2026-11-16)", () => {
     expect(selection.labor?.extras ?? []).not.toContain("homeworks_programming");
   });
 });
+
+// Staging smoke, 2026-11-17 (release #119): Annie Lewis's four TVs priced 3 articulating mounts once the Arc Ultra's
+// "mounted to the TV" stopped counting as a TV mount: the Office TV, with no mount listed, got none.
+describe("staging smoke (2026-11-17): every new wall TV gets a mount", () => {
+  const lw = (item: string, room: string | null, quantity = 1) => ({ item, room, quantity, supplied_by: "livewire" as const, existing: false });
+  it("Annie Lewis: 4 TVs, 3 articulating mounts listed, prices 4 mounts and 4 WattBoxes", async () => {
+    const patterns = await loadPatterns();
+    const { scope } = approvedScope({
+      existing_equipment: { status: "none", retained: [], removed_or_replaced: [] }, existing_detectors: "not_provided", project_type: null,
+      functional_systems: ["AV", "television installations"],
+      requested_changes: [
+        "Guest Room: 43-inch TV using streaming apps, articulating wall mount, relocate existing power and data connections behind the TV",
+        "Living Room: 65-inch Sony TV, articulating wall mount using existing power and data locations",
+        "Living Room: Sonos Arc Ultra mounted to the TV using a compatible soundbar bracket",
+        "Downstairs: 43-inch TV using Wi-Fi, single-arm articulating mount",
+        "Office: 43-inch TV and a Sonos Beam",
+      ],
+      requested_quantities: [],
+      devices: [
+        lw("43-inch TV", "Guest Room"), lw("articulating wall mount", "Guest Room"), lw("65-inch Sony TV", "Living Room"), lw("articulating wall mount", "Living Room"),
+        lw("Sonos Arc Ultra", "Living Room"), lw("soundbar bracket", "Living Room"), lw("43-inch TV", "Downstairs"), lw("single-arm articulating mount", "Downstairs"),
+        lw("43-inch TV", "Office"), lw("Sonos Beam", "Office"),
+      ],
+    });
+    const selection = materialize(scope, selectPattern(scope.functional_systems, patterns)!);
+    const sum = (role: string) => selection.lines.filter((l) => l.role === role).reduce((n, l) => n + l.quantity, 0);
+    expect(sum("television")).toBe(4);
+    expect(sum("tv_mount") + sum("tv_mount_articulating")).toBe(4);
+    expect(sum("tv_power_protection")).toBe(4);
+    expect(sum("soundbar_mount")).toBe(2);
+  });
+});
