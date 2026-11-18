@@ -371,6 +371,9 @@ function statedItem(scope: ScopeDraftV1, role: RoleSpec, roles: RoleSpec[]): { i
   for (const q of scope.requested_quantities) {
     // Nor is a count of what the customer supplies ("1 customer's 65-inch Sony TV").
     if (EXISTING_ITEM.test(fold(q.item)) || OWNED_ITEM.test(q.item)) continue;
+    // Nor a count worded exactly as equipment the customer keeps: "55-inch Sony TV" × 1 beside the kept "55-inch Sony TV"
+    // counts his TV, not a new one to sell (Dillon's Danny Lewis job, 2026-11-11: a BRAVIA 7 priced beside his own TV).
+    if (scope.retained_equipment.some((e) => fold(e) === fold(withoutRoom(q.item, scope)))) continue;
     // Nor is a count of devices to integrate ("Thermostat integration: up to 2"): those are the customer's.
     if (INTEGRATION.test(fold(q.item)) && !NEW_DEVICE.test(fold(q.item))) continue;
     // A length per drop ("feet of Cat6 per drop" × 50) is not a count of anything.

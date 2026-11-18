@@ -3712,6 +3712,35 @@ describe("learn pass (2026-11-16): Gayatri Choudhary and Danny Lewis", () => {
     expect(q).toHaveProperty("tv_power_protection");
   });
 
+  it("Danny Lewis: a count worded as his kept TV (\"55-inch Sony TV\" × 1) prices no new TV", async () => {
+    const { selection } = await job({
+      functional_systems: ["TV", "home theater", "surround sound", "surge protection"],
+      existing_equipment: {
+        status: "described",
+        retained: ["55-inch Sony TV", "Yamaha receiver", "Klipsch speakers and one subwoofer", "Comcast/Xfinity cable box", "over-the-air antenna"],
+        removed_or_replaced: ["existing speaker wiring and HDMI cables", "existing surge protector"],
+      },
+      requested_changes: [
+        "Remove and reinstall the existing TV to access wiring",
+        "Supply and install new wiring for all five speakers and replacement HDMI #2",
+        "Replace the existing surge protector with one large WattBox; final model to be confirmed",
+        "Reconnect the TV, Yamaha receiver, speakers, subwoofer, cable box, and existing antenna",
+      ],
+      requested_quantities: [{ item: "55-inch Sony TV", quantity: 1 }, { item: "WattBox", quantity: 1 }],
+    });
+    const q = quantities(selection);
+    expect(q).not.toHaveProperty("television");
+    expect(q).toHaveProperty("tv_power_protection");
+    // A new TV the rep asks for beside a kept one is still priced.
+    const both = await job({
+      functional_systems: ["TV"],
+      existing_equipment: { status: "described", retained: ["55-inch Sony TV"], removed_or_replaced: [] },
+      requested_changes: ["Keep the 55-inch Sony TV in the den", "Add a new 65-inch Sony TV in the bedroom"],
+      requested_quantities: [{ item: "65-inch Sony TV", quantity: 1 }],
+    });
+    expect(quantities(both.selection).television).toBe(1);
+  });
+
   // Henry, 2026-11-16 (1a): moving a speaker the client supplies or keeps is 1 hour of labor per speaker.
   it("labor to move a supplied speaker is a speaker relocation allowance, 1 hour per speaker", async () => {
     const allowance = async (change: string) =>
