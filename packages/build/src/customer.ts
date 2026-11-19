@@ -46,6 +46,8 @@ export interface CustomerProposal {
   intro: { systems: string; rooms: string[]; labor_hours: number | null };
   /** Residential or commercial: a commercial job is the client's property, not their residence. */
   market?: string;
+  /** The pattern keys the budget prices ("home_theater", "tv_media"), for the cover photo. */
+  systems?: string[];
   services: string[];
   allowances: Array<{ label: string; note: string }>;
   /** Labor for out-of-pattern work, priced and in the total: "Allowances — verify on site". */
@@ -103,6 +105,7 @@ export function customerView(p: Proposal): CustomerProposal {
     labor_total_cents: p.services.reduce((sum, s) => sum + s.unit_price_cents, 0) + (p.labor?.price_cents ?? 0),
     intro: { systems: patternTitle(p.pattern.shown ?? p.pattern.name, p.market).toLowerCase(), rooms: p.rooms, labor_hours: p.labor?.hours ?? null },
     market: p.market,
+    systems: p.pattern.name.split("+"),
     services: [
       ...p.services.map((s) => s.label),
       ...(p.labor ? [`${labelFor(p.labor.included)} (estimated ${p.labor.hours} hours)`] : []),

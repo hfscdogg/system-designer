@@ -4,7 +4,7 @@ import { customerView, formatUsd, retainerCents, type CustomerProposal } from "@
 import { sha256Hex } from "@sd/core";
 import { recordedDToolsReader } from "@sd/dtools";
 import { admitProduct, bind, compile, loadPatterns, materialize, patternRecordIds, type AdmittedProduct } from "@sd/build";
-import { FORBIDDEN, htmlToPdf, IMAGE_PENDING, loadBrand, preflightPdf, renderProposalHtml } from "../src/index.ts";
+import { coverFor, FORBIDDEN, htmlToPdf, IMAGE_PENDING, loadBrand, preflightPdf, renderProposalHtml } from "../src/index.ts";
 import { approvedScope, CATALOG, POLICY, testPattern } from "../../build/test/fixtures.ts";
 
 async function customer(): Promise<CustomerProposal> {
@@ -166,4 +166,30 @@ describe("PDF + preflight", () => {
   it("refuses to render anything that loads external resources", async () => {
     await expect(htmlToPdf('<html><body><img src="https://example.com/x.png">hi</body></html>')).rejects.toThrow(/external resources/);
   }, 60_000);
+});
+
+// Henry and Zack, 2026-11-18: the cover photo matches the job, from Livewire's own installs (photos from Josh).
+describe("cover photo", () => {
+  it("picks the cover by the job's leading system, a commercial install for commercial jobs, else the standard cover", async () => {
+    const brand = await loadBrand();
+    const cover = (systems: string[], market?: string, project_type = "") => coverFor({ systems, market, project_type }, brand);
+    expect(cover(["home_theater", "tv_media"])).toBe(brand.covers.theater);
+    expect(cover(["home_network", "tv_media"])).toBe(brand.covers.tv);
+    expect(cover(["lighting_control", "motorized_shades"])).toBe(brand.covers.lighting);
+    expect(cover(["surveillance", "video_doorbell"])).toBe(brand.covers.security);
+    expect(cover(["prewire"])).toBe(brand.covers.network);
+    expect(cover(["whole_home_audio"], "commercial")).toBe(brand.covers.commercial);
+    expect(cover(["home_theater"], undefined, "Commercial office fit-out")).toBe(brand.covers.commercial);
+    expect(cover(["something_new"])).toBe(brand.heroDataUri);
+    expect(cover([])).toBe(brand.heroDataUri);
+    // Every cover is a distinct photo.
+    expect(new Set(Object.values(brand.covers)).size).toBe(Object.keys(brand.covers).length);
+  });
+
+  it("renders the matched cover on the budget's first page", async () => {
+    const c = await customer();
+    const brand = await loadBrand();
+    const html = renderProposalHtml({ ...c, systems: ["home_automation"] }, brand, {}, meta);
+    expect(html).toContain(`<img class="hero" src="${brand.covers.automation}"`);
+  });
 });
