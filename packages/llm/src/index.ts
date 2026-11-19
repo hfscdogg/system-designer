@@ -15,7 +15,8 @@ export interface ScopeExtractor {
 }
 
 export interface ClarificationInterpreter {
-  interpret(input: { current: ScopeExtraction; questions: string[]; answer: string }): Promise<{ raw: unknown; model: string }>;
+  /** budget: the items the budget being revised prices, with their counts, so a relative change ("remove 1") becomes a total. */
+  interpret(input: { current: ScopeExtraction; questions: string[]; answer: string; budget?: Array<{ item: string; quantity: number }> }): Promise<{ raw: unknown; model: string }>;
 }
 
 export class LlmOutputError extends Error {}
@@ -59,6 +60,7 @@ Rules:
 - A sentence about the job that states a count is a count ("this is only 1 run of Cat6 in an existing home" → requested_quantities "Cat6 runs" × 1; "it's just two TVs" → "TVs" × 2), never unmapped.
 - To remove a device ("remove the Halo remote", "no in-ceiling speakers"), add it to excluded_scope by name, and remove only the phrases about that device from requested_changes and requested_quantities. Keep every other request as it is: removing the Halo remote does not remove "Apple TV remote controlling everything". If nothing is left for a system (for example no Control4 at all), remove that system from functional_systems.
 - A count the answer states ("only 1 TV mount") goes in requested_quantities with the device's name, and its words go in requested_changes too ("Only need 1 TV mount"), so the count reads as the rep's total. A device named by its model number ("only need 1 WSSATM1-B2") keeps the model number as the item name.
+- rep_totals: the complete list of totals the rep sets, each {"item","quantity","room"}. Add one whenever the answer sets how many of a device the budget should price: "only need 1 TV mount", "make it 1 SanusCILT4-B1", "set quantity to 1", "should be a quantity of 1", "it's just 2 TVs" → the device as written and that number. A change relative to the budget ("remove 1 Sanus mount", "add one more TV mount", "remove 2 of the CILT4-B1") is a total too: take the item's count from <current_budget> and add or subtract ("remove 1" from 2 → 1). A removal of every one of an item is excluded_scope, not a total of 0. room is the room the answer names for the total ("Living room: 1 tilt mount"), else null. Keep earlier totals from <current_scope> unless the answer changes them.
 - For property, give {"line1","city","region","postal_code"} with only the components the answer states; use null for the others.
 - "unknown", "TBD", "not sure" are valid explicit answers: budget {"status":"unknown","amount_usd":null}, target_installation_date "unknown", existing_equipment status "unknown". If the size is said to be unknown set size_is_unknown true.
 - market: "residential" or "commercial" when the answer says which.
@@ -84,6 +86,7 @@ export const PATCH_FIELDS = [
   "requested_changes",
   "requested_quantities",
   "devices",
+  "rep_totals",
   "requested_discount",
   "existing_equipment",
   "existing_detectors",
@@ -226,13 +229,14 @@ export function anthropicScopeExtractor(config: AnthropicConfig): ScopeExtractor
 export function anthropicClarificationInterpreter(config: AnthropicConfig): ClarificationInterpreter {
   const client = config.client ?? anthropicClient();
   return {
-    async interpret({ current, questions, answer }) {
+    async interpret({ current, questions, answer, budget }) {
       const wire = await parseWith<ClarificationWire>(
         client,
         config.model,
         CLARIFY_SYSTEM,
         [
           `<current_scope>\n${JSON.stringify(current, null, 2)}\n</current_scope>`,
+          ...(budget?.length ? [`<current_budget>\n${budget.map((b) => `${b.item} × ${b.quantity}`).join("\n")}\n</current_budget>`] : []),
           `<questions_asked>\n${questions.map((q, i) => `${i + 1}. ${q}`).join("\n")}\n</questions_asked>`,
           `<salesperson_answer>\n${answer}\n</salesperson_answer>`,
         ].join("\n\n"),

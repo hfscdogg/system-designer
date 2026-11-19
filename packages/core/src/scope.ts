@@ -57,6 +57,15 @@ export const DeviceSchema = z
 export type Device = z.infer<typeof DeviceSchema>;
 
 /**
+ * A total the rep set for a device in a revision ("only need 1 TV mount", "make it 1 SanusCILT4-B1", "remove 1 Sanus
+ * mount" from 2): the count the budget prices, whatever the device list or the sentences add up to. Kept apart from
+ * the stated counts, which the device list replaces, so the rep's number is never mistaken for an echo of the list
+ * (Henry, 2026-11-19: 19 of 30 mount revisions since October changed nothing). room narrows it to one room.
+ */
+export const RepTotalSchema = z.object({ item: z.string().min(1), quantity: z.number().int().min(0), room: z.string().nullable() }).strict();
+export type RepTotal = z.infer<typeof RepTotalSchema>;
+
+/**
  * A quantity the rep set for one of the budget's own items by pasting the item list back with new counts
  * ("Sony K65XR70 × 2"): applied to that item as written, no interpretation (Zack, 2026-11-06). 0 removes it.
  */
@@ -107,6 +116,8 @@ export const ScopeExtractionSchema = z
     devices: z.array(DeviceSchema).optional(),
     /** Quantities set from a pasted item list in a revision; never extracted from a request. */
     item_quantities: z.array(ItemQuantitySchema).optional(),
+    /** Totals the rep set in a revision; never extracted from a request. */
+    rep_totals: z.array(RepTotalSchema).optional(),
     requested_discount: DiscountSchema.nullable(),
     existing_equipment: ExistingEquipmentSchema,
     existing_detectors: z.enum(["not_provided", ...EXISTING_DETECTORS]),
@@ -124,7 +135,7 @@ export const ScopeExtractionSchema = z
   .strict();
 
 /** What the model fills in from a request: everything but the rep-set labor hours. */
-export const ScopeExtractionModelSchema = ScopeExtractionSchema.omit({ labor_hours: true, devices: true, item_quantities: true }).extend({ devices: z.array(DeviceSchema) });
+export const ScopeExtractionModelSchema = ScopeExtractionSchema.omit({ labor_hours: true, devices: true, item_quantities: true, rep_totals: true }).extend({ devices: z.array(DeviceSchema) });
 
 export type ScopeExtraction = z.infer<typeof ScopeExtractionSchema>;
 
@@ -144,6 +155,8 @@ export const ClarificationPatchSchema = z
     requested_quantities: z.array(RequestedQuantitySchema).nullable(),
     /** The complete device list, when the answer changes a device. Absent in patches from before it existed. */
     devices: z.array(DeviceSchema).nullable().default(null),
+    /** The complete list of the rep's totals, when the answer sets one. Absent in patches from before it existed. */
+    rep_totals: z.array(RepTotalSchema).nullable().default(null),
     requested_discount: DiscountSchema.nullable(),
     existing_equipment: ExistingEquipmentSchema.nullable(),
     existing_detectors: z.enum(EXISTING_DETECTORS).nullable(),
@@ -179,6 +192,8 @@ export const ScopeDraftV1Schema = z
     devices: z.array(DeviceSchema).optional(),
     /** Present only when a revision set quantities from a pasted item list. */
     item_quantities: z.array(ItemQuantitySchema).optional(),
+    /** Present only when a revision set a total. */
+    rep_totals: z.array(RepTotalSchema).optional(),
     requested_discount: DiscountSchema.nullable(),
     existing_equipment_disposition: z.enum(["none", "unknown", "described"]),
     retained_equipment: z.array(z.string()),
@@ -348,6 +363,7 @@ export function applyClarification(base: ScopeExtraction, patch: ClarificationPa
   if (patch.requested_changes !== null) next.requested_changes = patch.requested_changes;
   if (patch.requested_quantities !== null) next.requested_quantities = patch.requested_quantities;
   if (patch.devices !== null) next.devices = patch.devices;
+  if (patch.rep_totals !== null) next.rep_totals = patch.rep_totals;
   if (patch.requested_discount !== null) next.requested_discount = patch.requested_discount;
   if (patch.existing_equipment !== null) next.existing_equipment = patch.existing_equipment;
   if (patch.existing_detectors !== null) next.existing_detectors = patch.existing_detectors;
