@@ -2162,7 +2162,9 @@ const TV_MOVE = /^(move|moving|relocate|relocating)\s+(?:the\s+|his\s+|her\s+|th
 /** A mount that is already the customer's: "its own mount", "the customer-supplied mount", "their existing wall mount". */
 const OWN_MOUNT = /\b(?:its own|their own|his own|her own|own|existing|current|customer[- ]?(?:supplied|provided|owned)|customer'?s|client'?s|owner'?s)\s+(?:(?:tv|wall|tilt|flat|articulating)\s+){0,2}mounts?\b|\bmounts? (?:is|are) (?:supplied|provided) by the (?:customer|client|owner)\b/;
 const MOUNT_WORD = /\bmount(ed|s|ing)?\b|\bart arm\b|\bbracket\b/;
-const NOT_TV_MOUNT = /\b(soundbars?|sound bars?|arc( ultra)?|beam|playbar|projector|speakers?|cameras?|aps?|access points?|equipment)\b/;
+// Rack gear is mounted too ("rack-mount keystone patch panel"): never a TV's mount (staging smoke, Morales run 1,
+// 2026-11-19: the Media Closet's panel took a fourth TV mount).
+const NOT_TV_MOUNT = /\b(soundbars?|sound bars?|arc( ultra)?|beam|playbar|projector|speakers?|cameras?|aps?|access points?|equipment|racks?|patch|panels?|keystones?|shelf|shelves|amps?|amplifiers?|switch(es)?|ups|cabinets?)\b/;
 
 function mountKindOf(text: string): MountKind {
   const t = fold(text);
