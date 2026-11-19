@@ -101,6 +101,25 @@ describe("TV mounts: one rule (Henry, 2026-11-19)", () => {
     expect(c).toMatchObject({ tilt: 2, articulating: 1, wattbox: 3 });
   });
 
+  it("Morales: a rack-mount patch panel in the media closet is no TV mount (staging smoke, 2026-11-19)", async () => {
+    const c = await counts({
+      functional_systems: ["TV", "networking", "whole home audio"],
+      requested_changes: [
+        "Great Room: Sony Bravia 7 or 9 (65in), flat mount",
+        "Porch: customer supplied TV, outdoor TV install with art arm mount (outdoor rated mount - SunBrite)",
+        "Primary Bedroom: customer supplied TV flat/tilt mounted",
+        "Complete the media closet terminations into a rack-mount keystone patch panel",
+      ],
+      devices: [
+        lw("Sony Bravia 7 or 9 65-inch TV", "Great Room"), lw("flat TV mount", "Great Room"),
+        lw("SunBrite outdoor rated art arm mount", "Porch"), cu("outdoor rated 55-65 inch TV", "Porch"),
+        lw("flat/tilt TV mount", "Primary Bedroom"), cu("55-65 inch TV", "Primary Bedroom"),
+        lw("rack-mount keystone patch panel", "Media Closet"),
+      ],
+    });
+    expect(c).toMatchObject({ tilt: 2, articulating: 1, wattbox: 3 });
+  });
+
   it("a room-less 'wall mount' × 3 for three TVs is three mounts, not six", async () => {
     const c = await counts({
       functional_systems: ["TV"],
