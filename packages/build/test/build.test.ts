@@ -2658,7 +2658,8 @@ describe("Zack's live session (2026-11-05)", () => {
     const { selection } = await job(annie);
     expect(priced(selection)).toEqual(expect.arrayContaining(["television [43-inch TV] × 2", "television × 1", "tv_mount_articulating × 3"]));
     const revised = await job({ ...annie, requested_changes: [...annie.requested_changes, "Add 1 43\" TV for office, with mount and Sonos Beam"] });
-    expect(priced(revised.selection)).toEqual(expect.arrayContaining(["television [43\" TV] × 1", "television [43-inch TV] × 2", "tv_mount_articulating × 4"]));
+    // The office's "with mount" names no type: the standard Sanus tilt, beside the three articulating ones (Henry, 2026-11-19).
+    expect(priced(revised.selection)).toEqual(expect.arrayContaining(["television [43\" TV] × 1", "television [43-inch TV] × 2", "tv_mount_articulating × 3", "tv_mount × 1", "tv_power_protection × 4"]));
     // The intro covers the TV rooms, not the rooms of the network port list the request also gives.
     const { customer } = await built({ ...annie, room_types: [...annie.room_types, "rec room", "family room"] });
     expect([...customer.intro.rooms].sort()).toEqual(["downstairs", "guest room", "living room"]);

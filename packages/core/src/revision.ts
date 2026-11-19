@@ -34,6 +34,9 @@ export function describeScopeChanges(before: ScopeExtraction, after: ScopeExtrac
   const pasted = (s: ScopeExtraction) => new Map((s.item_quantities ?? []).map((q) => [q.item, q.quantity]));
   const [pa, pb] = [pasted(before), pasted(after)];
   for (const [item, n] of pb) if (pa.get(item) !== n) out.push(`${item}: ${n === 0 ? "removed" : `set to ${n}`} (pasted list)`);
+  const totals = (s: ScopeExtraction) => new Map((s.rep_totals ?? []).map((t) => [`${t.item}${t.room ? ` (${t.room})` : ""}`, t.quantity]));
+  const [ta, tb] = [totals(before), totals(after)];
+  for (const [item, n] of tb) if (ta.get(item) !== n) out.push(`${item}: total set to ${n}`);
   value("Discount", before.requested_discount?.pct ?? null, after.requested_discount?.pct ?? null, (v: number | null) => (v === null ? "none" : `${v}%`));
   list("Kept equipment", before.existing_equipment.retained, after.existing_equipment.retained);
   value("Existing detectors", before.existing_detectors, after.existing_detectors);

@@ -78,6 +78,7 @@ export const NO_CHANGE_PATCH: ClarificationPatch = {
   requested_changes: null,
   requested_quantities: null,
   devices: null,
+  rep_totals: null,
   requested_discount: null,
   existing_equipment: null,
   existing_detectors: null,
