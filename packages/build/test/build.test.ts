@@ -2074,7 +2074,7 @@ describe("Henry's decisions (2026-10-27): D-Tools quote history for cabling, cam
 
   it("patterns carry the new version", async () => {
     const versions = Object.fromEntries((await loadPatterns()).map((p) => [p.pattern, p.version]));
-    expect(versions).toMatchObject({ prewire: "2026-10-30.1", tv_media: "2026-11-16.1", whole_home_audio: "2026-11-13.1", home_theater: "2026-11-16.1", lighting_control: "2026-11-16.1" });
+    expect(versions).toMatchObject({ prewire: "2026-10-30.1", tv_media: "2026-11-16.1", whole_home_audio: "2026-11-13.1", home_theater: "2026-11-19.1", lighting_control: "2026-11-16.1" });
   });
 
   it("Q1: a retrofit drop is two keystone jacks and 2 hours; a new-construction drop one jack and 1 hour", async () => {
@@ -3835,5 +3835,81 @@ describe("staging smoke (2026-11-17): every new wall TV gets a mount", () => {
     expect(sum("tv_mount") + sum("tv_mount_articulating")).toBe(4);
     expect(sum("tv_power_protection")).toBe(4);
     expect(sum("soundbar_mount")).toBe(2);
+  });
+});
+
+// Weekly learn, 2026-11-16: Dillon's Gayatri Choudhary job (2026-11-13, run_44a7eade… through run_99392dfc…) withheld its
+// total on every one of 15 revisions and kept 2 TV mounts for 1 TV; Danny Lewis (run_bf641b68…) priced a Sonos Sub over his own.
+describe("weekly learn (2026-11-16)", () => {
+  const lw = (item: string, room: string | null, quantity = 1, supplied_by: "livewire" | "customer" = "livewire") => ({ item, room, quantity, supplied_by, existing: false });
+  async function job(o: Parameters<typeof approvedScope>[0]) {
+    const patterns = await loadPatterns();
+    const { scope } = approvedScope(o);
+    const pattern = selectPattern(scope.functional_systems, patterns)!;
+    return { scope, selection: materialize(scope, pattern) };
+  }
+  const choudhary = () => ({
+    existing_equipment: { status: "none", retained: [], removed_or_replaced: [] }, existing_detectors: "not_provided", project_type: null,
+    functional_systems: ["home theater", "projection", "surround sound", "Sonos", "TV", "soundbar", "surge protection", "electrical"],
+    requested_changes: [
+      "Theater: 130-inch acoustically transparent, fixed-frame, wall-mounted screen",
+      "Theater: projector for the 130-inch screen at a 225-inch throw distance, target equipment budget approximately $2,500",
+      "Theater: projector mount is customer-supplied",
+      "Theater: customer-supplied front in-wall left, center and right speakers and back left and right speakers",
+      "Theater: powered subwoofer, 10- or 12-inch driver",
+      "Theater: Sony 3000 AV receiver",
+      "Theater: Sonos Port to integrate the theater receiver into Sonos",
+      "Theater: WattBox 300 surge protector",
+      "Second floor: relocate power behind the TV",
+      "Second floor: 45-inch Sony Bravia TV",
+      "Second floor: fixed TV mount",
+      "Second floor: Sonos Arc soundbar",
+      "Second floor: soundbar mounting hardware",
+      "Second floor: surge protector for the TV",
+    ],
+    requested_quantities: [],
+    devices: [
+      lw("acoustically transparent screen 130-inch", "Theater"), lw("projector", "Theater"), lw("projector mount", "Theater", 1, "customer"),
+      lw("front in-wall speakers", "Theater", 3, "customer"), lw("back in-wall speakers", "Theater", 2, "customer"), lw("powered subwoofer", "Theater"),
+      lw("Sony 3000 AV receiver", "Theater"), lw("Sonos Port", "Theater"), lw("WattBox 300 surge protector", "Theater"),
+      lw("Sony Bravia 45-inch TV", "Second-floor TV and gaming area"), lw("fixed TV mount", "Second floor"), lw("Sonos Arc", "Second floor"), lw("soundbar mounting hardware", "Second floor"), lw("surge protector", "Second floor"),
+    ],
+  });
+
+  it("Gayatri Choudhary: \"surge protection\" and \"projection\" are devices of the theater and TV, not systems that withhold the total", async () => {
+    const { scope, selection } = await job(choudhary());
+    expect(scope.functional_systems).not.toContain("surge protection");
+    expect(scope.functional_systems).not.toContain("projection");
+    expect(selection.unresolved).toEqual([]);
+  });
+
+  it("Gayatri Choudhary: a TV mount listed under another name for the TV's room is that TV's mount, not a second one", async () => {
+    const { selection } = await job(choudhary());
+    expect(selection.lines.find((l) => l.role === "tv_mount")?.quantity).toBe(1);
+  });
+
+  it("Gayatri Choudhary: the client's back in-wall speakers are the surrounds, installed and not priced", async () => {
+    const { selection } = await job(choudhary());
+    expect(selection.lines.map((l) => l.role)).not.toContain("surround_speakers");
+    expect(selection.lines.map((l) => l.role)).not.toContain("front_speakers");
+  });
+
+  it("Danny Lewis: rewiring a 5.1 system keeps the client's subwoofer and withholds nothing", async () => {
+    const { selection } = await job({
+    existing_equipment: { status: "described", retained: ["55-inch Sony TV", "Yamaha receiver", "Klipsch speakers and one subwoofer", "Comcast/Xfinity cable box", "over-the-air antenna"], removed_or_replaced: ["existing surge protector", "existing speaker wiring and HDMI cables"] },
+    existing_detectors: "not_provided", project_type: null,
+    functional_systems: ["home theater", "TV", "surround sound", "surge protection"],
+    requested_changes: [
+      "Remove and reinstall the existing TV to access wiring",
+      "Remove the existing speaker wiring and HDMI cables",
+      "Supply and install new wiring for all five speakers and replacement HDMI",
+      "Replace the existing surge protector with one large WattBox",
+      "Reconnect the TV, Yamaha receiver, speakers, subwoofer, cable box, and existing antenna",
+      "Test audio and video operation",
+    ],
+    requested_quantities: [{ item: "WattBox", quantity: 1 }],
+  });
+    expect(selection.lines.map((l) => l.role)).not.toContain("subwoofer");
+    expect(selection.unresolved).toEqual([]);
   });
 });
