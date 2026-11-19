@@ -1,5 +1,5 @@
 import { formatUsd, type CustomerProposal } from "@sd/build";
-import type { Brand } from "./assets.ts";
+import type { Brand, CoverKey } from "./assets.ts";
 
 /**
  * Customer-facing HTML (PRD §14). Input is the CustomerProposal projection
@@ -91,6 +91,27 @@ const joinWords = (xs: string[]) => (xs.length > 1 ? `${xs.slice(0, -1).join(", 
  * §14.4). Input is the CustomerProposal projection only, so internal cost and
  * margin cannot reach this document.
  */
+/**
+ * The cover photo for the job, from Livewire's own installs (Henry and Zack, 2026-11-18; photos from Josh): a commercial
+ * job shows a commercial install, otherwise the job's leading system in this order, otherwise the standard cover.
+ */
+const COVER_BY_SYSTEM: Array<[CoverKey, string[]]> = [
+  ["theater", ["home_theater"]],
+  ["tv", ["tv_media"]],
+  ["automation", ["home_automation"]],
+  ["audio", ["whole_home_audio"]],
+  ["lighting", ["lighting_control", "linear_lighting", "motorized_shades"]],
+  ["security", ["security_modernization", "surveillance", "video_doorbell", "smart_locks", "access_control"]],
+  ["network", ["home_network", "prewire"]],
+];
+
+export function coverFor(c: Pick<CustomerProposal, "market" | "systems" | "project_type">, brand: Pick<Brand, "covers" | "heroDataUri">): string {
+  if (c.market === "commercial" || /\bcommercial\b/i.test(c.project_type ?? "")) return brand.covers.commercial;
+  const systems = c.systems ?? [];
+  const match = COVER_BY_SYSTEM.find(([, keys]) => keys.some((k) => systems.includes(k)));
+  return match ? brand.covers[match[0]] : brand.heroDataUri;
+}
+
 export function renderProposalHtml(c: CustomerProposal, brand: Brand, images: ImageMap, meta: RenderMeta): string {
   const col = brand.colors;
   const presenter = meta.presenter;
@@ -267,7 +288,7 @@ ul{margin:0 0 10px;padding-left:18px}
     <div class="contact"><span class="web">${escapeHtml(brand.website)}</span>${presenter ? `<br>${escapeHtml(presenter.name)}${presenter.email ? `<br><span class="mail">${escapeHtml(presenter.email)}</span>` : ""}` : ""}</div>
   </div>
   <h1 class="title">${escapeHtml(c.title)}</h1>
-  <img class="hero" src="${brand.heroDataUri}" alt="" />
+  <img class="hero" src="${coverFor(c, brand)}" alt="" />
   <div class="client">
     <div class="who">${escapeHtml(c.client)}</div>
     <div class="where">${escapeHtml(c.property)}</div>
