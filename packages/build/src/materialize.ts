@@ -540,6 +540,10 @@ function wantsNew(scope: ScopeDraftV1, role: RoleSpec, roles: RoleSpec[]): boole
   // "No new speakers, just the amp" asks for no speakers: a negated clause sells nothing.
   const said = otherChanges(scope).map((c) => c.replace(NEGATED, " "));
   if (said.some((c) => roleTerms(role).some((t) => asks(c, t) && (sold(c) || more(c, t))))) return true;
+  // A TV the request names by size in a room's list ("Office: 43-inch TV and a Sonos Beam") is one to sell, as the
+  // device list reads it, unless it is the customer's or one already there ("mount the 65-inch TV", "their 65-inch TV")
+  // (Henry, 2026-11-19: the Annie Lewis office TV, alone, priced only the Beam).
+  if (role.role === "television" && !customerOwned(scope, role) && sizedNewTv(scope)) return true;
   // An outdoor device the request specifies by size ("55'' Outdoor rated TV with cover") is one to sell
   // unless the request says it's the customer's or existing (Zack's Britt job, 2026-10-19: the TV was dropped).
   return outdoorAsked(scope, role) && sizeAsked(scope, role) !== undefined && !customerOwned(scope, role) && !deviceChanges(scope, role).some((c) => EXISTING_ITEM.test(c));
@@ -607,6 +611,19 @@ function requestedProductFor(scope: ScopeDraftV1, role: RoleSpec, brands: string
     .filter((q): q is string => !!q && names.some((b) => hasWord(fold(q), b)));
   const mine = asked.filter((q) => devices.some((d) => hasWord(fold(q), d.replace(/s$/, "")) || hasWord(fold(q), d)));
   return mine.length ? mine.join(" / ") : undefined;
+}
+
+/** A change naming a TV by its size, not the customer's and not one already there: "Office: 43-inch TV", "2 55-inch TVs". */
+function sizedNewTv(scope: ScopeDraftV1): boolean {
+  return scope.requested_changes.some((raw) => {
+    const c = fold(raw);
+    if (MOVE.test(c) || EXISTING_ITEM.test(c) || OWNED_ITEM.test(raw) || SUPPLIED.test(c) || OUTDOOR.test(c)) return false;
+    return [...c.matchAll(SIZE)].some((m) => {
+      if (!/^\s*(?:[\w'’+-]+\s+){0,4}?(?:tvs?|televisions?)\b/.test(c.slice(m.index! + m[0].length))) return false;
+      // "the 65-inch TV", "their 65-inch TV": a TV the job already has.
+      return !/\b(the|this|that|their|his|her|its|our)\s+(?:[\w-]+\s+)?$/.test(c.slice(0, m.index));
+    });
+  });
 }
 
 /** The other brand the request asks for this device in: a "Requested product" it lists that names the brand and the device. */
@@ -1593,6 +1610,32 @@ export function materialize(given: ScopeDraftV1, pattern: PatternSpec, namedProd
     if (dropped.has(lines[i]!.role) || suppliedLines.includes(lines[i]!)) lines.splice(i, 1);
   }
   if (dropped.size) included.splice(0, included.length, ...included.filter((r) => !dropped.has(r.role)));
+
+  // Totals the rep set in a revision ("only need 1 Sonos Arc mount", "make it 2 TVs"), for any device but the TV mounts
+  // (applyMountRule took those): that role's lines come to the total, a lower total taken off the last lines first.
+  // A room's total for one of these is listed to check rather than guessed against the job's count.
+  // A mount's total names the mount, not what it carries: "Sonos Arc mount" is the soundbar mount, not the soundbar.
+  const mountRoles = pattern.roles.filter((r) => /\b(mount|bracket)s?\b/i.test([r.label, ...(r.count_terms ?? [])].join(" ")));
+  for (const t of stated.rep_totals ?? []) {
+    const role = /\b(mount|mounts|bracket|brackets|hardware)\b/i.test(t.item) ? (roleNamed(t.item, mountRoles) ?? roleNamed(t.item, pattern.roles)) : roleNamed(t.item, pattern.roles);
+    if (!role || role.alternative_group === "tv_mount" || role.role === "tv_cart") continue;
+    const at = lines.filter((l) => l.role === role.role);
+    if (!at.length) continue;
+    if (t.room) {
+      toVerify.push(`${t.item} (${t.room}): you set ${t.quantity}; check the count for that room`);
+      continue;
+    }
+    let over = at.reduce((n, l) => n + l.quantity, 0) - t.quantity;
+    if (over === 0) continue;
+    if (over < 0) Object.assign(at[0]!, { quantity: at[0]!.quantity - over, quantity_basis: "fixed", verify: null });
+    for (const l of [...at].reverse()) {
+      if (over <= 0) break;
+      const take = Math.min(over, l.quantity);
+      over -= take;
+      Object.assign(l, { quantity: l.quantity - take, quantity_basis: "fixed", verify: null });
+      if (l.quantity === 0) lines.splice(lines.indexOf(l), 1);
+    }
+  }
 
   // Quantities the rep set by pasting the budget's item list back ("Sony K65XR70 × 2") are applied as written, last:
   // the item's line takes that count, 0 removes it, and an item the rebuilt budget no longer has comes back (Zack,

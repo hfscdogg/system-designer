@@ -137,4 +137,43 @@ describe("TV mounts: one rule (Henry, 2026-11-19)", () => {
     });
     expect(c).toMatchObject({ articulating: 1, tilt: 1, wattbox: 2 });
   });
+
+  it("a sized TV named in a room is priced on its own, with its mount (Annie Lewis's office)", async () => {
+    const c = await counts({ functional_systems: ["TV"], requested_changes: ["Office: 43-inch TV and a Sonos Beam"] });
+    expect(c).toMatchObject({ tvs: 1, mounts: 1, wattbox: 1 });
+  });
+
+  it("a sized TV the job already has is hung, not sold", async () => {
+    const c = await counts({ functional_systems: ["TV"], requested_changes: ["Mount the 65-inch TV above the fireplace"] });
+    expect(c.tvs).toBe(0);
+    expect(c.mounts).toBe(1);
+  });
+});
+
+describe("the rep's totals for other devices (Henry, 2026-11-19)", () => {
+  async function lines(o: object) {
+    const patterns = await loadPatterns();
+    const { scope } = approvedScope({ ...none, ...o });
+    const selection = materialize(scope, selectPattern(scope.functional_systems, patterns)!);
+    return { sum: (role: string) => selection.lines.filter((l) => l.role === role).reduce((n, l) => n + l.quantity, 0), toVerify: selection.to_verify };
+  }
+  const green = {
+    functional_systems: ["TV"],
+    requested_changes: ["Family room: 65-inch Sony TV with Sonos Arc", "Fitness room: move the existing TV and soundbar"],
+    devices: [lw("65-inch Sony TV", "Family room"), lw("Sonos Arc", "Family room"), lw("soundbar mount", "Family room"), lw("soundbar mount", "Fitness room")],
+  };
+
+  it("Green: 'only need one Sonos Arc mount' is one soundbar mount, not the two the list names", async () => {
+    expect((await lines(green)).sum("soundbar_mount")).toBe(2);
+    const revised = await lines({ ...green, rep_totals: [{ item: "Sonos Arc mount", quantity: 1, room: null }] });
+    expect(revised.sum("soundbar_mount")).toBe(1);
+    expect(revised.sum("soundbar")).toBe(1);
+    expect(revised.sum("tv_mount")).toBe(1);
+  });
+
+  it("a room's total for another device is listed to check, not applied to the job", async () => {
+    const r = await lines({ ...green, rep_totals: [{ item: "soundbar mount", quantity: 1, room: "Fitness room" }] });
+    expect(r.sum("soundbar_mount")).toBe(2);
+    expect(r.toVerify).toContain("soundbar mount (Fitness room): you set 1; check the count for that room");
+  });
 });
