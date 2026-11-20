@@ -185,6 +185,17 @@ function statedQuantity(scope: ScopeDraftV1, role: RoleSpec, roles: RoleSpec[]):
 
 /** The role a device or count names most specifically, if any. */
 function roleNamed(text: string, roles: RoleSpec[]): RoleSpec | undefined {
+  // A note in parentheses describes the device, it doesn't name another one: "Sony Bravia 65-inch TV (streaming only
+  // content)" is a TV, not a streamer (staging smoke, Morales run 1, 2026-11-19: the TV priced as an Apple TV).
+  const bare = text.replace(/\s*\([^()]*\)/g, " ").trim();
+  if (bare && bare !== text.trim()) {
+    const named = bestRole(bare, roles);
+    if (named) return named;
+  }
+  return bestRole(text, roles);
+}
+
+function bestRole(text: string, roles: RoleSpec[]): RoleSpec | undefined {
   const scores = roles.map((r) => matchScore(text, r, true));
   const best = Math.max(0, ...scores);
   return best > 0 ? roles[scores.indexOf(best)] : undefined;

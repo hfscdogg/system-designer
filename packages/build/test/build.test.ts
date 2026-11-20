@@ -2879,6 +2879,63 @@ describe("Zack's live session (2026-11-05)", () => {
     expect(proposal.commercial.subtotal_cents).toBeGreaterThan(0);
   });
 
+  // Staging smoke, Morales run 1 (2026-11-19): the device list as the interpreter wrote it. The TV's note "(streaming only
+  // content)" made the listed TV read as a streamer, so no TV was priced and it went to the verify list as a requested
+  // product; run 2 of the same request priced it.
+  const run1Devices = [
+    livewire("Sony Bravia 7 or 9 65-inch TV (streaming only content)", "Great Room"),
+    livewire("flat mount", "Great Room"),
+    livewire("Sonos Amp", "Great Room"),
+    livewire("Sonos Amp", "Kitchen"),
+    livewire("SunBrite outdoor rated art arm mount", "Porch"),
+    livewire("Sonos Beam package", "Porch"),
+    livewire("flat/tilt mount", "Primary Bedroom"),
+    livewire("rack-mount keystone patch panel", "Media Closet"),
+    customer("TV (55-65 inch, indoor rated)", "Porch"),
+    customer("TV (55-65 inch)", "Primary Bedroom"),
+    customer("24U floor cabinet", null),
+    customer("Dream Machine SE", null),
+    customer("Pro Max 48 PoE switch", null),
+    customer("U7 Pro access point", null, 3),
+    customer("U7 Outdoor access point", null),
+    customer("G6 Edge Turret camera", null, 3),
+    customer("G6 Dome camera", null),
+    customer("UNVR", null),
+    customer("UPS 2U", null),
+    customer("24-port blank keystone patch panel", null, 2),
+    customer("speakers wired during construction", "Great Room", 1, true),
+    customer("rack", "Kitchen", 1, true),
+    customer("speakers installed during construction", "Kitchen", 1, true),
+  ];
+  it("Morales run 1: a listed TV with a note about streaming is still our TV, and is priced", async () => {
+    const run1 = {
+      ...morales,
+      devices: run1Devices,
+      existing_equipment: {
+        status: "described" as const,
+        retained: [
+          "Customer supplied UniFi equipment",
+          "Customer supplied rack in the Kitchen",
+          "Customer-provided 24U floor cabinet",
+          "Speakers installed during construction in the Kitchen",
+          "Speakers wired during construction in the Great Room",
+        ],
+        removed_or_replaced: [],
+      },
+      excluded_scope: [],
+      unresolved_questions: [
+        "Requested product: Sonos Beam package",
+        "Requested product: Sony Bravia 7 or 9 65-inch TV",
+        "Requested product: SunBrite outdoor rated art arm mount",
+        "Requested product: rack-mount keystone patch panel",
+        "Which Sony Bravia model (7 or 9) is to be used in the Great Room?",
+      ],
+    };
+    const { selection } = await built(run1);
+    expect(priced(selection)).toEqual(expect.arrayContaining(["television × 1", "tv_mount × 2", "tv_mount_articulating × 1", "zone_amplifier × 2", "soundbar × 1"]));
+    expect(selection.to_verify).not.toContain("Requested product: Sony Bravia 7 or 9 65-inch TV");
+  });
+
   it("the receipt shows the device list by who supplies it", async () => {
     const { buildReceipt, normalizeExtraction } = await import("@sd/core");
     const { completeExtraction } = await import("../../core/test/fixtures.ts");
