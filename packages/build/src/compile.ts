@@ -236,6 +236,8 @@ export function compile(raw: unknown, catalog: Map<string, AdmittedProduct>, pat
       role.larger_tv_variants?.find((v) => v.product_id === line.record_id) ??
       role.port_variants?.find((v) => v.product_id === line.record_id) ??
       role.word_variants?.find((v) => v.product_id === line.record_id);
+    // A word variant can carry its own line for the budget (a Wi-Fi camera has no Cat6 run to the PoE switch).
+    const customerNote = (variant && "customer_note" in variant ? variant.customer_note : undefined) ?? role.customer_note;
     const product = catalog.get(line.record_id);
     // A product the request named by model replaces the standard only when the admitted record carries that model.
     const key = (s: string | null | undefined) => (s ?? "").toLowerCase().replace(/[^a-z0-9]/g, "");
@@ -275,7 +277,7 @@ export function compile(raw: unknown, catalog: Map<string, AdmittedProduct>, pat
       is_taxable: product.is_taxable,
       labor: product.labor,
       evidence_sha256: product.evidence.sha256,
-      ...(line.equivalent_of || role.customer_note
+      ...(line.equivalent_of || customerNote
         ? {
             note: [
               line.placeholder_for
@@ -283,7 +285,7 @@ export function compile(raw: unknown, catalog: Map<string, AdmittedProduct>, pat
                 : line.equivalent_of
                   ? `Livewire equivalent of the requested ${line.equivalent_of} equipment; the final proposal can price ${line.equivalent_of} instead.`
                   : null,
-              role.customer_note ?? null,
+              customerNote ?? null,
             ]
               .filter(Boolean)
               .join(" "),

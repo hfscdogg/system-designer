@@ -2074,7 +2074,7 @@ describe("Henry's decisions (2026-10-27): D-Tools quote history for cabling, cam
 
   it("patterns carry the new version", async () => {
     const versions = Object.fromEntries((await loadPatterns()).map((p) => [p.pattern, p.version]));
-    expect(versions).toMatchObject({ prewire: "2026-10-30.1", tv_media: "2026-11-16.1", whole_home_audio: "2026-11-13.1", home_theater: "2026-11-19.1", lighting_control: "2026-11-16.1" });
+    expect(versions).toMatchObject({ prewire: "2026-10-30.1", tv_media: "2026-11-23.1", whole_home_audio: "2026-11-13.1", home_theater: "2026-11-19.1", lighting_control: "2026-11-16.1" });
   });
 
   it("Q1: a retrofit drop is two keystone jacks and 2 hours; a new-construction drop one jack and 1 hour", async () => {
@@ -4044,5 +4044,53 @@ describe("weekly learn (2026-11-23)", () => {
     const oscar = await job({ functional_systems: ["TV", "power management"], requested_changes: ["Flat mount for an 85-inch TV", "1 Sony Bravia 7", "1 WattBox"] });
     expect(oscar.scope.functional_systems).not.toContain("power management");
     expect(oscar.selection.unresolved).toEqual([]);
+  });
+});
+
+// Henry's picks, 2026-11-23, on the weekly update: a camera the request calls Wi-Fi or wireless is priced as the Alarm.com
+// ADC-V730 (the Wi-Fi camera Livewire buys most: 4 D-Tools purchase orders), and a Sonos Sub Mini the rep names is priced as
+// the Sub Mini, not the Sub Gen 4 (Oscar Durante, run_f5063214…: "1 x sonos mini sub" priced as a Sonos Sub G4).
+describe("Henry's pricing decisions (2026-11-23)", () => {
+  const V730 = "95b3ff13-6b04-434e-8714-21b72097dd50";
+  const SUB_MINI = "5f22b53e-43f6-42ce-b106-d740ba53ba64";
+  const SUB_G4 = "8f0f4999-80cf-40c8-9fab-28fc1d5f52ba";
+  async function job(o: Parameters<typeof approvedScope>[0]) {
+    const patterns = await loadPatterns();
+    const { scope } = approvedScope({ existing_equipment: { status: "none", retained: [], removed_or_replaced: [] }, existing_detectors: "not_provided", project_type: null, ...o });
+    const pattern = selectPattern(scope.functional_systems, patterns)!;
+    return materialize(scope, pattern, []);
+  }
+  const line = (s: ReturnType<typeof materialize>, role: string) => s.lines.find((l) => l.role === role);
+
+  it("Jennifer Levy: a Wi-Fi or wireless camera is priced as the ADC-V730, with no PoE switch", async () => {
+    for (const change of ["One turret camera wifi by the garage", "1 wireless camera", "Add a Wi-Fi camera by the back door"]) {
+      const s = await job({ functional_systems: ["video doorbell", "cameras"], requested_changes: ["One Wi-Fi video doorbell", change] });
+      expect(line(s, "outdoor_camera")?.record_id, change).toBe(V730);
+      expect(line(s, "camera_poe_switch"), change).toBeUndefined();
+    }
+  });
+
+  it("a wired camera stays the PoE turret, even beside wireless door contacts or a Wi-Fi doorbell", async () => {
+    const contacts = await job({ functional_systems: ["security", "cameras"], requested_changes: ["Install 4 wireless door contacts", "Install 4 outdoor turret cameras"] });
+    expect(line(contacts, "outdoor_camera")?.record_id).toBe("4a9c385f-6bf6-42c2-98c9-a15566cbe8d4");
+    const poe = await job({ functional_systems: ["cameras"], requested_changes: ["Two wireless cameras, one PoE camera on a Cat6 run"] });
+    expect(line(poe, "outdoor_camera")?.record_id).toBe("4a9c385f-6bf6-42c2-98c9-a15566cbe8d4");
+  });
+
+  it("the ADC-V730's budget line says it runs on Wi-Fi, not a Cat6 run to a PoE switch", async () => {
+    const patterns = await loadPatterns();
+    const role = patterns.find((p) => p.pattern === "surveillance")!.roles.find((r) => r.role === "outdoor_camera")!;
+    const v = role.word_variants!.find((w) => w.product_id === V730)!;
+    expect(v.customer_note).toMatch(/Wi-Fi/);
+    expect(v.customer_note).not.toMatch(/Cat6 run to the PoE switch/);
+  });
+
+  it("Oscar Durante: a Sonos Sub Mini (or \"mini sub\") is priced as the Sub Mini; a Sonos Sub stays the Gen 4", async () => {
+    for (const change of ["1 x sonos mini sub", "Add a Sonos Sub Mini"]) {
+      const s = await job({ functional_systems: ["TV"], requested_changes: ["Flat mount for an 85-inch TV", "1 Sony Bravia 7", change] });
+      expect(line(s, "subwoofer")?.record_id, change).toBe(SUB_MINI);
+    }
+    const sub = await job({ functional_systems: ["TV"], requested_changes: ["65-inch TV with a Sonos Arc Ultra and Sonos Sub"] });
+    expect(line(sub, "subwoofer")?.record_id).toBe(SUB_G4);
   });
 });
