@@ -144,6 +144,8 @@ export const RoleSpecSchema = z
             unless_also: z.array(z.string().min(1)).min(1).optional(),
             /** The line printed under this variant on the budget, in place of the role's (a Wi-Fi camera has no Cat6 run). */
             customer_note: z.string().min(1).optional(),
+            /** Install hours per unit of this variant, in place of the role's (a Wi-Fi camera has no Cat6 run: 1 hour, Henry 2026-11-23). */
+            hours_each: z.number().min(0).optional(),
           })
           .strict(),
       )
@@ -438,7 +440,8 @@ export function laborHoursFor(pattern: PatternSpec, lines: Array<{ role: string;
   const spec = pattern.labor!;
   const rate = (line: { role: string; record_id?: string }) => {
     const role = pattern.roles.find((r) => r.role === line.role);
-    const each = role?.hours_each ?? spec.hours_per_device;
+    const worded = line.record_id ? role?.word_variants?.find((v) => v.product_id === line.record_id)?.hours_each : undefined;
+    const each = worded ?? role?.hours_each ?? spec.hours_per_device;
     // A named product in place of a multi-unit standard (one speaker, not a pair) takes that standard's hours per unit.
     const substitute =
       !!role?.units_per_item && !!line.record_id && line.record_id !== role.product_id && ![...(role.variants ?? []), ...(role.word_variants ?? [])].some((v) => v.product_id === line.record_id);

@@ -2074,7 +2074,7 @@ describe("Henry's decisions (2026-10-27): D-Tools quote history for cabling, cam
 
   it("patterns carry the new version", async () => {
     const versions = Object.fromEntries((await loadPatterns()).map((p) => [p.pattern, p.version]));
-    expect(versions).toMatchObject({ prewire: "2026-10-30.1", tv_media: "2026-11-23.1", whole_home_audio: "2026-11-13.1", home_theater: "2026-11-19.1", lighting_control: "2026-11-16.1" });
+    expect(versions).toMatchObject({ prewire: "2026-10-30.1", tv_media: "2026-11-23.2", whole_home_audio: "2026-11-13.1", home_theater: "2026-11-19.1", lighting_control: "2026-11-16.1" });
   });
 
   it("Q1: a retrofit drop is two keystone jacks and 2 hours; a new-construction drop one jack and 1 hour", async () => {
@@ -4092,5 +4092,38 @@ describe("Henry's pricing decisions (2026-11-23)", () => {
     }
     const sub = await job({ functional_systems: ["TV"], requested_changes: ["65-inch TV with a Sonos Arc Ultra and Sonos Sub"] });
     expect(line(sub, "subwoofer")?.record_id).toBe(SUB_G4);
+  });
+});
+
+// Henry's follow-ups, 2026-11-23 (2:27 PM ET): the ADC-V730 Wi-Fi camera takes 1 install hour, not the PoE turret's 2 with
+// its Cat6 run; a Sub Mini is priced in white when the rep says white, in black otherwise.
+describe("Henry's follow-ups (2026-11-23)", () => {
+  const V730 = "95b3ff13-6b04-434e-8714-21b72097dd50";
+  const TURRET = "4a9c385f-6bf6-42c2-98c9-a15566cbe8d4";
+  async function job(o: Parameters<typeof approvedScope>[0]) {
+    const patterns = await loadPatterns();
+    const { scope } = approvedScope({ existing_equipment: { status: "none", retained: [], removed_or_replaced: [] }, existing_detectors: "not_provided", project_type: null, ...o });
+    const pattern = selectPattern(scope.functional_systems, patterns)!;
+    return { pattern, selection: materialize(scope, pattern, []) };
+  }
+
+  it("a Wi-Fi camera is 1 install hour each; a PoE turret stays 2", async () => {
+    const patterns = await loadPatterns();
+    const p = patterns.find((x) => x.pattern === "surveillance")!;
+    const wifi = laborHoursFor(p, [{ role: "outdoor_camera", quantity: 2, record_id: V730 }]);
+    const turret = laborHoursFor(p, [{ role: "outdoor_camera", quantity: 2, record_id: TURRET }]);
+    expect(turret - wifi).toBe(2);
+    const { pattern, selection } = await job({ functional_systems: ["cameras"], requested_changes: ["2 wireless cameras by the garage"] });
+    const line = selection.lines.find((l) => l.role === "outdoor_camera")!;
+    expect(line.record_id).toBe(V730);
+    expect(laborHoursFor(pattern, [line]) - laborHoursFor(pattern, [{ ...line, record_id: TURRET }])).toBe(-line.quantity);
+  });
+
+  it("a white Sub Mini is priced in white; any other Sub Mini in black", async () => {
+    const sub = async (change: string) =>
+      (await job({ functional_systems: ["TV"], requested_changes: ["Flat mount for a 65-inch TV", "1 Sony Bravia 7", change] })).selection.lines.find((l) => l.role === "subwoofer")?.record_id;
+    expect(await sub("1 white Sonos Sub Mini")).toBe("97aa761a-e027-40d9-8c41-660fe83280ae");
+    expect(await sub("Sonos Sub Mini in white")).toBe("97aa761a-e027-40d9-8c41-660fe83280ae");
+    expect(await sub("1 x sonos mini sub")).toBe("5f22b53e-43f6-42ce-b106-d740ba53ba64");
   });
 });
