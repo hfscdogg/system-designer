@@ -747,6 +747,7 @@ function wordVariant(scope: ScopeDraftV1, role: RoleSpec) {
     const texts = [...requestTexts(scope), ...(v.with_kept ? scope.retained_equipment.map(fold) : [])];
     const said = texts.some((t) => v.words.some((w) => hasWord(t, fold(w))) && (!v.require || v.require.some((r) => hasWord(t, fold(r)))));
     if (!said) return false;
+    if (v.unless_also && mentioned(scope, v.unless_also)) return false;
     if (v.sizes) return v.sizes.some((n) => sizes.includes(n));
     return !v.default_size || !sizes.some((n) => sized.has(n));
   });

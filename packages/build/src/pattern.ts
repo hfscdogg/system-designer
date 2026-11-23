@@ -140,6 +140,10 @@ export const RoleSpecSchema = z
             label: z.string().min(1),
             /** A line for the rep's verify list when this variant is chosen ("HomeWorks: final pricing from a Lutron custom quote"). */
             note: z.string().min(1).optional(),
+            /** Not chosen when the request says one of these anywhere ("PoE", "wired": a wired camera stays the PoE standard). */
+            unless_also: z.array(z.string().min(1)).min(1).optional(),
+            /** The line printed under this variant on the budget, in place of the role's (a Wi-Fi camera has no Cat6 run). */
+            customer_note: z.string().min(1).optional(),
           })
           .strict(),
       )
