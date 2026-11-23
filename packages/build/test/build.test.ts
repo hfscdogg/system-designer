@@ -4000,3 +4000,49 @@ describe("weekly learn (2026-11-16)", () => {
     expect(selection.unresolved).toEqual([]);
   });
 });
+
+// Weekly learn, 2026-11-23: Dillon's Jennifer Levy job (2026-11-19, run_dd8a0db0… through run_281b4d9f…, 9 runs) priced an
+// Araknis PoE switch for a Wi-Fi camera on every version, "remove Araknis Networks AN-220-SW-R-8-POE × 1" removed nothing, the
+// ADC-V730 it priced by model was also listed as "no Livewire standard", and "alarm_monitoring" withheld the total; Oscar
+// Durante's job (run_f5063214…, 2026-11-20) withheld its total over "power management".
+describe("weekly learn (2026-11-23)", () => {
+  const lw = (item: string, room: string | null, quantity = 1) => ({ item, room, quantity, supplied_by: "livewire" as const, existing: false });
+  async function job(o: Parameters<typeof approvedScope>[0], named: Parameters<typeof materialize>[2] = []) {
+    const patterns = await loadPatterns();
+    const { scope } = approvedScope({ existing_equipment: { status: "none", retained: [], removed_or_replaced: [] }, existing_detectors: "not_provided", project_type: null, ...o });
+    const pattern = selectPattern(scope.functional_systems, patterns)!;
+    return { scope, pattern, selection: materialize(scope, pattern, named) };
+  }
+  const roles = (s: ReturnType<typeof materialize>) => s.lines.map((l) => l.role);
+
+  it("Jennifer Levy: a Wi-Fi camera takes no PoE switch; wired cameras beside wireless door contacts still do", async () => {
+    const wifi = await job({ functional_systems: ["video doorbell", "cameras"], requested_changes: ["New wireless bullet camera", "New wireless video doorbell", "All cameras are wireless"] });
+    expect(roles(wifi.selection)).not.toContain("camera_poe_switch");
+    expect(roles(wifi.selection)).toContain("outdoor_camera");
+    const wired = await job({ functional_systems: ["security", "cameras"], requested_changes: ["Install 4 wireless door contacts", "Install 4 outdoor turret cameras"] });
+    expect(roles(wired.selection)).toContain("camera_poe_switch");
+  });
+
+  it("Jennifer Levy: removing a device by the model printed on the budget removes it", async () => {
+    const { selection } = await job({ functional_systems: ["cameras", "video doorbell"], requested_changes: ["Install 1 turret camera by the garage", "Install 1 video doorbell"], excluded_scope: ["Araknis Networks AN-220-SW-R-8-POE × 1"] });
+    expect(roles(selection)).not.toContain("camera_poe_switch");
+  });
+
+  it("Jennifer Levy: a camera priced by the model the rep named is not also listed as an unpriced product", async () => {
+    const scope = { functional_systems: ["cameras", "video doorbell"], requested_changes: ["Install 1 Alarm.com ADC-V730 Wi-Fi spotlight camera by the garage", "Install 1 Alarm.com video doorbell"], devices: [lw("Alarm.com ADC-V730", "Garage"), lw("Alarm.com video doorbell", "Front entry")] };
+    const patterns = await loadPatterns();
+    const category = selectPattern(approvedScope({ existing_detectors: "not_provided", ...scope }).scope.functional_systems, patterns)!.roles.find((r) => r.role === "outdoor_camera")!.categories![0]!;
+    const { selection } = await job(scope, [{ record_id: "11111111-1111-4111-8111-111111111111", model: "ADC-V730", label: "Alarm.com ADC-V730", category, text: "Alarm.com ADC-V730" }]);
+    expect(selection.lines.find((l) => l.role === "outdoor_camera")?.requested_model).toBe("ADC-V730");
+    expect(selection.to_verify.some((v) => /ADC-V730.*no Livewire standard/.test(v))).toBe(false);
+  });
+
+  it("Jennifer Levy and Oscar Durante: \"alarm_monitoring\" on a camera job and \"power management\" on a TV job withhold nothing", async () => {
+    const levy = await job({ functional_systems: ["video doorbell", "cameras", "monitoring"], requested_changes: ["Install 1 Wi-Fi video doorbell", "Install 1 Wi-Fi turret camera by the garage"] });
+    expect(levy.scope.functional_systems).not.toContain("alarm_monitoring");
+    expect(levy.selection.unresolved).toEqual([]);
+    const oscar = await job({ functional_systems: ["TV", "power management"], requested_changes: ["Flat mount for an 85-inch TV", "1 Sony Bravia 7", "1 WattBox"] });
+    expect(oscar.scope.functional_systems).not.toContain("power management");
+    expect(oscar.selection.unresolved).toEqual([]);
+  });
+});

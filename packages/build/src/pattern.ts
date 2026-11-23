@@ -186,6 +186,11 @@ export const RoleSpecSchema = z
      */
     mentions_unless: z.object({ words: z.array(z.string().min(1)).min(1), unless_also: z.array(z.string().min(1)).min(1) }).strict().optional(),
     /**
+     * Left out when the request says one of `words` and none of `unless_also`, unless it names the device itself: Wi-Fi cameras
+     * take no PoE switch (Dillon's Jennifer Levy job, 2026-11-19: "the camera is wifi, remove the PoE switch" changed nothing).
+     */
+    left_out_when: z.object({ words: z.array(z.string().min(1)).min(1), require: z.array(z.string().min(1)).min(1).optional(), unless_also: z.array(z.string().min(1)).min(1) }).strict().optional(),
+    /**
      * Alternative approved records chosen by the size the request names ("75-inch" → the 77" model).
      * An `outdoor` variant is chosen only for a request that says the device goes outside (and only one is):
      * an outdoor TV is never priced as an indoor one.

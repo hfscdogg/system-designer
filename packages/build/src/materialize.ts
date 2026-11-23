@@ -679,7 +679,8 @@ const FILLER = new Set(["the", "a", "an", "any", "all", "existing", "new", "live
 function excluded(scope: ScopeDraftV1, role: RoleSpec): boolean {
   const terms = [...roleTerms(role), ...(role.count_terms ?? []).map(fold)];
   return scope.excluded_scope.some((raw) => {
-    if (role.model && compact(raw) === compact(role.model)) return true;
+    // The model as printed on the budget, alone or in a line ("Araknis Networks AN-220-SW-R-8-POE × 1").
+    if (role.model && (compact(raw) === compact(role.model) || (compact(role.model).length >= 6 && compact(raw).includes(compact(role.model))))) return true;
     const item = fold(raw);
     // "No additional eeros" limits the count ("only need 1 eero"); it doesn't remove the device.
     if (BEYOND_COUNT.test(item)) return false;
@@ -1150,6 +1151,11 @@ export function materialize(given: ScopeDraftV1, pattern: PatternSpec, namedProd
   for (const role of candidates) {
     if (role.alternative_group && namedGroups.has(role.alternative_group) && !namedSpecifically(scope, role, pattern.roles)) continue;
     if (byAllowance.has(role.role)) continue;
+    const leftOut = role.left_out_when;
+    if (leftOut && mentioned(scope, leftOut.words, leftOut.require) && !mentioned(scope, leftOut.unless_also) && !namedExplicitly(scope, role, pattern.roles) && !requested.has(role.role)) {
+      notAsked.add(role.role);
+      continue;
+    }
     // In an add-on, a role is priced when the request names it or names its own system (smoke detection alongside sensors).
     const ownSystemRequested = role.systems.some((s) => scope.functional_systems.includes(s) && !pattern.applies_when_any.includes(s));
     const products = requested.get(role.role) ?? [];
@@ -1791,6 +1797,9 @@ export function materialize(given: ScopeDraftV1, pattern: PatternSpec, namedProd
   const listedText = [...toVerify, ...allowances.map((a) => a.label), ...laborAllowances.map((a) => a.label), ...equipment.map((a) => a.label)].map(fold);
   for (const d of original.devices ?? []) {
     if (d.supplied_by !== "livewire" || d.existing || roleNamed(d.item, pattern.roles)) continue;
+    // A device the budget prices by the model the rep named ("Alarm.com ADC-V730") is priced, not unpriced.
+    const pricedModels = lines.flatMap((l) => [l.requested_model, pattern.roles.find((r) => r.role === l.role)?.model]).filter((m): m is string => !!m && compact(m).length >= 5);
+    if (pricedModels.some((m) => compact(d.item).includes(compact(m)))) continue;
     const item = fold(d.item);
     if (original.excluded_scope.some((x) => item.includes(fold(x)) || fold(x).includes(item)) || listedText.some((t) => t.includes(item))) continue;
     // A device an allowance prices ("acoustically transparent screen 130-inch" under the screen allowance) is no unpriced product.
