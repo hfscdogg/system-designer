@@ -27,6 +27,8 @@ export interface Brand {
   };
   logoDataUri: string;
   heroDataUri: string;
+  /** Cover photos from Livewire's own installs, by kind of job (see coverFor). */
+  covers: Record<CoverKey, string>;
   fontCss: string;
 }
 
@@ -37,6 +39,9 @@ const FONTS: Array<[family: string, file: string, weight: number, style: "normal
   ["Outfit", "@fontsource/outfit/files/outfit-latin-600-normal.woff2", 600, "normal"],
   ["Outfit", "@fontsource/outfit/files/outfit-latin-700-normal.woff2", 700, "normal"],
 ];
+
+export const COVER_KEYS = ["theater", "tv", "automation", "audio", "lighting", "security", "network", "commercial"] as const;
+export type CoverKey = (typeof COVER_KEYS)[number];
 
 let cached: Promise<Brand> | null = null;
 
@@ -55,6 +60,9 @@ export function loadBrand(): Promise<Brand> {
       ...brand,
       logoDataUri: `data:image/png;base64,${(await asset("logo-color.png")).toString("base64")}`,
       heroDataUri: `data:image/jpeg;base64,${(await asset("hero.jpg")).toString("base64")}`,
+      covers: Object.fromEntries(
+        await Promise.all(COVER_KEYS.map(async (k) => [k, `data:image/jpeg;base64,${(await asset(`covers/${k}.jpg`)).toString("base64")}`])),
+      ) as Record<CoverKey, string>,
       fontCss: faces.join("\n"),
     };
   })();

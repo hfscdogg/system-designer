@@ -341,6 +341,20 @@ describe("clarification", () => {
     expect(computeBlockers(next)).toEqual([]);
   });
 
+  it("carries a rep's total from a revision into the approved scope, and says so (Henry, 2026-11-19)", () => {
+    const base = completeExtraction();
+    const patch = validateClarificationPatch({ ...noPatch, rep_totals: [{ item: "Sanus CILT4-B1", quantity: 1, room: null }] });
+    if (!patch.ok) throw new Error(patch.errors.join());
+    const next = normalizeExtraction(applyClarification(base, patch.value)).scope;
+    expect(next.rep_totals).toEqual([{ item: "Sanus CILT4-B1", quantity: 1, room: null }]);
+    expect(describeScopeChanges(normalizeExtraction(base).scope, next)).toContain("Sanus CILT4-B1: total set to 1");
+    const receipt = receiptFor(next);
+    expect(receipt.scope?.rep_totals).toEqual([{ item: "Sanus CILT4-B1", quantity: 1, room: null }]);
+    expect(receipt.lines).toContain("Totals you set: Sanus CILT4-B1 × 1");
+    // A scope with no totals hashes as before: the field stays absent.
+    expect(receiptFor().scope).not.toHaveProperty("rep_totals");
+  });
+
   it("fills only the address components supplied", () => {
     const base = completeExtraction({ property: { line1: "12 Oak Lane", city: null, region: null, postal_code: null } });
     const patch = validateClarificationPatch({ ...noPatch, property: { line1: null, city: "Richmond", region: "VA", postal_code: null } });

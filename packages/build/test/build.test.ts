@@ -2658,7 +2658,8 @@ describe("Zack's live session (2026-11-05)", () => {
     const { selection } = await job(annie);
     expect(priced(selection)).toEqual(expect.arrayContaining(["television [43-inch TV] × 2", "television × 1", "tv_mount_articulating × 3"]));
     const revised = await job({ ...annie, requested_changes: [...annie.requested_changes, "Add 1 43\" TV for office, with mount and Sonos Beam"] });
-    expect(priced(revised.selection)).toEqual(expect.arrayContaining(["television [43\" TV] × 1", "television [43-inch TV] × 2", "tv_mount_articulating × 4"]));
+    // The office's "with mount" names no type: the standard Sanus tilt, beside the three articulating ones (Henry, 2026-11-19).
+    expect(priced(revised.selection)).toEqual(expect.arrayContaining(["television [43\" TV] × 1", "television [43-inch TV] × 2", "tv_mount_articulating × 3", "tv_mount × 1", "tv_power_protection × 4"]));
     // The intro covers the TV rooms, not the rooms of the network port list the request also gives.
     const { customer } = await built({ ...annie, room_types: [...annie.room_types, "rec room", "family room"] });
     expect([...customer.intro.rooms].sort()).toEqual(["downstairs", "guest room", "living room"]);
@@ -2876,6 +2877,63 @@ describe("Zack's live session (2026-11-05)", () => {
     // The customer's new gear is installed: its hours are in the labor.
     expect(selection.installed?.length).toBeGreaterThan(0);
     expect(proposal.commercial.subtotal_cents).toBeGreaterThan(0);
+  });
+
+  // Staging smoke, Morales run 1 (2026-11-19): the device list as the interpreter wrote it. The TV's note "(streaming only
+  // content)" made the listed TV read as a streamer, so no TV was priced and it went to the verify list as a requested
+  // product; run 2 of the same request priced it.
+  const run1Devices = [
+    livewire("Sony Bravia 7 or 9 65-inch TV (streaming only content)", "Great Room"),
+    livewire("flat mount", "Great Room"),
+    livewire("Sonos Amp", "Great Room"),
+    livewire("Sonos Amp", "Kitchen"),
+    livewire("SunBrite outdoor rated art arm mount", "Porch"),
+    livewire("Sonos Beam package", "Porch"),
+    livewire("flat/tilt mount", "Primary Bedroom"),
+    livewire("rack-mount keystone patch panel", "Media Closet"),
+    customer("TV (55-65 inch, indoor rated)", "Porch"),
+    customer("TV (55-65 inch)", "Primary Bedroom"),
+    customer("24U floor cabinet", null),
+    customer("Dream Machine SE", null),
+    customer("Pro Max 48 PoE switch", null),
+    customer("U7 Pro access point", null, 3),
+    customer("U7 Outdoor access point", null),
+    customer("G6 Edge Turret camera", null, 3),
+    customer("G6 Dome camera", null),
+    customer("UNVR", null),
+    customer("UPS 2U", null),
+    customer("24-port blank keystone patch panel", null, 2),
+    customer("speakers wired during construction", "Great Room", 1, true),
+    customer("rack", "Kitchen", 1, true),
+    customer("speakers installed during construction", "Kitchen", 1, true),
+  ];
+  it("Morales run 1: a listed TV with a note about streaming is still our TV, and is priced", async () => {
+    const run1 = {
+      ...morales,
+      devices: run1Devices,
+      existing_equipment: {
+        status: "described" as const,
+        retained: [
+          "Customer supplied UniFi equipment",
+          "Customer supplied rack in the Kitchen",
+          "Customer-provided 24U floor cabinet",
+          "Speakers installed during construction in the Kitchen",
+          "Speakers wired during construction in the Great Room",
+        ],
+        removed_or_replaced: [],
+      },
+      excluded_scope: [],
+      unresolved_questions: [
+        "Requested product: Sonos Beam package",
+        "Requested product: Sony Bravia 7 or 9 65-inch TV",
+        "Requested product: SunBrite outdoor rated art arm mount",
+        "Requested product: rack-mount keystone patch panel",
+        "Which Sony Bravia model (7 or 9) is to be used in the Great Room?",
+      ],
+    };
+    const { selection } = await built(run1);
+    expect(priced(selection)).toEqual(expect.arrayContaining(["television × 1", "tv_mount × 2", "tv_mount_articulating × 1", "zone_amplifier × 2", "soundbar × 1"]));
+    expect(selection.to_verify).not.toContain("Requested product: Sony Bravia 7 or 9 65-inch TV");
   });
 
   it("the receipt shows the device list by who supplies it", async () => {
@@ -3710,6 +3768,35 @@ describe("learn pass (2026-11-16): Gayatri Choudhary and Danny Lewis", () => {
     expect(q).not.toHaveProperty("subwoofer");
     expect(q).not.toHaveProperty("theater_subwoofer");
     expect(q).toHaveProperty("tv_power_protection");
+  });
+
+  it("Danny Lewis: a count worded as his kept TV (\"55-inch Sony TV\" × 1) prices no new TV", async () => {
+    const { selection } = await job({
+      functional_systems: ["TV", "home theater", "surround sound", "surge protection"],
+      existing_equipment: {
+        status: "described",
+        retained: ["55-inch Sony TV", "Yamaha receiver", "Klipsch speakers and one subwoofer", "Comcast/Xfinity cable box", "over-the-air antenna"],
+        removed_or_replaced: ["existing speaker wiring and HDMI cables", "existing surge protector"],
+      },
+      requested_changes: [
+        "Remove and reinstall the existing TV to access wiring",
+        "Supply and install new wiring for all five speakers and replacement HDMI #2",
+        "Replace the existing surge protector with one large WattBox; final model to be confirmed",
+        "Reconnect the TV, Yamaha receiver, speakers, subwoofer, cable box, and existing antenna",
+      ],
+      requested_quantities: [{ item: "55-inch Sony TV", quantity: 1 }, { item: "WattBox", quantity: 1 }],
+    });
+    const q = quantities(selection);
+    expect(q).not.toHaveProperty("television");
+    expect(q).toHaveProperty("tv_power_protection");
+    // A new TV the rep asks for beside a kept one is still priced.
+    const both = await job({
+      functional_systems: ["TV"],
+      existing_equipment: { status: "described", retained: ["55-inch Sony TV"], removed_or_replaced: [] },
+      requested_changes: ["Keep the 55-inch Sony TV in the den", "Add a new 65-inch Sony TV in the bedroom"],
+      requested_quantities: [{ item: "65-inch Sony TV", quantity: 1 }],
+    });
+    expect(quantities(both.selection).television).toBe(1);
   });
 
   // Henry, 2026-11-16 (1a): moving a speaker the client supplies or keeps is 1 hour of labor per speaker.

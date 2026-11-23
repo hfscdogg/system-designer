@@ -124,7 +124,10 @@ export function createActivities(deps: ActivityDeps): RunActivities {
         ],
       };
     }
-    const { patch, model } = await interpretAnswer(runId, "revision", base, [], change);
+    // The revised budget's own counts, so "remove 1 Sanus mount" reads as a total of what is left.
+    const parentProposal = await store.readArtifact<Proposal>(parentRunId, "bind", "proposal");
+    const budget = (parentProposal?.sections ?? []).flatMap((s) => s.lines).map((l) => ({ item: [l.brand, l.model].filter(Boolean).join(" ") || l.label, quantity: l.quantity }));
+    const { patch, model } = await interpretAnswer(runId, "revision", base, [], change, budget);
     if (!patch.ok || patch.value.unmapped) {
       await store.appendEvent(runId, "revision_unmapped", "system", { model, parentRunId, errors: patch.ok ? [] : patch.errors });
       return { ok: false, reason: notPlaced(change, true) };
@@ -212,10 +215,17 @@ export function createActivities(deps: ActivityDeps): RunActivities {
    * fails validation or comes back unmapped shouldn't block a change the model maps on another try
    * (staging smoke, 2026-11-09: "add 10' of linear lighting in the kitchen" placed in two runs, not in the third).
    */
-  async function interpretAnswer(runId: string, kind: "revision" | "clarification", current: ScopeExtraction, questions: string[], answer: string) {
+  async function interpretAnswer(
+    runId: string,
+    kind: "revision" | "clarification",
+    current: ScopeExtraction,
+    questions: string[],
+    answer: string,
+    budget?: Array<{ item: string; quantity: number }>,
+  ) {
     let last: { patch: ReturnType<typeof validateClarificationPatch>; model: string; raw?: unknown } | undefined;
     for (let i = 0; i < Math.max(1, attempts); i++) {
-      const { raw, model } = await deps.interpreter.interpret({ current, questions, answer });
+      const { raw, model } = await deps.interpreter.interpret({ current, questions, answer, ...(budget?.length ? { budget } : {}) });
       await recordModelReply(runId, kind, kind === "revision" ? { answer } : { questions, answer }, raw, model);
       last = { patch: validateClarificationPatch(raw), model, raw };
       if (last.patch.ok && !last.patch.value.unmapped) break;

@@ -185,6 +185,17 @@ function statedQuantity(scope: ScopeDraftV1, role: RoleSpec, roles: RoleSpec[]):
 
 /** The role a device or count names most specifically, if any. */
 function roleNamed(text: string, roles: RoleSpec[]): RoleSpec | undefined {
+  // A note in parentheses describes the device, it doesn't name another one: "Sony Bravia 65-inch TV (streaming only
+  // content)" is a TV, not a streamer (staging smoke, Morales run 1, 2026-11-19: the TV priced as an Apple TV).
+  const bare = text.replace(/\s*\([^()]*\)/g, " ").trim();
+  if (bare && bare !== text.trim()) {
+    const named = bestRole(bare, roles);
+    if (named) return named;
+  }
+  return bestRole(text, roles);
+}
+
+function bestRole(text: string, roles: RoleSpec[]): RoleSpec | undefined {
   const scores = roles.map((r) => matchScore(text, r, true));
   const best = Math.max(0, ...scores);
   return best > 0 ? roles[scores.indexOf(best)] : undefined;
@@ -371,6 +382,9 @@ function statedItem(scope: ScopeDraftV1, role: RoleSpec, roles: RoleSpec[]): { i
   for (const q of scope.requested_quantities) {
     // Nor is a count of what the customer supplies ("1 customer's 65-inch Sony TV").
     if (EXISTING_ITEM.test(fold(q.item)) || OWNED_ITEM.test(q.item)) continue;
+    // Nor a count worded exactly as equipment the customer keeps: "55-inch Sony TV" × 1 beside the kept "55-inch Sony TV"
+    // counts his TV, not a new one to sell (Dillon's Danny Lewis job, 2026-11-11: a BRAVIA 7 priced beside his own TV).
+    if (scope.retained_equipment.some((e) => fold(e) === fold(withoutRoom(q.item, scope)))) continue;
     // Nor is a count of devices to integrate ("Thermostat integration: up to 2"): those are the customer's.
     if (INTEGRATION.test(fold(q.item)) && !NEW_DEVICE.test(fold(q.item))) continue;
     // A length per drop ("feet of Cat6 per drop" × 50) is not a count of anything.
@@ -537,6 +551,10 @@ function wantsNew(scope: ScopeDraftV1, role: RoleSpec, roles: RoleSpec[]): boole
   // "No new speakers, just the amp" asks for no speakers: a negated clause sells nothing.
   const said = otherChanges(scope).map((c) => c.replace(NEGATED, " "));
   if (said.some((c) => roleTerms(role).some((t) => asks(c, t) && (sold(c) || more(c, t))))) return true;
+  // A TV the request names by size in a room's list ("Office: 43-inch TV and a Sonos Beam") is one to sell, as the
+  // device list reads it, unless it is the customer's or one already there ("mount the 65-inch TV", "their 65-inch TV")
+  // (Henry, 2026-11-19: the Annie Lewis office TV, alone, priced only the Beam).
+  if (role.role === "television" && !customerOwned(scope, role) && sizedNewTv(scope)) return true;
   // An outdoor device the request specifies by size ("55'' Outdoor rated TV with cover") is one to sell
   // unless the request says it's the customer's or existing (Zack's Britt job, 2026-10-19: the TV was dropped).
   return outdoorAsked(scope, role) && sizeAsked(scope, role) !== undefined && !customerOwned(scope, role) && !deviceChanges(scope, role).some((c) => EXISTING_ITEM.test(c));
@@ -604,6 +622,19 @@ function requestedProductFor(scope: ScopeDraftV1, role: RoleSpec, brands: string
     .filter((q): q is string => !!q && names.some((b) => hasWord(fold(q), b)));
   const mine = asked.filter((q) => devices.some((d) => hasWord(fold(q), d.replace(/s$/, "")) || hasWord(fold(q), d)));
   return mine.length ? mine.join(" / ") : undefined;
+}
+
+/** A change naming a TV by its size, not the customer's and not one already there: "Office: 43-inch TV", "2 55-inch TVs". */
+function sizedNewTv(scope: ScopeDraftV1): boolean {
+  return scope.requested_changes.some((raw) => {
+    const c = fold(raw);
+    if (MOVE.test(c) || EXISTING_ITEM.test(c) || OWNED_ITEM.test(raw) || SUPPLIED.test(c) || OUTDOOR.test(c)) return false;
+    return [...c.matchAll(SIZE)].some((m) => {
+      if (!/^\s*(?:[\w'’+-]+\s+){0,4}?(?:tvs?|televisions?)\b/.test(c.slice(m.index! + m[0].length))) return false;
+      // "the 65-inch TV", "their 65-inch TV": a TV the job already has.
+      return !/\b(the|this|that|their|his|her|its|our)\s+(?:[\w-]+\s+)?$/.test(c.slice(0, m.index));
+    });
+  });
 }
 
 /** The other brand the request asks for this device in: a "Requested product" it lists that names the brand and the device. */
@@ -953,24 +984,6 @@ const NEW_CABLE = /\b(run|pull|pulling|add|install|new)\s+(?:a |an |new |\d+ )?(
 /** Mount words by type: an articulating arm, or a flat or tilt mount. */
 const ARTICULATING_MOUNT = /\b(articulat\w*|art arm|full[- ]motion|swivel|cantilever|extend\w* arm|swing[- ]arm)\b/;
 const FLAT_MOUNT = /\b(flat|tilt|tilting|fixed|low[- ]profile)\b(?:[\s/-]+\w+){0,2}?\s*mount/;
-/** One TV mount per change that mounts a TV, by type: "flat mount", "flat/tilt mounted", "art arm mount". */
-function mountPlan(scope: ScopeDraftV1): { articulating: number; flat: number; any: number } {
-  const plan = { articulating: 0, flat: 0, any: 0 };
-  for (const c of scope.requested_changes.map(fold)) {
-    if (MOVE.test(c) || !/\bmount(ed|s|ing)?\b|\bart arm\b/.test(c) || STANDING.test(c)) continue;
-    // A soundbar's or a camera's mount isn't a TV's.
-    const tv = TV_WORD.test(c) || /\b(bravia|sony|samsung|lg|oled|qled)\b/.test(c) || ARTICULATING_MOUNT.test(c) || FLAT_MOUNT.test(c);
-    if (!tv || (/\b(aps?|access points?|cameras?|equipment|speakers?)\b/.test(c) && !TV_WORD.test(c))) continue;
-    // "Soundbar mounting hardware, if mounted beneath the TV" mounts the soundbar, not a second TV (Dillon's Gayatri
-    // Choudhary job, 2026-11-13: 2 Sanus mounts for 1 TV).
-    if (/\b(soundbars?|sound bars?|arc( ultra)?|beam)\b/.test(c) && !/\b(tv|television) (wall )?mounts?\b/.test(c)) continue;
-    if (ARTICULATING_MOUNT.test(c)) plan.articulating++;
-    else if (FLAT_MOUNT.test(c)) plan.flat++;
-    else plan.any++;
-  }
-  return plan;
-}
-
 /**
  * The interpreter lists the device as a product the request asks Livewire for ("Requested product: Sonos amp"), so the
  * same device in the kept equipment ("Sonos amp and speakers wired during construction") is the new one to install, not
@@ -1464,23 +1477,9 @@ export function materialize(given: ScopeDraftV1, pattern: PatternSpec, namedProd
       // (staging smoke, Green, 2026-11-06: mounts listed for the fitness room only; the family room's new TV got none).
       // Once per kind of mount: a tilt and an articulating line share the TVs they carry.
       const kind = role.alternative_group ?? role.role;
-      // Any TV mount line takes the gap, the articulating one too: the Office TV with no mount listed beside three
-      // articulating ones still gets its mount (staging smoke, Annie Lewis, 2026-11-17: priced 3 mounts for 4 TVs).
-      const mountKind = !!role.per_moved || (!!role.alternative_group && pattern.roles.some((r) => r.alternative_group === role.alternative_group && r.per_moved));
-      // The rep's own total ("only need 1 TV mount") is the count as written, whatever the device list still names
-      // (staging smoke, Green step 3, 2026-11-17: the fitness room's mount stayed listed and the family room TV took a second).
-      // The revision puts that count in the stated counts ("TV mount" × 1), which the device list replaces: read it there too
-      // (staging smoke, Green step 3, 2026-11-17 second run: "wall mount (fitness room) × 2" on the list, the rep's 1 dropped).
-      const kin = (r: RoleSpec | undefined) => !!r && (r === role || (!!role.alternative_group && r.alternative_group === role.alternative_group));
-      const repTotal =
-        original.requested_changes.some((c) => MOUNT_TOTAL.test(fold(c))) ||
-        given.requested_quantities.some((q) => {
-          if (!kin(roleNamed(q.item, pattern.roles)) || (given.devices ?? []).some((d) => fold(d.item) === fold(q.item))) return false;
-          // Only a count below the mounts the list names lowers them: a count equal to the list is the list, not a total.
-          const listed = (given.devices ?? []).filter((d) => d.supplied_by === "livewire" && !d.existing && kin(roleNamed(d.item, pattern.roles))).reduce((n, d) => n + d.quantity, 0);
-          return q.quantity < listed;
-        });
-      const gap = mountKind && !repTotal && !gapped.has(kind) ? unmountedNew(original, role, pattern.roles) : 0;
+      // TV mounts are counted per TV by applyMountRule; the gap is for the other mounts (a soundbar's).
+      const mountKind = !!role.per_moved && role.alternative_group !== "tv_mount";
+      const gap = mountKind && !gapped.has(kind) ? unmountedNew(original, role, pattern.roles) : 0;
       if (gap > 0) {
         gapped.add(kind);
         Object.assign(line, { quantity: stated + gap, quantity_basis: "fixed", verify: null });
@@ -1509,20 +1508,8 @@ export function materialize(given: ScopeDraftV1, pattern: PatternSpec, namedProd
     }
   }
 
-  // A mount per TV the request mounts, of the type each change asks for: Morales's great room flat mount, bedroom flat/tilt
-  // mount and porch art arm are 3 mounts, two of them for TVs the customer supplies (Zack, 2026-11-06: 1 tilt mount priced).
-  const mounts = mountPlan(original);
-  if (mounts.articulating + mounts.flat + mounts.any > 0) {
-    const group = lines.filter((l) => pattern.roles.find((r) => r.role === l.role)?.alternative_group === "tv_mount" && l.role !== "tv_cart");
-    const articulating = group.find((l) => l.role === "tv_mount_articulating");
-    const flat = group.find((l) => l.role === "tv_mount");
-    const plain = flat ?? articulating;
-    for (const [line, n] of [[articulating, mounts.articulating], [flat, mounts.flat]] as const) {
-      if (line && n + (line === plain ? mounts.any : 0) > line.quantity) Object.assign(line, { quantity: n + (line === plain ? mounts.any : 0), quantity_basis: "fixed", verify: null });
-    }
-    if (!flat && articulating && mounts.flat > 0) articulating.quantity = Math.max(articulating.quantity, mounts.articulating + mounts.flat + mounts.any);
-    if (!articulating && flat && mounts.articulating > 0) flat.quantity = Math.max(flat.quantity, mounts.articulating + mounts.flat + mounts.any);
-  }
+  // TV mounts and their WattBoxes, from the TVs the job hangs: one rule, once the TV lines are final.
+  applyMountRule(scope, original, given, pattern, lines, included, supplied);
 
   // Roles that follow a per-unit allowance's units: a Lutron shade power supply per wired shade up to 4, a 10-shade
   // QSPS-10PNL panel per 10 above that (Henry, 2026-11-16). Neither is priced without the allowance.
@@ -1533,16 +1520,6 @@ export function materialize(given: ScopeDraftV1, pattern: PatternSpec, namedProd
     const qty = !units ? 0 : f.per ? (units > (f.above ?? 0) ? Math.ceil(units / f.per) : 0) : units <= (f.up_to ?? Infinity) ? units : 0;
     if (qty > 0) Object.assign(line, { quantity: qty, quantity_basis: "fixed", verify: null });
     else lines.splice(lines.indexOf(line), 1);
-  }
-
-  // What follows only the TV mounts (a WattBox per wall-mounted TV, Henry 2026-11-10) takes their final count, set just above.
-  const mountRoles = new Set(pattern.roles.filter((r) => r.alternative_group === "tv_mount").map((r) => r.role));
-  for (const line of lines) {
-    const role = pattern.roles.find((r) => r.role === line.role);
-    if (!role?.quantity_follows?.length || !role.quantity_follows.every((r) => mountRoles.has(r))) continue;
-    if (line.requested_model || statedQuantity(scope, role, pattern.roles) !== null) continue;
-    const mounted = lines.filter((l) => role.quantity_follows!.includes(l.role)).reduce((n, l) => n + l.quantity, 0);
-    if (mounted > 0) Object.assign(line, { quantity: mounted, quantity_basis: "fixed", verify: null });
   }
 
   // Amplifiers follow the speakers they drive (Henry, 2026-10-12), once the request asks for speakers or counts existing ones.
@@ -1644,6 +1621,32 @@ export function materialize(given: ScopeDraftV1, pattern: PatternSpec, namedProd
     if (dropped.has(lines[i]!.role) || suppliedLines.includes(lines[i]!)) lines.splice(i, 1);
   }
   if (dropped.size) included.splice(0, included.length, ...included.filter((r) => !dropped.has(r.role)));
+
+  // Totals the rep set in a revision ("only need 1 Sonos Arc mount", "make it 2 TVs"), for any device but the TV mounts
+  // (applyMountRule took those): that role's lines come to the total, a lower total taken off the last lines first.
+  // A room's total for one of these is listed to check rather than guessed against the job's count.
+  // A mount's total names the mount, not what it carries: "Sonos Arc mount" is the soundbar mount, not the soundbar.
+  const mountRoles = pattern.roles.filter((r) => /\b(mount|bracket)s?\b/i.test([r.label, ...(r.count_terms ?? [])].join(" ")));
+  for (const t of stated.rep_totals ?? []) {
+    const role = /\b(mount|mounts|bracket|brackets|hardware)\b/i.test(t.item) ? (roleNamed(t.item, mountRoles) ?? roleNamed(t.item, pattern.roles)) : roleNamed(t.item, pattern.roles);
+    if (!role || role.alternative_group === "tv_mount" || role.role === "tv_cart") continue;
+    const at = lines.filter((l) => l.role === role.role);
+    if (!at.length) continue;
+    if (t.room) {
+      toVerify.push(`${t.item} (${t.room}): you set ${t.quantity}; check the count for that room`);
+      continue;
+    }
+    let over = at.reduce((n, l) => n + l.quantity, 0) - t.quantity;
+    if (over === 0) continue;
+    if (over < 0) Object.assign(at[0]!, { quantity: at[0]!.quantity - over, quantity_basis: "fixed", verify: null });
+    for (const l of [...at].reverse()) {
+      if (over <= 0) break;
+      const take = Math.min(over, l.quantity);
+      over -= take;
+      Object.assign(l, { quantity: l.quantity - take, quantity_basis: "fixed", verify: null });
+      if (l.quantity === 0) lines.splice(lines.indexOf(l), 1);
+    }
+  }
 
   // Quantities the rep set by pasting the budget's item list back ("Sony K65XR70 × 2") are applied as written, last:
   // the item's line takes that count, 0 removes it, and an item the rebuilt budget no longer has comes back (Zack,
@@ -2191,4 +2194,259 @@ function retainedUnits(scope: ScopeDraftV1, role: RoleSpec, roles: RoleSpec[]): 
   return scope.retained_equipment
     .filter((e) => (role.retained_match ?? []).some((t) => hasWord(fold(e), fold(t))) && best(e) === role)
     .reduce((n, e) => n + Number(/^\D*?\b(\d{1,3})\b(?!\s*(-\s*)?(inch|in\b|"|”|″|ft|feet|'))/.exec(e)?.[1] ?? 0), 0);
+}
+
+
+// ---- TV mounts: one rule (Henry, 2026-11-19) ----
+//
+// Mounts = one per TV this job hangs on a wall, typed per TV; only a total from the rep overrides it, up or down.
+// A WattBox goes with each wall TV this job installs, on our mount or the customer's own.
+// Untyped mounts are the standard Sanus tilt, and a customer TV the request doesn't say has a mount gets one sold.
+
+type MountKind = "articulating" | "tilt" | null;
+/** One TV the job places: on a wall (needs a mount), on its own mount (no mount sold, still a WattBox). */
+interface Placement {
+  room: string;
+  kind: MountKind;
+  own: boolean;
+}
+
+/** Only a TV taken to somewhere else is a move: "remove ... and reinstall the existing TV" puts it back on its own wall. */
+const TV_MOVE = /^(move|moving|relocate|relocating)\s+(?:the\s+|his\s+|her\s+|their\s+)?(?:existing\s+|current\s+|customer'?s\s+|old\s+)?(?:[\w"”-]+\s+){0,2}?(tvs?|televisions?)\b/;
+/** A mount that is already the customer's: "its own mount", "the customer-supplied mount", "their existing wall mount". */
+const OWN_MOUNT = /\b(?:its own|their own|his own|her own|own|existing|current|customer[- ]?(?:supplied|provided|owned)|customer'?s|client'?s|owner'?s)\s+(?:(?:tv|wall|tilt|flat|articulating)\s+){0,2}mounts?\b|\bmounts? (?:is|are) (?:supplied|provided) by the (?:customer|client|owner)\b/;
+const MOUNT_WORD = /\bmount(ed|s|ing)?\b|\bart arm\b|\bbracket\b/;
+// Rack gear is mounted too ("rack-mount keystone patch panel"): never a TV's mount (staging smoke, Morales run 1,
+// 2026-11-19: the Media Closet's panel took a fourth TV mount).
+const NOT_TV_MOUNT = /\b(soundbars?|sound bars?|arc( ultra)?|beam|playbar|projector|speakers?|cameras?|aps?|access points?|equipment|racks?|patch|panels?|keystones?|shelf|shelves|amps?|amplifiers?|switch(es)?|ups|cabinets?)\b/;
+
+function mountKindOf(text: string): MountKind {
+  const t = fold(text);
+  if (ARTICULATING_MOUNT.test(t) || /\barm\b/.test(t) || /\bstrong\b/.test(t)) return "articulating";
+  if (FLAT_MOUNT.test(t) || /\b(tilt|slim|flush|fixed|flat|sanus|cilt4)\b/.test(t)) return "tilt";
+  return null;
+}
+
+/** TVs the request moves to another room, and how many of them go on a new mount there. */
+function tvMoves(scope: ScopeDraftV1): { all: number; needing: number } {
+  const moves = scope.requested_changes.filter((c) => TV_MOVE.test(fold(c)));
+  const rest = scope.requested_changes.filter((c) => !MOVE.test(fold(c)));
+  const all = moves.length;
+  return { all, needing: all ? movedNeedingMount({ ...scope, requested_changes: [...moves, ...rest] }, ["tv", "television"]) : 0 };
+}
+
+/** Every TV the job puts on a wall, by room, with the mount type its own words or its room's listed mount ask for. */
+function tvPlacements(scope: ScopeDraftV1, lines: SelectionLine[], supplied: Map<string, string>): Placement[] {
+  const out: Placement[] = [];
+  const moves = tvMoves(scope);
+  const devices = scope.devices ?? [];
+  const isMount = (d: Device) => /\b(mounts?|mounted|brackets?)\b/i.test(d.item) && !NOT_TV_MOUNT.test(fold(d.item));
+  const isTv = (d: Device) => !isMount(d) && /\b(tvs?|televisions?|bravia|oled|qled)\b/i.test(d.item);
+  const key = (r: string | null | undefined) => roomWords(r ?? "").join(" ");
+  const inRoom = (a: string | null | undefined, b: string | null | undefined) => key(a) === key(b) || sameRoom(a ?? "", b ?? "");
+  const standing = standingTvs(scope);
+  if (devices.some((d) => isTv(d) || isMount(d))) {
+    const kindIn = (room: string | null | undefined): MountKind => {
+      const m = devices.find((d) => isMount(d) && d.supplied_by === "livewire" && !d.existing && inRoom(d.room, room));
+      if (m) return mountKindOf(m.item) ?? "tilt";
+      const c = scope.requested_changes.find((c) => room && fold(c).includes(fold(room)) && MOUNT_WORD.test(fold(c)) && !NOT_TV_MOUNT.test(fold(c)));
+      return c ? mountKindOf(c) : null;
+    };
+    const ownIn = (room: string | null | undefined) =>
+      devices.some((m) => isMount(m) && (m.supplied_by === "customer" || m.existing) && inRoom(m.room, room)) ||
+      scope.requested_changes.some((c) => OWN_MOUNT.test(fold(c)) && (!room || fold(c).includes(fold(room))));
+    let movedLeft = moves.all;
+    let movedNeeding = moves.needing;
+    for (const d of devices.filter(isTv)) {
+      for (let i = 0; i < d.quantity; i++) {
+        if (d.existing) {
+          // An existing TV takes a place only when the request moves it; on its own mount unless the move needs one.
+          if (movedLeft <= 0) continue;
+          movedLeft--;
+          const needs = movedNeeding > 0;
+          if (needs) movedNeeding--;
+          out.push({ room: key(d.room), kind: kindIn(d.room), own: !needs });
+          continue;
+        }
+        out.push({ room: key(d.room), kind: kindIn(d.room), own: d.supplied_by === "customer" && ownIn(d.room) });
+      }
+    }
+    // A Livewire mount listed for a room with no TV we know of hangs a TV we were not told about (Baker's customer TV).
+    for (const m of devices.filter((d) => isMount(d) && d.supplied_by === "livewire" && !d.existing)) {
+      if (out.some((p) => inRoom(p.room, m.room))) continue;
+      if (!m.room && out.length) continue;
+      for (let i = 0; i < m.quantity; i++) out.push({ room: key(m.room), kind: mountKindOf(m.item) ?? "tilt", own: false });
+    }
+    // A TV standing on furniture takes no mount and no wall: drop that many, untyped first.
+    for (let n = standing; n > 0; n--) {
+      const at = [...out].reverse().findIndex((p) => p.kind === null && !p.own);
+      const i = at >= 0 ? out.length - 1 - at : out.length - 1;
+      if (i >= 0) out.splice(i, 1);
+    }
+    return out;
+  }
+  // No device list: the sentences. One mount per TV we sell or per mount a change asks for, whichever is more.
+  const ourTvs = supplied.has("television") ? 0 : lines.filter((l) => l.role === "television").reduce((n, l) => n + l.quantity, 0);
+  const asked: Placement[] = [];
+  for (const raw of scope.requested_changes) {
+    const c = fold(raw);
+    if (MOVE.test(c) || STANDING.test(c) || MOUNT_TOTAL.test(c)) continue;
+    if (/\b(aps?|access points?|cameras?|equipment|unifi|hdd|nas|rack|cabinet|patch|speakers?)\b/.test(c) && !TV_WORD.test(c)) continue;
+    const room = key(/^([^:]+):/.exec(raw)?.[1] ?? "");
+    for (const clause of c.split(/\band\b|;/)) {
+      if (!MOUNT_WORD.test(clause)) continue;
+      if (NOT_TV_MOUNT.test(clause) && !TV_WORD.test(clause)) continue;
+      // "Soundbar mounting hardware, if mounted beneath the TV" mounts the soundbar, not a second TV (Dillon's Gayatri
+      // Choudhary job, 2026-11-13: 2 Sanus mounts for 1 TV).
+      if (/\b(soundbars?|sound bars?|arc( ultra)?|beam)\b/.test(clause) && !/\b(tv|television) (wall )?mounts?\b/.test(clause)) continue;
+      asked.push({ room, kind: mountKindOf(clause), own: OWN_MOUNT.test(clause) });
+    }
+  }
+  // A TV on the customer's own mount is the customer's TV, never one of ours: it takes its place apart.
+  const toMount = asked.filter((p) => !p.own);
+  const n = Math.max(0, Math.max(ourTvs, toMount.length) - standing);
+  for (let i = 0; i < n; i++) out.push(toMount[i] ?? { room: "", kind: null, own: false });
+  out.push(...asked.filter((p) => p.own));
+  for (let i = 0; i < moves.all; i++) out.push({ room: "", kind: null, own: i >= moves.needing });
+  return out;
+}
+
+/** "make it 1", "set quantity to 1", "should be a quantity of 1", "update the count ... to a quantity of just 1". */
+const SET_TOTAL = /\b(?:make it|set (?:the )?quantity to|should be(?: a quantity of)?|quantity (?:should be|of)(?: just)?|to a quantity of(?: just)?|count (?:of|to)(?: just)?)\s+(\d+|one|two|three|four|five)\b/;
+
+/**
+ * The rep's mount totals: the revision's own (rep_totals), else a total in the words ("only need 1 TV mount", "make it 1
+ * SanusCILT4-B1"), else a stated mount count below the mounts the device list names (#122). kind narrows a total to one
+ * mount type, room to one room.
+ */
+function repMountTotals(scope: ScopeDraftV1, given: ScopeDraftV1, pattern: PatternSpec): Array<{ quantity: number; kind: MountKind; room: string | null }> | null {
+  const kin = (r: RoleSpec | undefined) => !!r && r.alternative_group === "tv_mount" && r.role !== "tv_cart";
+  const isMountItem = (item: string) => {
+    const t = fold(item);
+    return (kin(roleNamed(item, pattern.roles)) || /\b(mounts?|cilt4|brackets?)\b/.test(t)) && !NOT_TV_MOUNT.test(t);
+  };
+  const own = (given.rep_totals ?? []).filter((t) => isMountItem(t.item));
+  if (own.length) return own.map((t) => ({ quantity: t.quantity, kind: /\b(tv|wall)? ?mounts?$/.test(fold(t.item)) && !/\b(tilt|sanus|cilt4|flat|articulat|arm|strong)\b/.test(fold(t.item)) ? null : mountKindOf(t.item), room: t.room ? roomWords(t.room).join(" ") : null }));
+  const num = (w: string) => COUNT_WORDS[w] ?? Number(w);
+  for (const raw of [...scope.requested_changes].reverse()) {
+    const c = fold(raw);
+    if (NOT_TV_MOUNT.test(c) && !TV_WORD.test(c)) continue;
+    const only = /\b(?:only|just)\b(?:\s+(?:need|needs|want|wants|use|price))?\s+(\d+|one|two|three|four|five|a single)\s+(?:[\w/-]+\s+){0,2}?mounts?\b/.exec(c);
+    if (only) return [{ quantity: only[1] === "a single" ? 1 : num(only[1]!), kind: null, room: null }];
+    const set = SET_TOTAL.exec(c);
+    if (set && /\b(tv mount|sanus|cilt4|tilt mount|wall mount|mounts?)\b/.test(c)) return [{ quantity: num(set[1]!), kind: null, room: null }];
+  }
+  const listed = (given.devices ?? []).filter((d) => d.supplied_by === "livewire" && !d.existing && kin(roleNamed(d.item, pattern.roles))).reduce((n, d) => n + d.quantity, 0);
+  const qs = given.requested_quantities.filter((q) => kin(roleNamed(q.item, pattern.roles)) && !(given.devices ?? []).some((d) => fold(d.item) === fold(q.item)));
+  if (given.devices?.length && qs.length) {
+    const n = qs.reduce((a, q) => a + q.quantity, 0);
+    if (n < listed) return [{ quantity: n, kind: null, room: null }];
+  }
+  return null;
+}
+
+/**
+ * Set the TV mount lines and the WattBox from the TVs the job hangs, once the TV lines are final. Replaces whatever the
+ * per-role counting gave the mount roles; a pasted item list still overrides it after.
+ */
+function applyMountRule(
+  scope: ScopeDraftV1,
+  original: ScopeDraftV1,
+  given: ScopeDraftV1,
+  pattern: PatternSpec,
+  lines: SelectionLine[],
+  included: RoleSpec[],
+  supplied: Map<string, string>,
+): void {
+  const tiltRole = pattern.roles.find((r) => r.role === "tv_mount");
+  const artRole = pattern.roles.find((r) => r.role === "tv_mount_articulating");
+  const isMountLine = (l: SelectionLine) => l.role === "tv_mount" || l.role === "tv_mount_articulating";
+  if (!tiltRole || !lines.some(isMountLine)) return;
+  const all = tvPlacements(original, lines, supplied);
+  const wall = all.filter((p) => !p.own);
+  // "The customer-supplied mount" in one room is that TV's mount, not every mount on the job: with our own TVs beside it,
+  // the mounts are counted per TV here, and only the customer's go unsold.
+  if (wall.length && all.length > wall.length) for (const r of [tiltRole, artRole]) if (r) supplied.delete(r.role);
+  let art = wall.filter((p) => p.kind === "articulating").length;
+  // An untyped mount is the standard Sanus tilt, whatever the job's other TVs take (Henry, 2026-11-19).
+  let tilt = wall.length - art;
+  // With no device list, a count the request states for the mounts is the rep's (Crowder, McGetrick).
+  const kinRoles = pattern.roles.filter((r) => r.alternative_group === "tv_mount" && r.role !== "tv_cart");
+  const stated = !original.devices?.length && !original.rep_totals?.length && kinRoles.some((r) => statedQuantity(scope, r, pattern.roles) !== null);
+  const totals = stated ? null : repMountTotals(original, given, pattern);
+  if (stated) {
+    art = lines.filter((l) => l.role === "tv_mount_articulating").reduce((n, l) => n + l.quantity, 0);
+    tilt = lines.filter((l) => l.role === "tv_mount").reduce((n, l) => n + l.quantity, 0);
+  } else if (totals) {
+    // A room's total replaces that room's mounts; a total for the job replaces all of them. A typed total sets that type.
+    const roomed = totals.filter((t) => t.room);
+    if (roomed.length) {
+      const inRoom = (p: Placement, r: string) => p.room === r || sameRoom(p.room, r);
+      const rest = wall.filter((p) => !roomed.some((t) => inRoom(p, t.room!)));
+      art = rest.filter((p) => p.kind === "articulating").length;
+      tilt = rest.length - art;
+      for (const t of roomed) {
+        if (t.kind === "articulating") art += t.quantity;
+        else if (t.kind === "tilt") tilt += t.quantity;
+        else {
+          const here = wall.filter((p) => inRoom(p, t.room!));
+          const a = Math.min(t.quantity, here.filter((p) => p.kind === "articulating").length);
+          art += a;
+          tilt += t.quantity - a;
+        }
+      }
+    }
+    for (const t of totals.filter((t) => !t.room)) {
+      if (t.kind === "articulating") art = t.quantity;
+      else if (t.kind === "tilt") tilt = t.quantity;
+      else {
+        // Lowering takes tilt (and untyped) mounts first, then articulating; raising adds the standard tilt.
+        const over = art + tilt - t.quantity;
+        if (over >= 0) {
+          const fromTilt = Math.min(over, tilt);
+          tilt -= fromTilt;
+          art -= over - fromTilt;
+        } else tilt += -over;
+      }
+    }
+  }
+  // Each type onto its own line: a type whose role was removed by the rep stays at 0, never moved to the other.
+  const lineFor = (role: RoleSpec | undefined, n: number) => {
+    if (!role) return n;
+    const at = lines.filter((l) => l.role === role.role);
+    if (!at.length) {
+      if (n <= 0 || excluded(scope, role)) return n;
+      lines.push({
+        role: role.role,
+        record_id: largerTvVariant(original, role, pattern)?.product_id ?? variantFor(scope, role)?.product_id ?? role.product_id!,
+        quantity: n,
+        quantity_basis: "fixed",
+        verify: null,
+        location: scope.room_types.length === 1 ? scope.room_types[0]! : role.location,
+        precedent: role.precedent,
+      });
+      if (!included.includes(role)) included.push(role);
+      return 0;
+    }
+    const others = at.slice(1).reduce((s, l) => s + l.quantity, 0);
+    const first = Math.max(0, n - others);
+    // A count the rule leaves as it was keeps its basis: a minimum stays a minimum to verify on site.
+    if (at[0]!.quantity !== first) Object.assign(at[0]!, { quantity: first, quantity_basis: "fixed", verify: null });
+    return 0;
+  };
+  // A type with no line of its own and no role to add (a removed role) is dropped, not moved to the other type.
+  lineFor(artRole, art);
+  lineFor(tiltRole, tilt);
+  for (let i = lines.length - 1; i >= 0; i--) if (isMountLine(lines[i]!) && lines[i]!.quantity <= 0) lines.splice(i, 1);
+
+  // A WattBox per wall-mounted TV this job installs, on our mount or the customer's own (Henry, 2026-11-10 and
+  // 2026-11-19): not a TV standing on furniture or on a cart. A count the request states for it stands.
+  const wbRole = pattern.roles.find((r) => r.role === "tv_power_protection");
+  if (!wbRole || statedQuantity(scope, wbRole, pattern.roles) !== null) return;
+  const mounts = lines.filter(isMountLine).reduce((n, l) => n + l.quantity, 0);
+  const wallTvs = Math.max(all.length, mounts);
+  const wb = lines.filter((l) => l.role === "tv_power_protection" && !l.requested_model);
+  if (!wb.length) return;
+  if (wallTvs > 0) Object.assign(wb[0]!, { quantity: wallTvs, quantity_basis: "fixed", verify: null });
+  else if (!namesItself(scope, wbRole, pattern.roles)) for (const l of wb) lines.splice(lines.indexOf(l), 1);
 }
