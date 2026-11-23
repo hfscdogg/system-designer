@@ -209,12 +209,16 @@ const KEPT_GEAR = /\b(existing|current|reconnect\w*|reinstall\w*|retain\w*|keep|
  * and screen), not systems no pattern covers that withhold the total (Dillon's Gayatri Choudhary job, 2026-11-13: no
  * total on any of 15 revisions). Without one, they stay as written and are escalated as before.
  */
-const COMPONENT_SYSTEMS = /^(surge( protection| protectors?| suppression)?|power (protection|conditioning|conditioners?)|(battery backup|ups)( power)?|projection( screens?| systems?)?|projectors?( screens?)?)$/;
+const COMPONENT_SYSTEMS = /^(surge( protection| protectors?| suppression)?|power (protection|conditioning|conditioners?|management)|(battery backup|ups)( power)?|projection( screens?| systems?)?|projectors?( screens?)?)$/;
 const COMPONENT_HOSTS = ["audio_video", "home_theater", "networking"];
 
 function withoutComponentSystems(systems: string[]): string[] {
-  if (!systems.some((s) => COMPONENT_HOSTS.includes(s))) return systems;
-  return systems.filter((s) => !COMPONENT_SYSTEMS.test(s));
+  // Alarm.com monitoring on a camera or doorbell job with no alarm system is the devices' video plan, a question for the
+  // rep, not a system no pattern covers (Dillon's Jennifer Levy job, 2026-11-19: "alarm_monitoring" withheld the total).
+  const videoOnly = !systems.includes("intrusion_security") && systems.some((s) => s === "video_doorbell" || s === "video_surveillance");
+  const kept = videoOnly ? systems.filter((s) => s !== "alarm_monitoring") : systems;
+  if (!kept.some((s) => COMPONENT_HOSTS.includes(s))) return kept;
+  return kept.filter((s) => !COMPONENT_SYSTEMS.test(s));
 }
 
 function requestedSystems(requests: string[]): string[] {
